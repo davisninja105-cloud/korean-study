@@ -3,6 +3,10 @@ import { DEFAULT_GOAL_SECONDS, DEFAULT_DAY_START_HOUR } from '@/lib/habit'
 
 const GOAL_KEY = 'dailyGoalSeconds'
 const DAY_START_KEY = 'habitDayStartHour'
+const BUTTON_COLOR_KEY = 'buttonColor'
+
+export const DEFAULT_BUTTON_COLOR = '#3b82f6'
+const HEX_RE = /^#[0-9a-fA-F]{6}$/
 
 export async function getDailyGoalSeconds(): Promise<number> {
   const row = await prisma.setting.findUnique({ where: { key: GOAL_KEY } })
@@ -34,4 +38,19 @@ export async function setDayStartHour(hour: number): Promise<number> {
     update: { value: String(clamped) },
   })
   return clamped
+}
+
+export async function getButtonColor(): Promise<string> {
+  const row = await prisma.setting.findUnique({ where: { key: BUTTON_COLOR_KEY } })
+  return row && HEX_RE.test(row.value) ? row.value : DEFAULT_BUTTON_COLOR
+}
+
+export async function setButtonColor(hex: string): Promise<string> {
+  const value = HEX_RE.test(hex) ? hex.toLowerCase() : DEFAULT_BUTTON_COLOR
+  await prisma.setting.upsert({
+    where: { key: BUTTON_COLOR_KEY },
+    create: { key: BUTTON_COLOR_KEY, value },
+    update: { value },
+  })
+  return value
 }

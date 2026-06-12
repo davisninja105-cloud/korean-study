@@ -32,7 +32,7 @@ export default function Nav() {
                 href={href}
                 className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                   pathname === href
-                    ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300'
+                    ? 'bg-button-soft text-button'
                     : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'
                 }`}
               >
@@ -54,7 +54,7 @@ export default function Nav() {
                 href={href}
                 className={`flex-1 flex flex-col items-center gap-1 py-2 text-xs font-medium transition-colors ${
                   active
-                    ? 'text-blue-600 dark:text-blue-300'
+                    ? 'text-button'
                     : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
                 }`}
               >

@@ -48,7 +48,7 @@ export default function SyncPanel({ onSynced }: Props) {
       <button
         onClick={handleSync}
         disabled={loading || !DOC_ID}
-        className="w-full min-h-11 bg-blue-500 text-white px-5 py-3 rounded-xl font-medium hover:bg-blue-600 transition-colors disabled:opacity-50"
+        className="w-full min-h-11 bg-button text-button-foreground px-5 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors disabled:opacity-50"
       >
         {loading ? 'Syncing…' : 'Sync now'}
       </button>

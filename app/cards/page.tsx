@@ -173,7 +173,7 @@ export default function CardsPage() {
         </h2>
         <button
           onClick={() => setShowAdd(!showAdd)}
-          className="bg-blue-500 text-white px-4 py-2 min-h-11 text-sm rounded-lg hover:bg-blue-600"
+          className="bg-button text-button-foreground px-4 py-2 min-h-11 text-sm rounded-lg hover:bg-button-hover"
         >
           {showAdd ? 'Cancel' : 'Add Card'}
         </button>
@@ -290,7 +290,7 @@ export default function CardsPage() {
                               {card.review.reps} review{card.review.reps !== 1 ? 's' : ''}
                             </span>
                           )}
-                          <button onClick={() => setEditingId(card.id)} className="text-sm text-blue-500 hover:text-blue-700 px-2 py-1 rounded-md hover:bg-blue-50 dark:hover:bg-blue-500/10">
+                          <button onClick={() => setEditingId(card.id)} className="text-sm text-button hover:text-button-hover px-2 py-1 rounded-md hover:bg-button-soft">
                             Edit
                           </button>
                           <button onClick={() => handleDelete(card.id)} className="text-sm text-red-400 hover:text-red-600 px-2 py-1 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10">

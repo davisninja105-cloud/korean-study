@@ -67,7 +67,7 @@ export default function LessonRangeFilter({ lessons, from, to, onChange }: Props
       {!full && (
         <button
           onClick={() => onChange(1, maxOrder)}
-          className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 px-2 py-1 rounded-md hover:bg-blue-50 dark:hover:bg-blue-500/10"
+          className="text-xs text-button hover:text-button-hover px-2 py-1 rounded-md hover:bg-button-soft"
         >
           All
         </button>

@@ -421,7 +421,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                     {cardSentences.length > 1 && (
                       <button
                         onClick={() => setExampleOffset((o) => o + 1)}
-                        className="text-xs text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 hover:underline mt-1"
+                        className="text-xs text-button hover:text-button-hover hover:underline mt-1"
                       >
                         See another example →
                       </button>
@@ -537,7 +537,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       {mode === 'flashcard' && !revealed && (
         <button
           onClick={() => setRevealed(true)}
-          className="w-full min-h-11 bg-blue-500 text-white px-8 py-3 rounded-xl font-medium hover:bg-blue-600 transition-colors"
+          className="w-full min-h-11 bg-button text-button-foreground px-8 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors"
         >
           Show Answer
         </button>
@@ -563,7 +563,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       {mode === 'multiple-choice' && mcSelected && (
         <button
           onClick={() => advanceMc(mcRating)}
-          className="w-full min-h-11 bg-blue-500 text-white px-8 py-3 rounded-xl font-medium hover:bg-blue-600 transition-colors"
+          className="w-full min-h-11 bg-button text-button-foreground px-8 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors"
         >
           Next →
         </button>
@@ -572,7 +572,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       {mode === 'fill-blank' && !revealed && (
         <button
           onClick={() => setRevealed(true)}
-          className="w-full min-h-11 bg-blue-500 text-white px-8 py-3 rounded-xl font-medium hover:bg-blue-600 transition-colors"
+          className="w-full min-h-11 bg-button text-button-foreground px-8 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors"
         >
           Check Answer
         </button>

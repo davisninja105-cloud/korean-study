@@ -188,7 +188,7 @@ export default function StudyPage() {
                 <p className="text-gray-500 dark:text-gray-400">
                   🎉 All caught up in this range!
                 </p>
-                <Link href="/" className="inline-block bg-blue-500 text-white px-6 py-3 min-h-11 rounded-lg font-medium hover:bg-blue-600">
+                <Link href="/" className="inline-block bg-button text-button-foreground px-6 py-3 min-h-11 rounded-lg font-medium hover:bg-button-hover">
                   Back to Dashboard
                 </Link>
               </>
@@ -197,7 +197,7 @@ export default function StudyPage() {
                 <p className="text-gray-500 dark:text-gray-400">No cards due for review right now.</p>
                 <button
                   onClick={startAhead}
-                  className="inline-block bg-blue-500 text-white px-6 py-3 min-h-11 rounded-lg font-medium hover:bg-blue-600"
+                  className="inline-block bg-button text-button-foreground px-6 py-3 min-h-11 rounded-lg font-medium hover:bg-button-hover"
                 >
                   Study ahead →
                 </button>
@@ -260,7 +260,7 @@ export default function StudyPage() {
       {/* Study-ahead CTA — always offered after completion */}
       <button
         onClick={startAhead}
-        className="inline-block bg-blue-500 text-white px-6 py-3 min-h-11 rounded-lg font-medium hover:bg-blue-600 mt-4"
+        className="inline-block bg-button text-button-foreground px-6 py-3 min-h-11 rounded-lg font-medium hover:bg-button-hover mt-4"
       >
         Study 20 more →
       </button>

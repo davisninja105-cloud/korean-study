@@ -208,7 +208,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
 
         <button
           onClick={addSentence}
-          className="text-sm text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 text-left hover:underline"
+          className="text-sm text-button hover:text-button-hover text-left hover:underline"
         >
           + Add sentence
         </button>
@@ -225,7 +225,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
         <button
           onClick={handleSave}
           disabled={saving || !front || !back}
-          className="bg-blue-500 text-white px-4 py-2 min-h-11 text-sm rounded-lg hover:bg-blue-600 disabled:opacity-50"
+          className="bg-button text-button-foreground px-4 py-2 min-h-11 text-sm rounded-lg hover:bg-button-hover disabled:opacity-50"
         >
           {saving ? 'Saving...' : 'Save'}
         </button>

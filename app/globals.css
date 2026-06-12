@@ -3,6 +3,10 @@
 :root {
   --background: #f9fafb;
   --foreground: #171717;
+  --button: #3b82f6;                                             /* default = blue-500 */
+  --button-hover: color-mix(in srgb, var(--button) 85%, black); /* ~blue-600 */
+  --button-soft: color-mix(in srgb, var(--button) 14%, transparent); /* nav active pill */
+  --button-foreground: #ffffff;                                  /* overridden per-page by layout */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -20,6 +24,10 @@ html {
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-button: var(--button);
+  --color-button-hover: var(--button-hover);
+  --color-button-soft: var(--button-soft);
+  --color-button-foreground: var(--button-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

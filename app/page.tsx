@@ -39,7 +39,7 @@ export default function Home() {
       {stats && stats.dueCards > 0 ? (
         <Link
           href="/study"
-          className="block w-full text-center bg-blue-500 text-white py-4 rounded-2xl text-lg font-semibold hover:bg-blue-600 transition-colors"
+          className="block w-full text-center bg-button text-button-foreground py-4 rounded-2xl text-lg font-semibold hover:bg-button-hover transition-colors"
         >
           Study {stats.dueCards} due card{stats.dueCards !== 1 ? 's' : ''}
         </Link>
