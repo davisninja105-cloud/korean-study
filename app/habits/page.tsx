@@ -1,0 +1,239 @@
+'use client'
+
+import { useEffect, useState, useMemo } from 'react'
+import Link from 'next/link'
+import HabitHeatmap from '@/components/HabitHeatmap'
+import {
+  computeStreaks,
+  computeHabitStats,
+  habitDateStr,
+  shiftDate,
+  formatDuration,
+  type DayRecord,
+  DEFAULT_GOAL_SECONDS,
+  DEFAULT_DAY_START_HOUR,
+} from '@/lib/habit'
+
+// Format large totals as "Xh Ym" or "Ym" for readability.
+function formatTotalTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h === 0) return `${m}m`
+  return `${h}h ${m}m`
+}
+
+// Format a "YYYY-MM-DD" date string as "Mon D, YYYY" — pure, derived from state.
+function formatDate(dateStr: string): string {
+  if (!dateStr) return '—'
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+}
+
+export default function HabitsPage() {
+  const [days, setDays] = useState<DayRecord[] | null>(null)
+  const [today, setToday] = useState('')
+  const [goal, setGoal] = useState(DEFAULT_GOAL_SECONDS)
+
+  useEffect(() => {
+    fetch('/api/activity')
+      .then((r) => r.json())
+      .then((d) => {
+        const hour = d.dayStartHour ?? DEFAULT_DAY_START_HOUR
+        setToday(habitDateStr(hour))
+        setDays(d.days ?? [])
+        setGoal(d.dailyGoalSeconds ?? DEFAULT_GOAL_SECONDS)
+      })
+      .catch(() => { setToday(habitDateStr(DEFAULT_DAY_START_HOUR)); setDays([]) })
+  }, [])
+
+  const { current, longest, todaySeconds } = useMemo(
+    () => computeStreaks(days ?? [], today, goal),
+    [days, today, goal]
+  )
+
+  const stats = useMemo(
+    () => computeHabitStats(days ?? [], goal),
+    [days, goal]
+  )
+
+  const secByDate = useMemo(
+    () => new Map((days ?? []).map((d) => [d.date, d.seconds])),
+    [days]
+  )
+
+  // Last 30 days for the trend chart (oldest→newest, today rightmost).
+  const trendDays = useMemo(() => {
+    if (!today) return []
+    return Array.from({ length: 30 }, (_, i) => {
+      const date = shiftDate(today, i - 29)
+      return { date, secs: secByDate.get(date) ?? 0 }
+    })
+  }, [today, secByDate])
+
+  // The tallest bar anchors the scale; always at least the goal so the goal
+  // line is never at 100% when there's headroom.
+  const maxTrendSecs = useMemo(
+    () => Math.max(...trendDays.map((d) => d.secs), goal),
+    [trendDays, goal]
+  )
+
+  const todayPct = Math.min(100, goal > 0 ? Math.round((todaySeconds / goal) * 100) : 0)
+  const goalLinePct = maxTrendSecs > 0 ? Math.round((goal / maxTrendSecs) * 100) : 0
+
+  if (days === null) {
+    return (
+      <main className="max-w-2xl mx-auto px-4 py-8">
+        <div className="h-40 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
+      </main>
+    )
+  }
+
+  return (
+    <main className="max-w-2xl mx-auto px-4 py-8 flex flex-col gap-6">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Habits</h1>
+        <Link href="/" className="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 underline underline-offset-2">
+          ← Dashboard
+        </Link>
+      </div>
+
+      {/* Streak hero + today progress */}
+      <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-3xl font-bold text-gray-800 dark:text-gray-100">
+              🔥 {current} day{current !== 1 ? 's' : ''}
+            </p>
+            <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">
+              Current streak
+            </p>
+          </div>
+          <div className="text-right">
+            <p className="text-xl font-semibold text-gray-600 dark:text-gray-300">{longest}</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">Longest streak</p>
+          </div>
+        </div>
+        <div>
+          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+            <span>Today — {Math.round(goal / 60)} min goal</span>
+            <span>{formatDuration(todaySeconds)} / {formatDuration(goal)}</span>
+          </div>
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
+            <div className="bg-blue-500 h-2.5 rounded-full transition-all" style={{ width: `${todayPct}%` }} />
+          </div>
+        </div>
+      </section>
+
+      {/* All-time totals */}
+      <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-3">
+        <h2 className="font-semibold text-gray-800 dark:text-gray-100">All-time totals</h2>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+            <p className="text-2xl font-bold text-blue-500">{formatTotalTime(stats.totalSeconds)}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Total study time</p>
+          </div>
+          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+            <p className="text-2xl font-bold text-blue-500">{stats.totalReviews.toLocaleString()}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Cards reviewed</p>
+          </div>
+          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+            <p className="text-2xl font-bold text-blue-500">{stats.daysStudied}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Days studied</p>
+          </div>
+          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
+            <p className="text-2xl font-bold text-blue-500">{stats.goalMetDays}</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Goal-met days</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Averages & consistency */}
+      <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-3">
+        <h2 className="font-semibold text-gray-800 dark:text-gray-100">Averages &amp; consistency</h2>
+        <div className="flex flex-col gap-3">
+          <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+            <span className="text-sm text-gray-600 dark:text-gray-300">Avg per active day</span>
+            <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+              {formatTotalTime(stats.avgSecondsPerActiveDay)}
+            </span>
+          </div>
+          <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
+            <span className="text-sm text-gray-600 dark:text-gray-300">Goal completion rate</span>
+            <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+              {stats.daysStudied > 0 ? `${Math.round(stats.goalCompletionRate * 100)}%` : '—'}
+            </span>
+          </div>
+          <div className="flex justify-between items-center py-2">
+            <span className="text-sm text-gray-600 dark:text-gray-300">Best day</span>
+            <span className="text-sm font-semibold text-gray-800 dark:text-gray-100 text-right">
+              {stats.bestDayDate
+                ? `${formatDate(stats.bestDayDate)} · ${formatTotalTime(stats.bestDaySeconds)}`
+                : '—'}
+            </span>
+          </div>
+        </div>
+      </section>
+
+      {/* 30-day trend chart */}
+      <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-3">
+        <h2 className="font-semibold text-gray-800 dark:text-gray-100">Last 30 days</h2>
+        <div className="relative h-16">
+          {/* Goal reference line */}
+          <div
+            className="absolute inset-x-0 border-t border-dashed border-blue-300 dark:border-blue-700 pointer-events-none"
+            style={{ bottom: `${goalLinePct}%` }}
+          />
+          {/* Bars */}
+          <div className="flex items-end gap-0.5 h-full">
+            {trendDays.map(({ date, secs }) => {
+              const heightPct = maxTrendSecs > 0 ? Math.round((secs / maxTrendSecs) * 100) : 0
+              // Ensure a tiny visible sliver for any non-zero day
+              const displayPct = secs > 0 ? Math.max(heightPct, 3) : 0
+              let barColor = 'bg-gray-100 dark:bg-gray-700'
+              if (secs >= goal) barColor = 'bg-blue-500'
+              else if (secs > 0) barColor = 'bg-blue-300 dark:bg-blue-500/40'
+              return (
+                <div
+                  key={date}
+                  className={`flex-1 min-w-0 rounded-sm transition-all ${barColor}`}
+                  style={{ height: `${displayPct}%` }}
+                  title={`${date}: ${formatDuration(secs)}`}
+                />
+              )
+            })}
+          </div>
+        </div>
+        <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500">
+          <span>30 days ago</span>
+          <span className="text-blue-400">— goal ({Math.round(goal / 60)}m)</span>
+          <span>today</span>
+        </div>
+      </section>
+
+      {/* Full history heatmap */}
+      <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-3">
+        <h2 className="font-semibold text-gray-800 dark:text-gray-100">History</h2>
+        <HabitHeatmap days={days} today={today} goal={goal} weeks={26} />
+        <div className="flex gap-3 text-xs text-gray-400 dark:text-gray-500">
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-3 h-3 rounded-sm bg-blue-500" /> Goal met
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-3 h-3 rounded-sm bg-blue-300 dark:bg-blue-500/40" /> Partial
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="inline-block w-3 h-3 rounded-sm bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" /> No study
+          </span>
+        </div>
+      </section>
+
+      <p className="text-xs text-gray-400 dark:text-gray-500 text-center">
+        <Link href="/settings" className="underline underline-offset-2 hover:text-gray-600 dark:hover:text-gray-300">
+          Change goal or day-start time
+        </Link>
+      </p>
+    </main>
+  )
+}

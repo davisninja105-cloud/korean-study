@@ -1,65 +1,56 @@
-import Image from "next/image";
+'use client'
+
+import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
+import StatsBar from '@/components/StatsBar'
+import HabitTracker from '@/components/HabitTracker'
+import SyncPanel from '@/components/SyncPanel'
+
+interface Stats {
+  totalCards: number
+  dueCards: number
+  totalLessons: number
+}
 
 export default function Home() {
+  const [stats, setStats] = useState<Stats | null>(null)
+
+  const loadStats = useCallback(() => {
+    fetch('/api/stats')
+      .then((r) => r.json())
+      .then(setStats)
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => { loadStats() }, [loadStats])
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
+    <div className="flex flex-col gap-6">
+      {stats && (
+        <StatsBar
+          totalCards={stats.totalCards}
+          dueCards={stats.dueCards}
+          totalLessons={stats.totalLessons}
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+      )}
+
+      <HabitTracker />
+
+      {stats && stats.dueCards > 0 ? (
+        <Link
+          href="/study"
+          className="block w-full text-center bg-blue-500 text-white py-4 rounded-2xl text-lg font-semibold hover:bg-blue-600 transition-colors"
+        >
+          Study {stats.dueCards} due card{stats.dueCards !== 1 ? 's' : ''}
+        </Link>
+      ) : stats ? (
+        <div className="bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/30 rounded-2xl p-6 text-center">
+          <p className="text-green-700 dark:text-green-300 font-semibold">All caught up!</p>
+          <p className="text-green-600 dark:text-green-400 text-sm mt-1">No cards due for review right now.</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      ) : null}
+
+      <SyncPanel onSynced={loadStats} />
     </div>
-  );
+  )
 }
