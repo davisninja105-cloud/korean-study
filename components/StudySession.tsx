@@ -5,6 +5,7 @@ import { StudyMode, FlashcardSubMode } from './ModeSelector'
 import { habitDateStr, DEFAULT_DAY_START_HOUR } from '@/lib/habit'
 import HighlightedSentence from './HighlightedSentence'
 import { sentenceMatch, blankSentence } from '@/lib/sentence-match'
+import { previewIntervals } from '@/lib/fsrs'
 
 interface Sentence {
   id: string
@@ -25,7 +26,17 @@ interface Card {
   clozeAnswer?: string | null
   clozeTranslation?: string | null
   sentences?: Sentence[]
-  review?: { reps?: number } | null
+  review?: {
+    reps?: number | null
+    state?: number | null
+    stability?: number | null
+    difficulty?: number | null
+    elapsedDays?: number | null
+    scheduledDays?: number | null
+    lapses?: number | null
+    nextReview?: string | null
+    lastReview?: string | null
+  } | null
 }
 
 interface PracticeCard {
@@ -37,7 +48,7 @@ interface PracticeCard {
 
 // How long multiple-choice waits before auto-advancing. A "Next" button lets
 // the user skip the wait and move on immediately.
-const MC_ADVANCE_MS = 4500
+const MC_ADVANCE_MS = 1800
 
 // Normalize answers for forgiving fill-in-the-blank comparison.
 function normalizeAnswer(s: string): string {
@@ -116,6 +127,11 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   const [stats, setStats] = useState({ reviewed: 0, correct: 0, incorrect: 0 })
   // "See another example →": cycles through a card's extra sentences on the reveal side
   const [exampleOffset, setExampleOffset] = useState(0)
+  // Interval hints for FSRS rating buttons (computed on reveal, cleared on advance)
+  const [intervalHints, setIntervalHints] = useState<[string, string, string, string] | null>(null)
+  // Undo: track whether the last review can be undone
+  const [canUndo, setCanUndo] = useState(false)
+  const undoRef = useRef<{ cardId: string; prevState: object; prevIndex: number; wasCorrect: boolean } | null>(null)
 
   // Day-start hour for habit attribution (default until settings load).
   const dayStartHourRef = useRef(DEFAULT_DAY_START_HOUR)
@@ -215,6 +231,14 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     return seededShuffle([...distractors, current.back], seed + index * 31)
   }, [mode, index, items, seed])
 
+  // Ref for the card container so we can return focus after card advance (keyboard shortcuts)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Refocus container after each card advance so keyboard shortcuts stay active
+  useEffect(() => {
+    containerRef.current?.focus({ preventScroll: true })
+  }, [index])
+
   if (index >= items.length) return null
 
   const item = items[index]
@@ -307,11 +331,15 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     }))
 
     if (!isPractice) {
+      const cardId = (item.card as Card).id
+      const prevState = (item.card as Card).review ?? {}
       await fetch('/api/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cardId: (item.card as Card).id, rating }),
+        body: JSON.stringify({ cardId, rating }),
       })
+      undoRef.current = { cardId, prevState, prevIndex: index, wasCorrect: isCorrect }
+      setCanUndo(true)
     }
 
     const next = index + 1
@@ -329,7 +357,8 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     setRevealed(false)
     setFillInput('')
     setMcSelected(null)
-    setExampleOffset(0)  // reset "see another" cycling on card advance
+    setExampleOffset(0)
+    setIntervalHints(null)
   }
 
   const advanceMc = (rating: number) => {
@@ -337,19 +366,101 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     submitReview(rating)
   }
 
+  const handleUndo = async () => {
+    if (!undoRef.current) return
+    const { cardId, prevState, prevIndex, wasCorrect } = undoRef.current
+    undoRef.current = null
+    setCanUndo(false)
+    await fetch('/api/review/undo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cardId, prevState }),
+    })
+    setStats((s) => ({
+      reviewed: s.reviewed - 1,
+      correct: s.correct - (wasCorrect ? 1 : 0),
+      incorrect: s.incorrect - (wasCorrect ? 0 : 1),
+    }))
+    setIndex(prevIndex)
+    setRevealed(true)
+    setIntervalHints(null)
+  }
+
   const mcRating = mcSelected === currentCard.back ? 3 : 1
 
+  const handleReveal = () => {
+    setRevealed(true)
+    if (item.kind === 'real' && item.card.review) {
+      setIntervalHints(previewIntervals(item.card.review))
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    // Never intercept while the fill-blank input is focused
+    if (document.activeElement?.tagName === 'INPUT') return
+    // lastInteraction is already bumped by the global 'keydown' listener in the activity effect
+
+    if (!revealed) {
+      if (e.key === ' ' || e.key === 'Enter') {
+        e.preventDefault()
+        handleReveal()
+      }
+      // MC: 1-4 selects an option
+      if (mode === 'multiple-choice' && mcOptions.length > 0 && !mcSelected) {
+        const n = parseInt(e.key)
+        if (n >= 1 && n <= 4 && mcOptions[n - 1] !== undefined) {
+          e.preventDefault()
+          const opt = mcOptions[n - 1]
+          const isCorrect = opt === currentCard.back
+          setMcSelected(opt)
+          advanceMc(isCorrect ? 3 : 1)
+        }
+      }
+    } else {
+      if (mode === 'flashcard') {
+        if (e.key === '1') { e.preventDefault(); void submitReview(1) }
+        else if (e.key === '2') { e.preventDefault(); void submitReview(2) }
+        else if (e.key === '3') { e.preventDefault(); void submitReview(3) }
+        else if (e.key === '4') { e.preventDefault(); void submitReview(4) }
+      }
+      if (mode === 'fill-blank') {
+        if (e.key === '1') { e.preventDefault(); void submitReview(1) }
+        else if (e.key === '3') { e.preventDefault(); void submitReview(3) }
+      }
+      if (mode === 'multiple-choice' && mcSelected !== null) {
+        const isCorrect = mcSelected === currentCard.back
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); advanceMc(isCorrect ? 3 : 1) }
+      }
+    }
+  }
+
   return (
-    <div className="flex flex-col items-center gap-6 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] w-full max-w-xl mx-auto">
+    <div
+      ref={containerRef}
+      tabIndex={0}
+      onKeyDown={handleKeyDown}
+      className="flex flex-col items-center gap-6 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] w-full max-w-xl mx-auto outline-none"
+    >
       {/* Progress */}
       <div className="flex justify-between items-center w-full text-sm text-gray-400 dark:text-gray-500">
         <span className="capitalize">{index + 1} / {totalCount} · {isPractice ? 'AI Practice' : mode.replace('-', ' ')}</span>
-        <button
-          onClick={() => onComplete(stats)}
-          className="px-2 py-1 rounded-md hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-        >
-          End
-        </button>
+        <div className="flex items-center gap-1">
+          {canUndo && (
+            <button
+              onClick={handleUndo}
+              className="px-2 py-1 rounded-md hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              title="Undo last rating"
+            >
+              ↩
+            </button>
+          )}
+          <button
+            onClick={() => onComplete(stats)}
+            className="px-2 py-1 rounded-md hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+          >
+            End
+          </button>
+        </div>
       </div>
       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
         <div
@@ -395,7 +506,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                   </>
                 ) : (
                   /* FLIP — sentence stays visible + bare word + meaning */
-                  <>
+                  <div className="animate-reveal flex flex-col items-center gap-4 w-full">
                     {/* Sentence with target still highlighted (context preserved) */}
                     {displayedSentence && (
                       <HighlightedSentence
@@ -426,7 +537,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                         See another example →
                       </button>
                     )}
-                  </>
+                  </div>
                 )}
               </>
             ) : (
@@ -434,13 +545,13 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
               <>
                 <p className="text-4xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
                 {revealed && (
-                  <>
+                  <div className="animate-reveal flex flex-col items-center gap-4 w-full">
                     <hr className="w-full border-gray-200 dark:border-gray-700" />
                     <p className="text-xl text-gray-600 dark:text-gray-300 text-center">{currentCard.back}</p>
                     {currentCard.notes && (
                       <p className="text-sm text-gray-400 dark:text-gray-500 text-center italic">{currentCard.notes}</p>
                     )}
-                  </>
+                  </div>
                 )}
               </>
             )}
@@ -477,8 +588,13 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                       const rating = isCorrect ? 3 : 1
                       advanceTimer.current = setTimeout(() => advanceMc(rating), MC_ADVANCE_MS)
                     }}
-                    className={btnClass}
+                    className={`relative ${btnClass}`}
                   >
+                    {!hasAnswered && (
+                      <span className="absolute top-1 left-1.5 text-[10px] text-gray-400 dark:text-gray-500 font-mono leading-none select-none">
+                        {i + 1}
+                      </span>
+                    )}
                     {opt}
                   </button>
                 )
@@ -513,14 +629,14 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
               type="text"
               value={fillInput}
               onChange={(e) => setFillInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !revealed) setRevealed(true) }}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !revealed) handleReveal() }}
               placeholder="한국어로 입력하세요..."
               className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg px-4 py-2 text-center text-xl focus:outline-none focus:ring-2 focus:ring-blue-300"
               disabled={revealed}
               autoFocus
             />
             {revealed && (
-              <div className="text-center">
+              <div className="text-center animate-reveal">
                 <p className={`text-sm font-medium ${fillCorrect ? 'text-green-600 dark:text-green-400' : 'text-orange-500 dark:text-orange-400'}`}>
                   Correct answer: {fillAnswer}
                 </p>
@@ -533,61 +649,69 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
         )}
       </div>
 
-      {/* ── Action buttons ── */}
-      {mode === 'flashcard' && !revealed && (
-        <button
-          onClick={() => setRevealed(true)}
-          className="w-full min-h-11 bg-button text-button-foreground px-8 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors"
-        >
-          Show Answer
-        </button>
-      )}
+      {/* ── Action bar (sticky above bottom nav on mobile) ── */}
+      <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] sm:bottom-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm -mx-4 px-4 pt-2 pb-2 w-[calc(100%+2rem)]">
+        {mode === 'flashcard' && !revealed && (
+          <button
+            onClick={handleReveal}
+            className="w-full min-h-11 bg-button text-button-foreground px-8 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors"
+          >
+            Show Answer
+          </button>
+        )}
 
-      {mode === 'flashcard' && revealed && (
-        <div className="flex gap-3 w-full">
-          <button onClick={() => submitReview(1)} className="flex-1 min-h-11 py-3 rounded-xl font-semibold text-sm bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-500/30 transition-colors">
-            Again
-          </button>
-          <button onClick={() => submitReview(2)} className="flex-1 min-h-11 py-3 rounded-xl font-semibold text-sm bg-yellow-100 text-yellow-600 dark:bg-yellow-500/20 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-500/30 transition-colors">
-            Hard
-          </button>
-          <button onClick={() => submitReview(3)} className="flex-1 min-h-11 py-3 rounded-xl font-semibold text-sm bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-500/30 transition-colors">
-            Good
-          </button>
-          <button onClick={() => submitReview(4)} className="flex-1 min-h-11 py-3 rounded-xl font-semibold text-sm bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-500/30 transition-colors">
-            Easy
-          </button>
-        </div>
-      )}
+        {mode === 'flashcard' && revealed && (
+          <div className="flex gap-3 w-full animate-reveal">
+            <button onClick={() => submitReview(1)} className="flex-1 min-h-11 py-2 rounded-xl font-semibold text-sm bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-500/30 transition-colors flex flex-col items-center justify-center">
+              <span>Again</span>
+              {intervalHints && <span className="text-[10px] font-normal opacity-70 mt-0.5">{intervalHints[0]}</span>}
+            </button>
+            <button onClick={() => submitReview(2)} className="flex-1 min-h-11 py-2 rounded-xl font-semibold text-sm bg-yellow-100 text-yellow-600 dark:bg-yellow-500/20 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-500/30 transition-colors flex flex-col items-center justify-center">
+              <span>Hard</span>
+              {intervalHints && <span className="text-[10px] font-normal opacity-70 mt-0.5">{intervalHints[1]}</span>}
+            </button>
+            <button onClick={() => submitReview(3)} className="flex-1 min-h-11 py-2 rounded-xl font-semibold text-sm bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-500/30 transition-colors flex flex-col items-center justify-center">
+              <span>Good</span>
+              {intervalHints && <span className="text-[10px] font-normal opacity-70 mt-0.5">{intervalHints[2]}</span>}
+            </button>
+            <button onClick={() => submitReview(4)} className="flex-1 min-h-11 py-2 rounded-xl font-semibold text-sm bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-500/30 transition-colors flex flex-col items-center justify-center">
+              <span>Easy</span>
+              {intervalHints && <span className="text-[10px] font-normal opacity-70 mt-0.5">{intervalHints[3]}</span>}
+            </button>
+          </div>
+        )}
 
-      {mode === 'multiple-choice' && mcSelected && (
-        <button
-          onClick={() => advanceMc(mcRating)}
-          className="w-full min-h-11 bg-button text-button-foreground px-8 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors"
-        >
-          Next →
-        </button>
-      )}
-
-      {mode === 'fill-blank' && !revealed && (
-        <button
-          onClick={() => setRevealed(true)}
-          className="w-full min-h-11 bg-button text-button-foreground px-8 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors"
-        >
-          Check Answer
-        </button>
-      )}
-
-      {mode === 'fill-blank' && revealed && (
-        <div className="flex gap-3 w-full">
-          <button onClick={() => submitReview(1)} className="flex-1 min-h-11 py-3 rounded-xl font-semibold text-sm bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-500/30 transition-colors">
-            Wrong
+        {mode === 'multiple-choice' && mcSelected && (
+          <button
+            onClick={() => advanceMc(mcRating)}
+            className="w-full min-h-11 bg-button text-button-foreground px-8 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors"
+          >
+            Next →
           </button>
-          <button onClick={() => submitReview(3)} className="flex-1 min-h-11 py-3 rounded-xl font-semibold text-sm bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-500/30 transition-colors">
-            Correct
+        )}
+
+        {mode === 'fill-blank' && !revealed && (
+          <button
+            onClick={handleReveal}
+            className="w-full min-h-11 bg-button text-button-foreground px-8 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors"
+          >
+            Check Answer
           </button>
-        </div>
-      )}
+        )}
+
+        {mode === 'fill-blank' && revealed && (
+          <div className="flex gap-3 w-full animate-reveal">
+            <button onClick={() => submitReview(1)} className="flex-1 min-h-11 py-2 rounded-xl font-semibold text-sm bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-500/30 transition-colors flex flex-col items-center justify-center">
+              <span>Wrong</span>
+              {intervalHints && <span className="text-[10px] font-normal opacity-70 mt-0.5">{intervalHints[0]}</span>}
+            </button>
+            <button onClick={() => submitReview(3)} className="flex-1 min-h-11 py-2 rounded-xl font-semibold text-sm bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-500/30 transition-colors flex flex-col items-center justify-center">
+              <span>Correct</span>
+              {intervalHints && <span className="text-[10px] font-normal opacity-70 mt-0.5">{intervalHints[2]}</span>}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
