@@ -44,7 +44,7 @@ export default function HabitHeatmap({ days, today, goal, weeks = 13 }: Props) {
   }
 
   return (
-    <div className="flex gap-1 overflow-x-auto pb-1">
+    <div className="flex gap-1 overflow-x-auto py-1">
       {columns.map((col, ci) => (
         <div key={ci} className="flex flex-col gap-1">
           {col.map((date) => (
