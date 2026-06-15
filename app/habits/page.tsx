@@ -78,6 +78,16 @@ export default function HabitsPage() {
     [trendDays, goal]
   )
 
+  // Show enough weeks to cover all activity + 2 weeks of padding, min 8, max 26.
+  const heatmapWeeks = useMemo(() => {
+    if (!days || days.length === 0 || !today) return 8
+    const earliest = days.reduce((min, d) => d.date < min ? d.date : min, today)
+    const [ey, em, ed] = earliest.split('-').map(Number)
+    const [ty, tm, td] = today.split('-').map(Number)
+    const daysDiff = Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(ey, em - 1, ed)) / 86400000)
+    return Math.max(8, Math.min(26, Math.ceil(daysDiff / 7) + 2))
+  }, [days, today])
+
   const todayPct = Math.min(100, goal > 0 ? Math.round((todaySeconds / goal) * 100) : 0)
   const goalLinePct = maxTrendSecs > 0 ? Math.round((goal / maxTrendSecs) * 100) : 0
 
@@ -220,7 +230,7 @@ export default function HabitsPage() {
             Complete your first session to start tracking history.
           </p>
         ) : (
-          <HabitHeatmap days={days} today={today} goal={goal} weeks={26} />
+          <HabitHeatmap days={days} today={today} goal={goal} weeks={heatmapWeeks} />
         )}
         <div className="flex gap-3 text-xs text-gray-400 dark:text-gray-500">
           <span className="flex items-center gap-1">

@@ -38,7 +38,7 @@ export default function HabitHeatmap({ days, today, goal, weeks = 13 }: Props) {
     let base = 'w-3 h-3 rounded-sm '
     if (secs >= goal) base += 'bg-blue-500'
     else if (secs > 0) base += 'bg-blue-300 dark:bg-blue-500/40'
-    else base += 'bg-gray-100 dark:bg-gray-800'
+    else base += 'bg-gray-100 dark:bg-gray-700'
     if (date === today) base += ' ring-2 ring-blue-400 ring-offset-1 ring-offset-white dark:ring-offset-gray-800'
     return base
   }
