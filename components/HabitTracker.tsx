@@ -72,12 +72,34 @@ export default function HabitTracker() {
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
-            🔥 {current} day{current !== 1 ? 's' : ''}
-          </p>
-          <p className="text-xs text-gray-400 dark:text-gray-500">
-            Longest streak: {longest} day{longest !== 1 ? 's' : ''}
-          </p>
+          {current > 0 ? (
+            <>
+              <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+                🔥 {current} day{current !== 1 ? 's' : ''}
+              </p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                Longest streak: {longest} day{longest !== 1 ? 's' : ''}
+              </p>
+            </>
+          ) : longest > 0 ? (
+            <>
+              <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+                🔥 {longest} day{longest !== 1 ? 's' : ''}
+              </p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                Personal best · study today to restart
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+                🔥 0 days
+              </p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">
+                Start your streak today
+              </p>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-2 mt-0.5">
           <p className="text-xs text-gray-400 dark:text-gray-500">
@@ -107,6 +129,8 @@ export default function HabitTracker() {
             <div key={date} className="flex flex-col items-center gap-1.5">
               <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{letter}</span>
               <div
+                role="img"
+                aria-label={`${date}: ${formatDuration(secByDate.get(date) ?? 0)}`}
                 className={dotClass(date)}
                 title={`${date}: ${formatDuration(secByDate.get(date) ?? 0)}`}
               />
@@ -115,7 +139,7 @@ export default function HabitTracker() {
         </div>
       )}
 
-      {current === 0 && (
+      {current === 0 && longest === 0 && (
         <p className="text-sm text-gray-400 dark:text-gray-500">
           Study for {Math.round(goal / 60)} min today to start your streak.
         </p>

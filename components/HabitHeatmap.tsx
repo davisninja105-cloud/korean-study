@@ -50,6 +50,8 @@ export default function HabitHeatmap({ days, today, goal, weeks = 13 }: Props) {
           {col.map((date) => (
             <div
               key={date}
+              role="img"
+              aria-label={`${date}: ${formatDuration(secByDate.get(date) ?? 0)}`}
               className={cellClass(date)}
               title={`${date}: ${formatDuration(secByDate.get(date) ?? 0)}`}
             />

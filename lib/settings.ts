@@ -41,8 +41,12 @@ export async function setDayStartHour(hour: number): Promise<number> {
 }
 
 export async function getButtonColor(): Promise<string> {
-  const row = await prisma.setting.findUnique({ where: { key: BUTTON_COLOR_KEY } })
-  return row && HEX_RE.test(row.value) ? row.value : DEFAULT_BUTTON_COLOR
+  try {
+    const row = await prisma.setting.findUnique({ where: { key: BUTTON_COLOR_KEY } })
+    return row && HEX_RE.test(row.value) ? row.value : DEFAULT_BUTTON_COLOR
+  } catch {
+    return DEFAULT_BUTTON_COLOR
+  }
 }
 
 export async function setButtonColor(hex: string): Promise<string> {

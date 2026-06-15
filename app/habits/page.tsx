@@ -215,7 +215,13 @@ export default function HabitsPage() {
       {/* Full history heatmap */}
       <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <h2 className="font-semibold text-gray-800 dark:text-gray-100">History</h2>
-        <HabitHeatmap days={days} today={today} goal={goal} weeks={26} />
+        {days.length === 0 ? (
+          <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
+            Complete your first session to start tracking history.
+          </p>
+        ) : (
+          <HabitHeatmap days={days} today={today} goal={goal} weeks={26} />
+        )}
         <div className="flex gap-3 text-xs text-gray-400 dark:text-gray-500">
           <span className="flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded-sm bg-blue-500" /> Goal met

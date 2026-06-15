@@ -72,7 +72,7 @@ export default function StudyPage() {
     fetch(`/api/cards/due${buildParams(from, to, 'due', maxOrder)}`)
       .then((r) => r.json())
       .then((cards: Card[]) => {
-        setStudyCards(cards)
+        setStudyCards(cards.slice(0, 20))
         setScope('due')
         setPhase('select-mode')
       })
@@ -160,7 +160,13 @@ export default function StudyPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (phase === 'loading') {
-    return <p className="text-center text-gray-400 dark:text-gray-500 py-16">Loading...</p>
+    return (
+      <div className="w-full max-w-xl mx-auto animate-pulse flex flex-col gap-4 pt-4">
+        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-full" />
+        <div className="h-[220px] bg-gray-100 dark:bg-gray-800 rounded-2xl" />
+        <div className="h-12 bg-gray-200 dark:bg-gray-700 rounded-xl" />
+      </div>
+    )
   }
 
   if (phase === 'select-mode') {
@@ -215,7 +221,14 @@ export default function StudyPage() {
   }
 
   if (phase === 'loading-practice') {
-    return <p className="text-center text-gray-400 dark:text-gray-500 py-16">Generating practice questions...</p>
+    return (
+      <div className="w-full max-w-xl mx-auto animate-pulse flex flex-col gap-4 pt-4">
+        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-full" />
+        <div className="h-[220px] bg-gray-100 dark:bg-gray-800 rounded-2xl" />
+        <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-48 mx-auto" />
+        <div className="h-12 bg-gray-200 dark:bg-gray-700 rounded-xl" />
+      </div>
+    )
   }
 
   if (phase === 'studying') {
