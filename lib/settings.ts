@@ -1,9 +1,10 @@
 import { prisma } from '@/lib/prisma'
-import { DEFAULT_GOAL_SECONDS, DEFAULT_DAY_START_HOUR } from '@/lib/habit'
+import { DEFAULT_GOAL_SECONDS, DEFAULT_DAY_START_HOUR, DEFAULT_SESSION_SIZE } from '@/lib/habit'
 
 const GOAL_KEY = 'dailyGoalSeconds'
 const DAY_START_KEY = 'habitDayStartHour'
 const BUTTON_COLOR_KEY = 'buttonColor'
+const SESSION_SIZE_KEY = 'sessionSize'
 
 export const DEFAULT_BUTTON_COLOR = '#3b82f6'
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
@@ -35,6 +36,22 @@ export async function setDayStartHour(hour: number): Promise<number> {
   await prisma.setting.upsert({
     where: { key: DAY_START_KEY },
     create: { key: DAY_START_KEY, value: String(clamped) },
+    update: { value: String(clamped) },
+  })
+  return clamped
+}
+
+export async function getSessionSize(): Promise<number> {
+  const row = await prisma.setting.findUnique({ where: { key: SESSION_SIZE_KEY } })
+  const n = row ? parseInt(row.value, 10) : NaN
+  return Number.isFinite(n) ? n : DEFAULT_SESSION_SIZE
+}
+
+export async function setSessionSize(n: number): Promise<number> {
+  const clamped = Math.max(5, Math.min(100, Math.round(n)))
+  await prisma.setting.upsert({
+    where: { key: SESSION_SIZE_KEY },
+    create: { key: SESSION_SIZE_KEY, value: String(clamped) },
     update: { value: String(clamped) },
   })
   return clamped

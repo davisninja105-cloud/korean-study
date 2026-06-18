@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { StudyMode, FlashcardSubMode } from './ModeSelector'
-import { habitDateStr, DEFAULT_DAY_START_HOUR } from '@/lib/habit'
+import { habitDateStr, DEFAULT_DAY_START_HOUR, nextHabitDayStart } from '@/lib/habit'
 import HighlightedSentence from './HighlightedSentence'
 import { sentenceMatch, blankSentence } from '@/lib/sentence-match'
 import { previewIntervals } from '@/lib/fsrs'
@@ -49,6 +49,10 @@ interface PracticeCard {
 // How long multiple-choice waits before auto-advancing. A "Next" button lets
 // the user skip the wait and move on immediately.
 const MC_ADVANCE_MS = 1800
+
+// How many cards ahead a re-queued card is inserted. Keeps a lapsed card from
+// reappearing immediately when other cards are available.
+const REQUEUE_GAP = 4
 
 // Normalize answers for forgiving fill-in-the-blank comparison.
 function normalizeAnswer(s: string): string {
@@ -113,14 +117,19 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     return (h >>> 0) || 1
   }, [cards])
 
-  const items: StudyItem[] = useMemo(() => {
+  // Queue: mutable list of remaining items. Always show queue[0].
+  // Initialized once — the component is remounted per batch via key={sessionKey}.
+  // initialCount is derived from stable props so it's safe to compute during render.
+  const initialCount = cards.length + extraPractice.length
+  const [queue, setQueue] = useState<StudyItem[]>(() => {
     const shuffled = seededShuffle(cards, seed)
     const real: StudyItem[] = shuffled.map((c) => ({ kind: 'real', card: c }))
     const practice: StudyItem[] = extraPractice.map((c) => ({ kind: 'practice', card: c }))
     return [...real, ...practice]
-  }, [cards, extraPractice, seed])
+  })
+  // Monotonically-increasing counter; bumped on every advance/undo to drive the refocus effect.
+  const [cursor, setCursor] = useState(0)
 
-  const [index, setIndex] = useState(0)
   const [revealed, setRevealed] = useState(false)
   const [fillInput, setFillInput] = useState('')
   const [mcSelected, setMcSelected] = useState<string | null>(null)
@@ -131,7 +140,12 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   const [intervalHints, setIntervalHints] = useState<[string, string, string, string] | null>(null)
   // Undo: track whether the last review can be undone
   const [canUndo, setCanUndo] = useState(false)
-  const undoRef = useRef<{ cardId: string; prevState: object; prevIndex: number; wasCorrect: boolean } | null>(null)
+  const undoRef = useRef<{
+    cardId: string
+    prevState: object
+    prevQueue: StudyItem[]
+    prevStats: { reviewed: number; correct: number; incorrect: number }
+  } | null>(null)
 
   // Day-start hour for habit attribution (default until settings load).
   const dayStartHourRef = useRef(DEFAULT_DAY_START_HOUR)
@@ -202,9 +216,11 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   // distractors (high quality); fall back to scraping other cards' answers for
   // legacy cards or practice items that have none.
   const mcOptions = useMemo(() => {
-    if (mode !== 'multiple-choice' || index >= items.length) return []
-    const item = items[index]
+    if (mode !== 'multiple-choice' || queue.length === 0) return []
+    const item = queue[0]
     const current = item.card
+    // Seed by card identity so options are stable across re-shows of the same card.
+    const cardSeed = item.kind === 'real' ? hashStr(item.card.id) : hashStr(item.card.front)
 
     let distractors: string[] = []
     if (item.kind === 'real' && item.card.distractors) {
@@ -219,17 +235,17 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     if (distractors.length < 3) {
       const pool = seededShuffle(
         [...new Set(
-          items.map((i) => i.card.back).filter((b) => b !== current.back && !distractors.includes(b))
+          cards.map((c) => c.back).filter((b) => b !== current.back && !distractors.includes(b))
         )],
-        seed + index
+        seed + cardSeed
       )
       distractors = [...distractors, ...pool].slice(0, 3)
     } else {
       distractors = distractors.slice(0, 3)
     }
 
-    return seededShuffle([...distractors, current.back], seed + index * 31)
-  }, [mode, index, items, seed])
+    return seededShuffle([...distractors, current.back], seed + cardSeed * 31)
+  }, [mode, queue, seed, cards])
 
   // Ref for the card container so we can return focus after card advance (keyboard shortcuts)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -237,14 +253,21 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   // Refocus container after each card advance so keyboard shortcuts stay active
   useEffect(() => {
     containerRef.current?.focus({ preventScroll: true })
-  }, [index])
+  }, [cursor])
 
-  if (index >= items.length) return null
+  if (queue.length === 0) return null
 
-  const item = items[index]
+  const item = queue[0]
   const currentCard = item.card
   const isPractice = item.kind === 'practice'
-  const totalCount = items.length
+
+  // Progress bar: advances as cards graduate (leave the queue permanently).
+  const remainingDistinct =
+    new Set(queue.filter((i): i is { kind: 'real'; card: Card } => i.kind === 'real').map((i) => i.card.id)).size +
+    queue.filter((i) => i.kind === 'practice').length
+  const progressPct = initialCount > 0
+    ? Math.max(0, (initialCount - remainingDistinct) / initialCount * 100)
+    : 0
 
   // ── Sentence logic ───────────────────────────────────────────────────────
   // All sentence logic is pure (hashStr, sentenceMatch, blankSentence have no side effects).
@@ -322,38 +345,61 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   // ── FSRS review submission ────────────────────────────────────────────────
   // FSRS ratings: 1=Again, 2=Hard, 3=Good, 4=Easy
   const submitReview = async (rating: number) => {
+    const current = queue[0]
+    if (!current) return
+
     reviewBuffer.current += 1
     const isCorrect = rating >= 3
+    // Capture stats before setStats (async) — used for inline recompute and undo snapshot.
+    const prevStats = stats
     setStats((s) => ({
       reviewed: s.reviewed + 1,
       correct: s.correct + (isCorrect ? 1 : 0),
       incorrect: s.incorrect + (isCorrect ? 0 : 1),
     }))
 
-    if (!isPractice) {
-      const cardId = (item.card as Card).id
-      const prevState = (item.card as Card).review ?? {}
-      await fetch('/api/review', {
+    let requeue = false
+    let updatedItem: StudyItem = current
+
+    if (current.kind === 'real') {
+      const cardId = current.card.id
+      const prevState = current.card.review ?? {}
+      const res = await fetch('/api/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cardId, rating }),
       })
-      undoRef.current = { cardId, prevState, prevIndex: index, wasCorrect: isCorrect }
+      // Parse the updated CardReview row to decide whether to re-queue.
+      const updatedReview = await res.json().catch(() => null) as Card['review']
+      if (updatedReview?.nextReview) {
+        const nextReviewDate = new Date(updatedReview.nextReview)
+        // Re-queue if the card is due again before the end of the current habit day.
+        requeue = nextReviewDate < nextHabitDayStart(dayStartHourRef.current, new Date())
+        // Carry fresh review state into the re-queued card so interval hints stay correct.
+        updatedItem = { kind: 'real', card: { ...current.card, review: updatedReview } }
+      }
+      undoRef.current = { cardId, prevState, prevQueue: queue, prevStats }
       setCanUndo(true)
     }
 
-    const next = index + 1
-    if (next >= totalCount) {
+    const rest = queue.slice(1)
+    const gap = Math.min(REQUEUE_GAP, rest.length)
+    const nextQueue = requeue
+      ? [...rest.slice(0, gap), updatedItem, ...rest.slice(gap)]
+      : rest
+
+    if (nextQueue.length === 0) {
       const finalStats = {
-        reviewed: stats.reviewed + 1,
-        correct: stats.correct + (isCorrect ? 1 : 0),
-        incorrect: stats.incorrect + (isCorrect ? 0 : 1),
+        reviewed: prevStats.reviewed + 1,
+        correct: prevStats.correct + (isCorrect ? 1 : 0),
+        incorrect: prevStats.incorrect + (isCorrect ? 0 : 1),
       }
       onComplete(finalStats)
       return
     }
 
-    setIndex(next)
+    setQueue(nextQueue)
+    setCursor((c) => c + 1)
     setRevealed(false)
     setFillInput('')
     setMcSelected(null)
@@ -368,7 +414,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
   const handleUndo = async () => {
     if (!undoRef.current) return
-    const { cardId, prevState, prevIndex, wasCorrect } = undoRef.current
+    const { cardId, prevState, prevQueue, prevStats } = undoRef.current
     undoRef.current = null
     setCanUndo(false)
     await fetch('/api/review/undo', {
@@ -376,12 +422,10 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cardId, prevState }),
     })
-    setStats((s) => ({
-      reviewed: s.reviewed - 1,
-      correct: s.correct - (wasCorrect ? 1 : 0),
-      incorrect: s.incorrect - (wasCorrect ? 0 : 1),
-    }))
-    setIndex(prevIndex)
+    // Restore queue and stats snapshots captured before the last review.
+    setStats(prevStats)
+    setQueue(prevQueue)
+    setCursor((c) => c + 1)
     setRevealed(true)
     setIntervalHints(null)
   }
@@ -443,7 +487,9 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     >
       {/* Progress */}
       <div className="flex justify-between items-center w-full text-sm text-gray-400 dark:text-gray-500">
-        <span className="capitalize">{index + 1} / {totalCount} · {isPractice ? 'AI Practice' : mode.replace('-', ' ')}</span>
+        <span className="capitalize">
+          {stats.reviewed} reviewed · {queue.length} left · {isPractice ? 'AI Practice' : mode.replace('-', ' ')}
+        </span>
         <div className="flex items-center gap-1">
           {canUndo && (
             <button
@@ -465,7 +511,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
         <div
           className="bg-blue-500 h-2 rounded-full transition-all"
-          style={{ width: `${((index + 1) / totalCount) * 100}%` }}
+          style={{ width: `${progressPct}%` }}
         />
       </div>
 

@@ -3,6 +3,7 @@
 
 export const DEFAULT_GOAL_SECONDS = 300 // 5 minutes
 export const DEFAULT_DAY_START_HOUR = 2  // new habit-day begins at 2:00 AM
+export const DEFAULT_SESSION_SIZE = 20   // cards per study session
 
 export interface DayRecord {
   date: string // "YYYY-MM-DD" (user-local calendar day)
@@ -16,6 +17,23 @@ export function localDateStr(d: Date = new Date()): string {
   const m = String(d.getMonth() + 1).padStart(2, '0')
   const day = String(d.getDate()).padStart(2, '0')
   return `${y}-${m}-${day}`
+}
+
+// Start of the NEXT habit day as an absolute Date.
+// A card is "still due today" iff card.nextReview < nextHabitDayStart(...).
+// `now` is passed in rather than called internally so callers stay pure-safe.
+export function nextHabitDayStart(dayStartHour: number, now: Date): Date {
+  // Today's habit-day boundary: today at dayStartHour:00:00 local time.
+  const todayBoundary = new Date(now)
+  todayBoundary.setHours(dayStartHour, 0, 0, 0)
+  if (now < todayBoundary) {
+    // We haven't crossed today's boundary yet — that IS the next habit-day start.
+    return todayBoundary
+  }
+  // Past today's boundary — next is tomorrow at the same hour.
+  const tomorrowBoundary = new Date(todayBoundary)
+  tomorrowBoundary.setDate(tomorrowBoundary.getDate() + 1)
+  return tomorrowBoundary
 }
 
 // Habit "day" string, where a day starts at `dayStartHour` local time.

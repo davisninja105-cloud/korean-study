@@ -47,6 +47,7 @@ export default function StudyPage() {
   const [scope, setScope] = useState<Scope>('due')
   const [completeStats, setCompleteStats] = useState({ reviewed: 0, correct: 0, incorrect: 0 })
   const [sessionKey, setSessionKey] = useState(0) // bump to remount StudySession
+  const [sessionSize, setSessionSize] = useState(20) // for "Study N more" label
 
   // Lesson range filter
   const [lessons, setLessons] = useState<LessonItem[]>([])
@@ -72,11 +73,19 @@ export default function StudyPage() {
     fetch(`/api/cards/due${buildParams(from, to, 'due', maxOrder)}`)
       .then((r) => r.json())
       .then((cards: Card[]) => {
-        setStudyCards(cards.slice(0, 20))
+        setStudyCards(cards)
         setScope('due')
         setPhase('select-mode')
       })
   }, [buildParams])
+
+  // Load session size for the "Study N more" label
+  useEffect(() => {
+    fetch('/api/settings')
+      .then((r) => r.json())
+      .then((d) => { if (typeof d.sessionSize === 'number') setSessionSize(d.sessionSize) })
+      .catch(() => {})
+  }, [])
 
   // Load lessons once; then load due cards for the full span
   useEffect(() => {
@@ -275,7 +284,7 @@ export default function StudyPage() {
         onClick={startAhead}
         className="inline-block bg-button text-button-foreground px-6 py-3 min-h-11 rounded-lg font-medium hover:bg-button-hover mt-4"
       >
-        Study 20 more →
+        Study {sessionSize} more →
       </button>
 
       <Link href="/" className="text-sm text-gray-400 dark:text-gray-500 hover:underline">

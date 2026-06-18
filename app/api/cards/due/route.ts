@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { getSessionSize } from '@/lib/settings'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
@@ -32,6 +33,8 @@ export async function GET(req: NextRequest) {
       ? { lesson: { orderIndex: { gte: lessonFrom, lte: lessonTo } } }
       : {}
 
+  const sessionSize = await getSessionSize()
+
   const cards = await prisma.card.findMany({
     where: {
       ...lessonClause,
@@ -45,7 +48,7 @@ export async function GET(req: NextRequest) {
       sentences: { orderBy: { orderIndex: 'asc' } },
     },
     orderBy: { review: { nextReview: 'asc' } },
-    ...(scope === 'ahead' ? { take: 20 } : {}),
+    take: sessionSize,
   })
 
   return NextResponse.json(cards)
