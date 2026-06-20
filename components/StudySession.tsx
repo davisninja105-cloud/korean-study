@@ -122,8 +122,10 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   // initialCount is derived from stable props so it's safe to compute during render.
   const initialCount = cards.length + extraPractice.length
   const [queue, setQueue] = useState<StudyItem[]>(() => {
-    const shuffled = seededShuffle(cards, seed)
-    const real: StudyItem[] = shuffled.map((c) => ({ kind: 'real', card: c }))
+    // Server already returns cards in foundation-first blended order (lib/sequence.ts).
+    // Preserve that order — do NOT shuffle here. seededShuffle is still used below
+    // for multiple-choice option ordering.
+    const real: StudyItem[] = cards.map((c) => ({ kind: 'real', card: c }))
     const practice: StudyItem[] = extraPractice.map((c) => ({ kind: 'practice', card: c }))
     return [...real, ...practice]
   })

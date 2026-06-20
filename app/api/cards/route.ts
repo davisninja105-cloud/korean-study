@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { normalizeFront } from '@/lib/card-key'
 
 const sentencesInclude = { orderBy: { orderIndex: 'asc' } } as const
 
@@ -27,6 +28,7 @@ export async function POST(req: NextRequest) {
       front,
       back,
       notes: notes ?? null,
+      normalizedFront: normalizeFront(front),
       sentences: Array.isArray(sentences) && sentences.length > 0
         ? {
             create: sentences.map(

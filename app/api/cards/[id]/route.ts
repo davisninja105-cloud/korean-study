@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { normalizeFront } from '@/lib/card-key'
 
 const sentencesInclude = { orderBy: { orderIndex: 'asc' } } as const
 
@@ -10,12 +11,15 @@ export async function PUT(
   const { id } = await params
   const data = await req.json()
 
-  // Update scalar card fields
+  // Update scalar card fields. When front changes, keep normalizedFront in sync.
   await prisma.card.update({
     where: { id },
     data: {
       ...(data.type  !== undefined && { type:  data.type }),
-      ...(data.front !== undefined && { front: data.front }),
+      ...(data.front !== undefined && {
+        front:           data.front,
+        normalizedFront: normalizeFront(data.front),
+      }),
       ...(data.back  !== undefined && { back:  data.back }),
       ...(data.notes !== undefined && { notes: data.notes }),
     },

@@ -25,17 +25,30 @@ model Card {
   front     String      // Korean text
   back      String      // English meaning
   notes     String?
+  // Dedup key: normalizeFront(front) from lib/card-key.ts. @unique enforces real dedup
+  // so an upsert by normalizedFront is safe even across multiple sync calls.
+  normalizedFront  String  @unique
+  // Raw component lemmas Claude returned: JSON string[] of base-form Hangul.
+  // Resolved to CardDependency edges at sync time (two-phase link in sync route).
+  components       String?
   // Per-mode content generated at sync time.
   distractors      String?  // JSON array of 3 wrong English meanings (multiple-choice)
   // Legacy cloze columns — kept but no longer written after the Sentence refactor.
-  // New cards get Sentence rows instead. Backfilled via scripts/backfill-sentences.mjs.
+  // New cards get Sentence rows instead.
   clozeSentence    String?  // DEPRECATED — use Sentence rows
   clozeAnswer      String?  // DEPRECATED — use Sentence rows
   clozeTranslation String?  // DEPRECATED — use Sentence rows
+  // lessonId = the lesson where this card was FIRST introduced (never updated on re-sync).
   lessonId  String?
   lesson    Lesson?     @relation(fields: [lessonId], references: [id])
   review    CardReview?
   sentences Sentence[]
+  // Dependency graph: prerequisite edges — cards this card is built from.
+  dependencies CardDependency[] @relation("CardToPrereqs")
+  // Reverse relation: cards that depend on this one.
+  requiredBy   CardDependency[] @relation("PrereqToCards")
+
+  @@index([lessonId])
 }
 
 // A natural Korean example sentence for a Card, with the target word/pattern
@@ -67,6 +80,21 @@ model CardReview {
   lapses        Int       @default(0)
   nextReview    DateTime  @default(now())
   lastReview    DateTime?
+}
+
+// A directed prerequisite edge: `card` is built from `prerequisite`.
+// Created at sync time by resolving Card.components → matching Card.normalizedFront.
+// Scoped to the in-session card set at study time to drive blended sequencing.
+model CardDependency {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  cardId         String
+  prerequisiteId String
+  card           Card     @relation("CardToPrereqs", fields: [cardId], references: [id], onDelete: Cascade)
+  prerequisite   Card     @relation("PrereqToCards", fields: [prerequisiteId], references: [id], onDelete: Cascade)
+  @@unique([cardId, prerequisiteId])
+  @@index([cardId])
+  @@index([prerequisiteId])
 }
 
 // Per-day active study time, for the habit streak/heatmap.

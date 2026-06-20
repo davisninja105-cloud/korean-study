@@ -22,14 +22,23 @@ async function getAccessToken(): Promise<string> {
 }
 
 // --- Minimal subset of the Google Docs API v1 response shape we rely on ---
+
+interface DocsTextStyle {
+  bold?:            boolean
+  underline?:       boolean
+  // backgroundColor is an object when set; absent or null when not highlighted.
+  backgroundColor?: { color?: { rgbColor?: object } } | null
+}
+
 interface DocsTextRun {
-  content?: string
+  content?:   string
+  textStyle?: DocsTextStyle
 }
 
 interface DocsParagraphElement {
-  textRun?: DocsTextRun
+  textRun?:       DocsTextRun
   horizontalRule?: object
-  pageBreak?: object
+  pageBreak?:      object
 }
 
 interface DocsParagraph {
@@ -50,7 +59,7 @@ interface DocsTable {
 
 interface DocsStructuralElement {
   paragraph?: DocsParagraph
-  table?: DocsTable
+  table?:     DocsTable
 }
 
 interface DocsBody {
@@ -59,15 +68,31 @@ interface DocsBody {
 
 interface DocsTab {
   tabProperties?: { title?: string }
-  documentTab?: { body?: DocsBody }
-  childTabs?: DocsTab[]
+  documentTab?:   { body?: DocsBody }
+  childTabs?:     DocsTab[]
 }
 
 interface DocsDocument {
   tabs?: DocsTab[]
 }
 
-export async function fetchGoogleDoc(documentId: string): Promise<string[]> {
+// --- Public return type ---
+
+export interface LessonData {
+  /** Plain text of the lesson (no formatting markers). */
+  text: string
+  /**
+   * Deduped list of text spans the tutor explicitly bolded, underlined, or
+   * highlighted — a high-confidence "this is being actively taught" signal.
+   *
+   * Note: run-level textStyle reflects emphasis applied inside body text.
+   * Text that's bold only because it's in a Heading paragraph *style* may not
+   * carry run-level bold — acceptable, since headings aren't vocab items.
+   */
+  emphasized: string[]
+}
+
+export async function fetchGoogleDoc(documentId: string): Promise<LessonData[]> {
   const accessToken = await getAccessToken()
 
   // Use the Docs API v1 with includeTabsContent so the response exposes the
@@ -115,51 +140,105 @@ function collectTabTitles(tabs: DocsTab[]): string[] {
   return titles
 }
 
-// Walk the tab body and split into lesson strings. A paragraph containing a
-// horizontal rule marks a lesson boundary (this replaces the old <hr> split).
-function splitIntoLessons(content: DocsStructuralElement[]): string[] {
-  const lessons: string[] = []
-  let current = ''
+// Returns true when a textStyle has any explicit emphasis.
+function isEmphasized(style?: DocsTextStyle): boolean {
+  if (!style) return false
+  if (style.bold === true) return true
+  if (style.underline === true) return true
+  // backgroundColor is present and has a nested color object when a highlight
+  // colour is set; it's absent or null when there is no highlight.
+  if (style.backgroundColor?.color?.rgbColor) return true
+  return false
+}
+
+// Walk the tab body and split into lesson objects. A paragraph containing a
+// horizontal rule marks a lesson boundary (same as before, now returns LessonData).
+function splitIntoLessons(content: DocsStructuralElement[]): LessonData[] {
+  const lessons: LessonData[] = []
+  let currentText = ''
+  // Collect emphasized spans into a Set to dedup automatically.
+  let currentEmphasized = new Set<string>()
+
+  function flushLesson() {
+    lessons.push({
+      text: normalize(currentText),
+      emphasized: [...currentEmphasized]
+        .map((s) => s.normalize('NFC').trim())
+        .filter((s) => s.length > 0),
+    })
+    currentText = ''
+    currentEmphasized = new Set()
+  }
 
   for (const element of content) {
     if (element.paragraph) {
       if (paragraphIsHorizontalRule(element.paragraph)) {
-        lessons.push(current)
-        current = ''
+        flushLesson()
         continue
       }
-      current += paragraphText(element.paragraph)
+      const { text, emphasized } = paragraphData(element.paragraph)
+      currentText += text
+      for (const e of emphasized) currentEmphasized.add(e)
     } else if (element.table) {
-      current += tableText(element.table)
+      // Tables: plain text only (emphasis inside tables is unusual, skip).
+      currentText += tableText(element.table)
     }
   }
-  lessons.push(current)
+  flushLesson()
 
-  return lessons.map(normalize).filter((s) => s.length > 0)
+  return lessons.filter((l) => l.text.length > 0)
 }
 
 function paragraphIsHorizontalRule(paragraph: DocsParagraph): boolean {
   return (paragraph.elements ?? []).some((el) => el.horizontalRule !== undefined)
 }
 
-function paragraphText(paragraph: DocsParagraph): string {
+// Returns plain body text AND the set of emphasized spans from this paragraph.
+// Adjacent emphasized runs are merged before being added to the set.
+function paragraphData(paragraph: DocsParagraph): { text: string; emphasized: string[] } {
   let text = ''
+  const emphasized: string[] = []
+  let emphBuffer = ''   // accumulates adjacent emphasized runs
+
   for (const el of paragraph.elements ?? []) {
-    if (el.textRun?.content) text += el.textRun.content
+    const run = el.textRun
+    if (!run?.content) continue
+
+    const content = run.content
+    text += content
+
+    if (isEmphasized(run.textStyle)) {
+      emphBuffer += content
+    } else {
+      if (emphBuffer) {
+        // Flush buffered emphasized run — strip trailing newlines (paragraph ends).
+        const span = emphBuffer.replace(/\n/g, '').trim()
+        if (span) emphasized.push(span)
+        emphBuffer = ''
+      }
+    }
   }
+  // Flush any trailing emphasized content.
+  if (emphBuffer) {
+    const span = emphBuffer.replace(/\n/g, '').trim()
+    if (span) emphasized.push(span)
+  }
+
   // Docs paragraphs already end their content with a newline; ensure one so
   // paragraphs without trailing newlines don't run together.
-  return text.endsWith('\n') ? text : text + '\n'
+  return {
+    text: text.endsWith('\n') ? text : text + '\n',
+    emphasized,
+  }
 }
 
-// Flatten a table to tab-separated cells / newline-separated rows, mirroring
-// the table handling the previous HTML-based parser provided.
+// Flatten a table to tab-separated cells / newline-separated rows.
 function tableText(table: DocsTable): string {
   let text = ''
   for (const row of table.tableRows ?? []) {
     const cells = (row.tableCells ?? []).map((cell) =>
       (cell.content ?? [])
-        .map((el) => (el.paragraph ? paragraphText(el.paragraph).trim() : ''))
+        .map((el) => (el.paragraph ? paragraphData(el.paragraph).text.trim() : ''))
         .join(' ')
         .trim()
     )

@@ -33,17 +33,23 @@ const db = createClient({ url, authToken: token ?? undefined })
 console.log('Connected to:', url)
 
 // Count before
+const tables = ['Lesson', 'Card', 'CardReview', 'Sentence', 'CardDependency']
 const before = {}
-for (const t of ['Lesson', 'Card', 'CardReview', 'Sentence']) {
-  const { rows } = await db.execute(`SELECT count(*) as n FROM "${t}"`)
-  before[t] = Number(rows[0][0] ?? rows[0].n)
+for (const t of tables) {
+  try {
+    const { rows } = await db.execute(`SELECT count(*) as n FROM "${t}"`)
+    before[t] = Number(rows[0][0] ?? rows[0].n)
+  } catch {
+    before[t] = '(table not yet created)'
+  }
 }
 console.log('Rows before wipe:', before)
 console.log()
 
 // Delete in safe order (children before parents).
-// Sentence and CardReview reference Card; Card references Lesson.
+// CardDependency, Sentence, and CardReview all reference Card; Card references Lesson.
 await db.executeMultiple(`
+  DELETE FROM "CardDependency";
   DELETE FROM "Sentence";
   DELETE FROM "CardReview";
   DELETE FROM "Card";
@@ -52,9 +58,13 @@ await db.executeMultiple(`
 
 // Verify
 const after = {}
-for (const t of ['Lesson', 'Card', 'CardReview', 'Sentence']) {
-  const { rows } = await db.execute(`SELECT count(*) as n FROM "${t}"`)
-  after[t] = Number(rows[0][0] ?? rows[0].n)
+for (const t of tables) {
+  try {
+    const { rows } = await db.execute(`SELECT count(*) as n FROM "${t}"`)
+    after[t] = Number(rows[0][0] ?? rows[0].n)
+  } catch {
+    after[t] = '(table not yet created)'
+  }
 }
 console.log('Rows after wipe:', after)
 console.log()
