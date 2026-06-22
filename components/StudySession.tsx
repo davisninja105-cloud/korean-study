@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react'
 import { StudyMode, FlashcardSubMode } from './ModeSelector'
 import { habitDateStr, DEFAULT_DAY_START_HOUR, nextHabitDayStart } from '@/lib/habit'
 import HighlightedSentence from './HighlightedSentence'
@@ -253,6 +253,17 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
   // Ref for the card container so we can return focus after card advance (keyboard shortcuts)
   const containerRef = useRef<HTMLDivElement>(null)
+
+  // Refs for flashcard faces — used to measure natural height for dynamic card sizing
+  const frontRef = useRef<HTMLDivElement>(null)
+  const backRef = useRef<HTMLDivElement>(null)
+  const [cardHeight, setCardHeight] = useState(220)
+
+  // Measure the active face and update container height before paint (synced with 3D flip)
+  useLayoutEffect(() => {
+    const el = revealed ? backRef.current : frontRef.current
+    if (el) setCardHeight(el.scrollHeight)
+  }, [cursor, revealed])
 
   // Refocus container after each card advance so keyboard shortcuts stay active
   useEffect(() => {
@@ -531,9 +542,9 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       {/* Card — flashcard mode uses 3D flip */}
       {mode === 'flashcard' ? (
         <div className="card-flip-container w-full">
-          <div className={`card-flip-inner ${revealed ? 'flipped' : ''}`}>
+          <div className={`card-flip-inner ${revealed ? 'flipped' : ''}`} style={{ height: cardHeight }}>
             {/* ── Front face ── */}
-            <div className="card-flip-front w-full bg-white dark:bg-gray-800 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
+            <div ref={frontRef} className="card-flip-front w-full bg-white dark:bg-gray-800 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
               <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
                 {currentCard.type}
               </span>
@@ -561,7 +572,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
             </div>
 
             {/* ── Back face ── */}
-            <div className="card-flip-back w-full bg-white dark:bg-gray-800 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
+            <div ref={backRef} className="card-flip-back w-full bg-white dark:bg-gray-800 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
               <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
                 {currentCard.type}
               </span>
