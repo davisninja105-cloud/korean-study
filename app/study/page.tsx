@@ -5,6 +5,9 @@ import Link from 'next/link'
 import ModeSelector, { StudyMode, FlashcardSubMode } from '@/components/ModeSelector'
 import StudySession from '@/components/StudySession'
 import LessonRangeFilter, { isFullSpan, type LessonItem } from '@/components/LessonRangeFilter'
+import ProgressRing from '@/components/ProgressRing'
+import { haptic } from '@/lib/haptics'
+import { computeStreaks, habitDateStr, DEFAULT_DAY_START_HOUR, DEFAULT_GOAL_SECONDS, type DayRecord } from '@/lib/habit'
 
 interface Sentence {
   id: string
@@ -48,6 +51,7 @@ export default function StudyPage() {
   const [completeStats, setCompleteStats] = useState({ reviewed: 0, correct: 0, incorrect: 0 })
   const [sessionKey, setSessionKey] = useState(0) // bump to remount StudySession
   const [sessionSize, setSessionSize] = useState(20) // for "Study N more" label
+  const [habitData, setHabitData] = useState<{ days: DayRecord[]; today: string; goal: number } | null>(null)
 
   // Lesson range filter
   const [lessons, setLessons] = useState<LessonItem[]>([])
@@ -79,11 +83,22 @@ export default function StudyPage() {
       })
   }, [buildParams])
 
-  // Load session size for the "Study N more" label
+  // Load session size + habit data for complete screen
   useEffect(() => {
     fetch('/api/settings')
       .then((r) => r.json())
       .then((d) => { if (typeof d.sessionSize === 'number') setSessionSize(d.sessionSize) })
+      .catch(() => {})
+    fetch('/api/activity')
+      .then((r) => r.json())
+      .then((d) => {
+        const hour = d.dayStartHour ?? DEFAULT_DAY_START_HOUR
+        setHabitData({
+          days: d.days ?? [],
+          today: habitDateStr(hour),
+          goal: d.dailyGoalSeconds ?? DEFAULT_GOAL_SECONDS,
+        })
+      })
       .catch(() => {})
   }, [])
 
@@ -258,31 +273,106 @@ export default function StudyPage() {
     ? Math.round((completeStats.correct / completeStats.reviewed) * 100)
     : 0
 
-  const sessionLabel = scope === 'ahead' ? 'Extra session complete!' : 'Session Complete!'
+  const streakInfo = habitData
+    ? computeStreaks(habitData.days, habitData.today, habitData.goal)
+    : null
+  const todayPct = habitData && habitData.goal > 0
+    ? Math.min(100, Math.round((streakInfo!.todaySeconds / habitData.goal) * 100))
+    : 0
 
   return (
-    <div className="text-center py-16 flex flex-col items-center gap-4">
-      <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">{sessionLabel}</h2>
-      <p className="text-gray-500 dark:text-gray-400">Great work on your Korean study!</p>
-      <div className="grid grid-cols-3 gap-4 mt-4">
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 text-center">
-          <span className="text-2xl font-bold text-gray-700 dark:text-gray-200">{completeStats.reviewed}</span>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Reviewed</p>
+    <SessionComplete
+      scope={scope}
+      completeStats={completeStats}
+      accuracy={accuracy}
+      sessionSize={sessionSize}
+      streakInfo={streakInfo}
+      todayPct={todayPct}
+      onStudyMore={startAhead}
+    />
+  )
+}
+
+function SessionComplete({
+  scope,
+  completeStats,
+  accuracy,
+  sessionSize,
+  streakInfo,
+  todayPct,
+  onStudyMore,
+}: {
+  scope: string
+  completeStats: { reviewed: number; correct: number; incorrect: number }
+  accuracy: number
+  sessionSize: number
+  streakInfo: { current: number; longest: number } | null
+  todayPct: number
+  onStudyMore: () => void
+}) {
+  useEffect(() => {
+    haptic('impact-heavy')
+    const prefersReduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    if (prefersReduced) return
+    let cancelled = false
+    import('canvas-confetti').then(({ default: confetti }) => {
+      if (cancelled) return
+      confetti({ particleCount: 80, spread: 70, origin: { y: 0.6 }, colors: ['#f97316', '#fde68a', '#6366f1', '#14b8a6'] })
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
+
+  const heading = scope === 'ahead' ? 'Going the extra mile!' : 'Session complete!'
+
+  return (
+    <div className="flex flex-col items-center gap-6 px-4 py-10 max-w-sm mx-auto text-center">
+      {/* Heading */}
+      <div>
+        <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">{heading}</h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">Keep showing up every day.</p>
+      </div>
+
+      {/* Today's goal ring + streak */}
+      <div className="flex items-center gap-6 bg-white dark:bg-gray-800 rounded-2xl shadow-md px-8 py-6 w-full justify-center">
+        <div className="flex flex-col items-center gap-2">
+          <ProgressRing
+            pct={todayPct}
+            size={80}
+            strokeWidth={7}
+            color="var(--reward)"
+            aria-label={`Today's goal: ${todayPct}%`}
+          />
+          <p className="text-xs text-gray-400 dark:text-gray-500">Today&apos;s goal</p>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 text-center">
-          <span className="text-2xl font-bold text-green-500">{completeStats.correct}</span>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Correct</p>
+        {streakInfo && streakInfo.current > 0 && (
+          <div className="flex flex-col items-center gap-1">
+            <p className="text-4xl font-bold" style={{ color: 'var(--reward)' }}>
+              🔥 {streakInfo.current}
+            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500">day streak</p>
+          </div>
+        )}
+      </div>
+
+      {/* Stat tiles — supporting detail */}
+      <div className="grid grid-cols-3 gap-3 w-full">
+        <div className="bg-gray-50 dark:bg-gray-800/60 rounded-xl p-3 text-center">
+          <span className="text-xl font-bold text-gray-700 dark:text-gray-200">{completeStats.reviewed}</span>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Reviewed</p>
         </div>
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 text-center">
-          <span className="text-2xl font-bold text-blue-500">{accuracy}%</span>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Accuracy</p>
+        <div className="bg-gray-50 dark:bg-gray-800/60 rounded-xl p-3 text-center">
+          <span className="text-xl font-bold text-green-500">{completeStats.correct}</span>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Correct</p>
+        </div>
+        <div className="bg-gray-50 dark:bg-gray-800/60 rounded-xl p-3 text-center">
+          <span className="text-xl font-bold text-blue-500">{accuracy}%</span>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Accuracy</p>
         </div>
       </div>
 
-      {/* Study-ahead CTA — always offered after completion */}
       <button
-        onClick={startAhead}
-        className="inline-block bg-button text-button-foreground px-6 py-3 min-h-11 rounded-lg font-medium hover:bg-button-hover mt-4"
+        onClick={onStudyMore}
+        className="w-full bg-button text-button-foreground px-6 py-3 min-h-11 rounded-xl font-medium hover:bg-button-hover transition-colors"
       >
         Study {sessionSize} more →
       </button>

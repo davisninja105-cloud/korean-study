@@ -5,6 +5,7 @@ const GOAL_KEY = 'dailyGoalSeconds'
 const DAY_START_KEY = 'habitDayStartHour'
 const BUTTON_COLOR_KEY = 'buttonColor'
 const SESSION_SIZE_KEY = 'sessionSize'
+const READING_SCALE_KEY = 'readingTextScale'
 
 export const DEFAULT_BUTTON_COLOR = '#3b82f6'
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
@@ -52,6 +53,22 @@ export async function setSessionSize(n: number): Promise<number> {
   await prisma.setting.upsert({
     where: { key: SESSION_SIZE_KEY },
     create: { key: SESSION_SIZE_KEY, value: String(clamped) },
+    update: { value: String(clamped) },
+  })
+  return clamped
+}
+
+export async function getReadingTextScale(): Promise<number> {
+  const row = await prisma.setting.findUnique({ where: { key: READING_SCALE_KEY } })
+  const n = row ? parseFloat(row.value) : NaN
+  return Number.isFinite(n) ? Math.max(0.9, Math.min(1.4, n)) : 1
+}
+
+export async function setReadingTextScale(scale: number): Promise<number> {
+  const clamped = Math.max(0.9, Math.min(1.4, Math.round(scale * 10) / 10))
+  await prisma.setting.upsert({
+    where: { key: READING_SCALE_KEY },
+    create: { key: READING_SCALE_KEY, value: String(clamped) },
     update: { value: String(clamped) },
   })
   return clamped

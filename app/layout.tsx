@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import Nav from '@/components/Nav'
-import { getButtonColor } from '@/lib/settings'
+import { getButtonColor, getReadingTextScale } from '@/lib/settings'
 import { readableForeground } from '@/lib/color'
 import './globals.css'
 
@@ -45,10 +45,11 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  const buttonColor = await getButtonColor()
+  const [buttonColor, readingScale] = await Promise.all([getButtonColor(), getReadingTextScale()])
   const buttonStyle = {
     '--button': buttonColor,
     '--button-foreground': readableForeground(buttonColor),
+    '--reading-scale': readingScale,
   } as React.CSSProperties
 
   return (

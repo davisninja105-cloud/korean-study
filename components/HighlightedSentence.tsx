@@ -16,7 +16,7 @@ export default function HighlightedSentence({ korean, targetForm, className }: P
   const match = sentenceMatch(korean, targetForm)
 
   if (!match.found) {
-    return <span className={className}>{korean}</span>
+    return <span className={`hangul-sentence ${className ?? ''}`}>{korean}</span>
   }
 
   const before = korean.slice(0, match.index)
@@ -24,9 +24,12 @@ export default function HighlightedSentence({ korean, targetForm, className }: P
   const after  = korean.slice(match.index + targetForm.length)
 
   return (
-    <span className={className}>
+    <span className={`hangul-sentence ${className ?? ''}`}>
       {before}
-      <mark className="bg-yellow-200 dark:bg-yellow-500/30 text-yellow-900 dark:text-yellow-100 font-semibold rounded px-0.5 not-italic">
+      <mark
+        className="font-semibold rounded px-0.5 not-italic"
+        style={{ backgroundColor: 'var(--highlight-bg)', color: 'var(--highlight-fg)' }}
+      >
         {target}
       </mark>
       {after}

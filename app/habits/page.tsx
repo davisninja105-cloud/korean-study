@@ -3,9 +3,12 @@
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
 import HabitHeatmap from '@/components/HabitHeatmap'
+import ProgressRing from '@/components/ProgressRing'
+import ProficiencyArc from '@/components/ProficiencyArc'
 import {
   computeStreaks,
   computeHabitStats,
+  computeHabitInsight,
   habitDateStr,
   shiftDate,
   formatDuration,
@@ -34,6 +37,7 @@ export default function HabitsPage() {
   const [days, setDays] = useState<DayRecord[] | null>(null)
   const [today, setToday] = useState('')
   const [goal, setGoal] = useState(DEFAULT_GOAL_SECONDS)
+  const [masteredCount, setMasteredCount] = useState<number | null>(null)
 
   useEffect(() => {
     fetch('/api/activity')
@@ -45,6 +49,11 @@ export default function HabitsPage() {
         setGoal(d.dailyGoalSeconds ?? DEFAULT_GOAL_SECONDS)
       })
       .catch(() => { setToday(habitDateStr(DEFAULT_DAY_START_HOUR)); setDays([]) })
+
+    fetch('/api/stats')
+      .then((r) => r.json())
+      .then((d) => { if (typeof d.masteredCount === 'number') setMasteredCount(d.masteredCount) })
+      .catch(() => {})
   }, [])
 
   const { current, longest, todaySeconds } = useMemo(
@@ -90,6 +99,10 @@ export default function HabitsPage() {
 
   const todayPct = Math.min(100, goal > 0 ? Math.round((todaySeconds / goal) * 100) : 0)
   const goalLinePct = maxTrendSecs > 0 ? Math.round((goal / maxTrendSecs) * 100) : 0
+  const insight = useMemo(
+    () => computeHabitInsight(days ?? [], today, goal),
+    [days, today, goal]
+  )
 
   if (days === null) {
     return (
@@ -109,29 +122,29 @@ export default function HabitsPage() {
         </Link>
       </div>
 
-      {/* Streak hero + today progress */}
+      {/* Streak hero + today progress ring */}
       <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-4">
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-3xl font-bold text-gray-800 dark:text-gray-100">
               🔥 {current} day{current !== 1 ? 's' : ''}
             </p>
             <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">
-              Current streak
+              Current streak · longest {longest}d
+            </p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+              Today: {formatDuration(todaySeconds)} / {formatDuration(goal)}
             </p>
           </div>
-          <div className="text-right">
-            <p className="text-xl font-semibold text-gray-600 dark:text-gray-300">{longest}</p>
-            <p className="text-sm text-gray-400 dark:text-gray-500">Longest streak</p>
-          </div>
-        </div>
-        <div>
-          <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
-            <span>Today — {Math.round(goal / 60)} min goal</span>
-            <span>{formatDuration(todaySeconds)} / {formatDuration(goal)}</span>
-          </div>
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5">
-            <div className="bg-blue-500 h-2.5 rounded-full transition-all" style={{ width: `${todayPct}%` }} />
+          <div className="flex flex-col items-center gap-1 shrink-0">
+            <ProgressRing
+              pct={todayPct}
+              size={80}
+              strokeWidth={7}
+              color="var(--reward)"
+              aria-label={`Today's goal: ${todayPct}% complete`}
+            />
+            <p className="text-xs text-gray-400 dark:text-gray-500">{Math.round(goal / 60)} min goal</p>
           </div>
         </div>
       </section>
@@ -234,16 +247,22 @@ export default function HabitsPage() {
         )}
         <div className="flex gap-3 text-xs text-gray-400 dark:text-gray-500">
           <span className="flex items-center gap-1">
-            <span className="inline-block w-3 h-3 rounded-sm bg-blue-500" /> Goal met
+            <span className="inline-block w-3 h-3 rounded-sm" style={{ background: 'var(--reward)' }} /> Goal met
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block w-3 h-3 rounded-sm bg-blue-300 dark:bg-blue-500/40" /> Partial
+            <span className="inline-block w-3 h-3 rounded-sm bg-orange-300 dark:bg-orange-500/40" /> Partial
           </span>
           <span className="flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded-sm bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" /> No study
           </span>
         </div>
+        {insight && (
+          <p className="text-sm text-gray-500 dark:text-gray-400 italic mt-1">{insight}</p>
+        )}
       </section>
+
+      {/* Proficiency arc */}
+      {masteredCount !== null && <ProficiencyArc masteredCount={masteredCount} />}
 
       <p className="text-xs text-gray-400 dark:text-gray-500 text-center">
         <Link href="/settings" className="underline underline-offset-2 hover:text-gray-600 dark:hover:text-gray-300">

@@ -5,7 +5,9 @@ import { StudyMode, FlashcardSubMode } from './ModeSelector'
 import { habitDateStr, DEFAULT_DAY_START_HOUR, nextHabitDayStart } from '@/lib/habit'
 import HighlightedSentence from './HighlightedSentence'
 import { sentenceMatch, blankSentence } from '@/lib/sentence-match'
-import { previewIntervals } from '@/lib/fsrs'
+import { previewIntervalLabels } from '@/lib/fsrs'
+import { haptic } from '@/lib/haptics'
+import ProgressRing from './ProgressRing'
 
 interface Sentence {
   id: string
@@ -139,7 +141,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   // "See another example →": cycles through a card's extra sentences on the reveal side
   const [exampleOffset, setExampleOffset] = useState(0)
   // Interval hints for FSRS rating buttons (computed on reveal, cleared on advance)
-  const [intervalHints, setIntervalHints] = useState<[string, string, string, string] | null>(null)
+  const [intervalHints, setIntervalHints] = useState<{ short: string; mastery: string }[] | null>(null)
   // Undo: track whether the last review can be undone
   const [canUndo, setCanUndo] = useState(false)
   const undoRef = useRef<{
@@ -350,6 +352,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     const current = queue[0]
     if (!current) return
 
+    haptic('selection')
     reviewBuffer.current += 1
     const isCorrect = rating >= 3
     // Capture stats before setStats (async) — used for inline recompute and undo snapshot.
@@ -436,8 +439,9 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
   const handleReveal = () => {
     setRevealed(true)
+    haptic('selection')
     if (item.kind === 'real' && item.card.review) {
-      setIntervalHints(previewIntervals(item.card.review))
+      setIntervalHints(previewIntervalLabels(item.card.review))
     }
   }
 
@@ -487,10 +491,10 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       onKeyDown={handleKeyDown}
       className="flex flex-col items-center gap-6 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] w-full max-w-xl mx-auto outline-none"
     >
-      {/* Progress */}
+      {/* Header: mode label + controls */}
       <div className="flex justify-between items-center w-full text-sm text-gray-400 dark:text-gray-500">
         <span className="capitalize">
-          {stats.reviewed} reviewed · {queue.length} left · {isPractice ? 'AI Practice' : mode.replace('-', ' ')}
+          {isPractice ? 'AI Practice' : mode.replace('-', ' ')}
         </span>
         <div className="flex items-center gap-1">
           {canUndo && (
@@ -510,106 +514,110 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           </button>
         </div>
       </div>
-      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-        <div
-          className="bg-blue-500 h-2 rounded-full transition-all"
-          style={{ width: `${progressPct}%` }}
+      {/* Progress ring */}
+      <div className="flex items-center gap-3 w-full">
+        <ProgressRing
+          pct={progressPct}
+          size={44}
+          strokeWidth={4}
+          color="var(--button)"
+          aria-label={`Session progress: ${Math.round(progressPct)}%`}
         />
+        <p className="text-sm text-gray-400 dark:text-gray-500">
+          {stats.reviewed} reviewed · {queue.length} left
+        </p>
       </div>
 
-      {/* Card */}
-      <div className="w-full bg-white dark:bg-gray-800 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
-        <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
-          {currentCard.type}
-        </span>
-
-        {/* ── Flashcard mode ── */}
-        {mode === 'flashcard' && (
-          <>
-            {chosenSentence ? (
-              /* Sentence-context front */
-              <>
-                {!revealed ? (
-                  /* FRONT — sentence context */
+      {/* Card — flashcard mode uses 3D flip */}
+      {mode === 'flashcard' ? (
+        <div className="card-flip-container w-full">
+          <div className={`card-flip-inner ${revealed ? 'flipped' : ''}`}>
+            {/* ── Front face ── */}
+            <div className="card-flip-front w-full bg-white dark:bg-gray-800 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
+              <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
+                {currentCard.type}
+              </span>
+              {chosenSentence ? (
+                flashcardSubMode === 'recall' && recallBlanked ? (
                   <>
-                    {flashcardSubMode === 'recall' && recallBlanked ? (
-                      /* Recall: sentence with target blanked — retrieve before revealing */
-                      <>
-                        <p className="text-2xl text-gray-800 dark:text-gray-100 font-medium text-center leading-relaxed">
-                          {recallBlanked}
-                        </p>
-                        <p className="text-xs text-gray-400 dark:text-gray-500 text-center">Recall the missing word</p>
-                      </>
-                    ) : (
-                      /* Exposure (default) or Recall-degraded: sentence with target highlighted */
-                      <>
-                        <HighlightedSentence
-                          korean={chosenSentence.korean}
-                          targetForm={chosenSentence.targetForm}
-                          className="text-2xl text-gray-800 dark:text-gray-100 font-medium text-center leading-relaxed"
-                        />
-                        <p className="text-xs text-gray-400 dark:text-gray-500 text-center">Recall the meaning of the highlighted part</p>
-                      </>
-                    )}
+                    <p className="hangul-sentence text-gray-800 dark:text-gray-100 font-medium text-center text-2xl">
+                      {recallBlanked}
+                    </p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500 text-center">Recall the missing word</p>
                   </>
                 ) : (
-                  /* FLIP — sentence stays visible + bare word + meaning */
-                  <div className="animate-reveal flex flex-col items-center gap-4 w-full">
-                    {/* Sentence with target still highlighted (context preserved) */}
-                    {displayedSentence && (
-                      <HighlightedSentence
-                        korean={displayedSentence.korean}
-                        targetForm={displayedSentence.targetForm}
-                        className="text-xl text-gray-700 dark:text-gray-200 text-center leading-relaxed"
-                      />
-                    )}
-                    <hr className="w-full border-gray-200 dark:border-gray-700" />
-                    {/* Bare word / pattern */}
-                    <p className="text-3xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
-                    <p className="text-xl text-gray-600 dark:text-gray-300 text-center">{currentCard.back}</p>
-                    {/* Translation of the displayed sentence */}
-                    {displayedSentence?.translation && (
-                      <p className="text-sm text-gray-400 dark:text-gray-500 text-center italic">
-                        &ldquo;{displayedSentence.translation}&rdquo;
-                      </p>
-                    )}
-                    {currentCard.notes && (
-                      <p className="text-sm text-gray-400 dark:text-gray-500 text-center italic">{currentCard.notes}</p>
-                    )}
-                    {/* "See another example →" — only when card has >1 sentence */}
-                    {cardSentences.length > 1 && (
-                      <button
-                        onClick={() => setExampleOffset((o) => o + 1)}
-                        className="text-xs text-button hover:text-button-hover hover:underline mt-1"
-                      >
-                        See another example →
-                      </button>
-                    )}
-                  </div>
-                )}
-              </>
-            ) : (
-              /* No sentence — unchanged plain front → back */
-              <>
-                <p className="text-4xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
-                {revealed && (
-                  <div className="animate-reveal flex flex-col items-center gap-4 w-full">
-                    <hr className="w-full border-gray-200 dark:border-gray-700" />
-                    <p className="text-xl text-gray-600 dark:text-gray-300 text-center">{currentCard.back}</p>
-                    {currentCard.notes && (
-                      <p className="text-sm text-gray-400 dark:text-gray-500 text-center italic">{currentCard.notes}</p>
-                    )}
-                  </div>
-                )}
-              </>
-            )}
-          </>
-        )}
+                  <>
+                    <HighlightedSentence
+                      korean={chosenSentence.korean}
+                      targetForm={chosenSentence.targetForm}
+                      className="font-medium text-center text-2xl text-gray-800 dark:text-gray-100"
+                    />
+                    <p className="text-xs text-gray-400 dark:text-gray-500 text-center">Recall the meaning of the highlighted part</p>
+                  </>
+                )
+              ) : (
+                <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+              )}
+            </div>
+
+            {/* ── Back face ── */}
+            <div className="card-flip-back w-full bg-white dark:bg-gray-800 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
+              <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
+                {currentCard.type}
+              </span>
+              {chosenSentence ? (
+                <div className="flex flex-col items-center gap-4 w-full">
+                  {displayedSentence && (
+                    <HighlightedSentence
+                      korean={displayedSentence.korean}
+                      targetForm={displayedSentence.targetForm}
+                      className="text-xl text-gray-700 dark:text-gray-200 text-center"
+                    />
+                  )}
+                  <hr className="w-full border-gray-200 dark:border-gray-700" />
+                  <p className="hangul text-3xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                  <p className="text-xl text-gray-600 dark:text-gray-300 text-center">{currentCard.back}</p>
+                  {displayedSentence?.translation && (
+                    <p className="text-sm text-gray-400 dark:text-gray-500 text-center italic hangul-gloss">
+                      &ldquo;{displayedSentence.translation}&rdquo;
+                    </p>
+                  )}
+                  {currentCard.notes && (
+                    <p className="text-sm text-gray-400 dark:text-gray-500 text-center italic">{currentCard.notes}</p>
+                  )}
+                  {cardSentences.length > 1 && (
+                    <button
+                      onClick={() => setExampleOffset((o) => o + 1)}
+                      className="text-xs text-button hover:text-button-hover hover:underline mt-1"
+                    >
+                      See another example →
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center gap-4 w-full">
+                  <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                  <hr className="w-full border-gray-200 dark:border-gray-700" />
+                  <p className="text-xl text-gray-600 dark:text-gray-300 text-center">{currentCard.back}</p>
+                  {currentCard.notes && (
+                    <p className="text-sm text-gray-400 dark:text-gray-500 text-center italic">{currentCard.notes}</p>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Non-flashcard modes — no flip */
+        <div className="w-full bg-white dark:bg-gray-800 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
+          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
+            {currentCard.type}
+          </span>
 
         {/* ── Multiple choice mode ── */}
         {mode === 'multiple-choice' && (
           <>
-            <p className="text-4xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+            <p className="hangul text-4xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
             <div className="grid grid-cols-2 gap-3 w-full mt-4">
               {mcOptions.map((opt, i) => {
                 const isCorrect = opt === currentCard.back
@@ -659,7 +667,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           <>
             {fillSentence !== null ? (
               <>
-                <p className="text-2xl text-gray-800 dark:text-gray-100 font-medium text-center leading-relaxed">
+                <p className="hangul-sentence text-gray-800 dark:text-gray-100 font-medium text-center">
                   {fillSentence}
                 </p>
                 {fillTranslation && (
@@ -696,6 +704,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           </>
         )}
       </div>
+      )}
 
       {/* ── Action bar (sticky above bottom nav on mobile) ── */}
       <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] sm:bottom-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm -mx-4 px-4 pt-2 pb-2 w-[calc(100%+2rem)]">
@@ -709,22 +718,38 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
         )}
 
         {mode === 'flashcard' && revealed && (
-          <div className="flex gap-3 w-full animate-reveal">
-            <button onClick={() => submitReview(1)} className="flex-1 min-h-11 py-2 rounded-xl font-semibold text-sm bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-500/30 transition-colors flex flex-col items-center justify-center">
-              <span>Again</span>
-              {intervalHints && <span className="text-[10px] font-normal opacity-70 mt-0.5">{intervalHints[0]}</span>}
+          <div className="flex gap-2 w-full animate-reveal">
+            {/* Again — softer warning */}
+            <button
+              onClick={() => submitReview(1)}
+              className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex flex-col items-center justify-center gap-0.5"
+            >
+              <span className="font-semibold">Again</span>
+              {intervalHints && <span className="text-[10px] opacity-60 text-center leading-tight">{intervalHints[0].short}</span>}
             </button>
-            <button onClick={() => submitReview(2)} className="flex-1 min-h-11 py-2 rounded-xl font-semibold text-sm bg-yellow-100 text-yellow-600 dark:bg-yellow-500/20 dark:text-yellow-300 hover:bg-yellow-200 dark:hover:bg-yellow-500/30 transition-colors flex flex-col items-center justify-center">
-              <span>Hard</span>
-              {intervalHints && <span className="text-[10px] font-normal opacity-70 mt-0.5">{intervalHints[1]}</span>}
+            {/* Hard — tertiary */}
+            <button
+              onClick={() => submitReview(2)}
+              className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex flex-col items-center justify-center gap-0.5"
+            >
+              <span className="font-semibold">Hard</span>
+              {intervalHints && <span className="text-[10px] opacity-60 text-center leading-tight">{intervalHints[1].short}</span>}
             </button>
-            <button onClick={() => submitReview(3)} className="flex-1 min-h-11 py-2 rounded-xl font-semibold text-sm bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-500/30 transition-colors flex flex-col items-center justify-center">
+            {/* Good — primary */}
+            <button
+              onClick={() => submitReview(3)}
+              className="flex-[1.5] min-h-14 py-2 px-2 rounded-xl font-semibold text-sm bg-green-500 text-white hover:bg-green-600 transition-colors flex flex-col items-center justify-center gap-0.5 shadow-sm"
+            >
               <span>Good</span>
-              {intervalHints && <span className="text-[10px] font-normal opacity-70 mt-0.5">{intervalHints[2]}</span>}
+              {intervalHints && <span className="text-[10px] font-normal opacity-80 text-center leading-tight">{intervalHints[2].mastery}</span>}
             </button>
-            <button onClick={() => submitReview(4)} className="flex-1 min-h-11 py-2 rounded-xl font-semibold text-sm bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-300 hover:bg-blue-200 dark:hover:bg-blue-500/30 transition-colors flex flex-col items-center justify-center">
-              <span>Easy</span>
-              {intervalHints && <span className="text-[10px] font-normal opacity-70 mt-0.5">{intervalHints[3]}</span>}
+            {/* Easy — teal tertiary */}
+            <button
+              onClick={() => submitReview(4)}
+              className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-teal-50 text-teal-600 dark:bg-teal-500/10 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-500/20 transition-colors flex flex-col items-center justify-center gap-0.5"
+            >
+              <span className="font-semibold">Easy</span>
+              {intervalHints && <span className="text-[10px] opacity-60 text-center leading-tight">{intervalHints[3].short}</span>}
             </button>
           </div>
         )}
@@ -749,13 +774,13 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
         {mode === 'fill-blank' && revealed && (
           <div className="flex gap-3 w-full animate-reveal">
-            <button onClick={() => submitReview(1)} className="flex-1 min-h-11 py-2 rounded-xl font-semibold text-sm bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-300 hover:bg-red-200 dark:hover:bg-red-500/30 transition-colors flex flex-col items-center justify-center">
-              <span>Wrong</span>
-              {intervalHints && <span className="text-[10px] font-normal opacity-70 mt-0.5">{intervalHints[0]}</span>}
+            <button onClick={() => submitReview(1)} className="flex-1 min-h-14 py-2 rounded-xl font-medium text-sm bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex flex-col items-center justify-center gap-0.5">
+              <span className="font-semibold">Wrong</span>
+              {intervalHints && <span className="text-[10px] opacity-60">{intervalHints[0].short}</span>}
             </button>
-            <button onClick={() => submitReview(3)} className="flex-1 min-h-11 py-2 rounded-xl font-semibold text-sm bg-green-100 text-green-600 dark:bg-green-500/20 dark:text-green-300 hover:bg-green-200 dark:hover:bg-green-500/30 transition-colors flex flex-col items-center justify-center">
+            <button onClick={() => submitReview(3)} className="flex-[1.5] min-h-14 py-2 rounded-xl font-semibold text-sm bg-green-500 text-white hover:bg-green-600 transition-colors flex flex-col items-center justify-center gap-0.5 shadow-sm">
               <span>Correct</span>
-              {intervalHints && <span className="text-[10px] font-normal opacity-70 mt-0.5">{intervalHints[2]}</span>}
+              {intervalHints && <span className="text-[10px] font-normal opacity-80">{intervalHints[2].mastery}</span>}
             </button>
           </div>
         )}

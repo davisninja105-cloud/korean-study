@@ -32,30 +32,44 @@ export default function HabitHeatmap({ days, today, goal, weeks = 13 }: Props) {
     return cols
   }, [today, weeks])
 
-  const cellClass = (date: string) => {
-    if (date > today) return 'w-3 h-3 rounded-sm bg-transparent'
+  const cellStyle = (date: string): { className: string; style?: React.CSSProperties } => {
+    if (date > today) return { className: 'w-3 h-3 rounded-sm bg-transparent' }
     const secs = secByDate.get(date) ?? 0
-    let base = 'w-3 h-3 rounded-sm '
-    if (secs >= goal) base += 'bg-blue-500'
-    else if (secs > 0) base += 'bg-blue-300 dark:bg-blue-500/40'
-    else base += 'bg-gray-100 dark:bg-gray-700'
-    if (date === today) base += ' ring-2 ring-blue-400 ring-offset-1 ring-offset-white dark:ring-offset-gray-800'
-    return base
+    let className = 'w-3 h-3 rounded-sm '
+    let style: React.CSSProperties | undefined
+
+    if (secs >= goal) {
+      className += ''
+      style = { background: 'var(--reward)' }
+    } else if (secs > 0) {
+      className += 'bg-orange-300 dark:bg-orange-500/40'
+    } else {
+      className += 'bg-gray-100 dark:bg-gray-700'
+    }
+    if (date === today) {
+      className += ' ring-2 ring-offset-1 ring-offset-white dark:ring-offset-gray-800'
+      style = { ...style, outlineColor: 'var(--reward)', boxShadow: '0 0 0 2px var(--reward)' }
+    }
+    return { className, style }
   }
 
   return (
     <div className="flex gap-1 overflow-x-auto py-1">
       {columns.map((col, ci) => (
         <div key={ci} className="flex flex-col gap-1">
-          {col.map((date) => (
-            <div
-              key={date}
-              role="img"
-              aria-label={`${date}: ${formatDuration(secByDate.get(date) ?? 0)}`}
-              className={cellClass(date)}
-              title={`${date}: ${formatDuration(secByDate.get(date) ?? 0)}`}
-            />
-          ))}
+          {col.map((date) => {
+            const { className, style } = cellStyle(date)
+            return (
+              <div
+                key={date}
+                role="img"
+                aria-label={`${date}: ${formatDuration(secByDate.get(date) ?? 0)}`}
+                className={className}
+                style={style}
+                title={`${date}: ${formatDuration(secByDate.get(date) ?? 0)}`}
+              />
+            )
+          })}
         </div>
       ))}
     </div>

@@ -21,10 +21,12 @@ export default function SettingsPage() {
   const [dayStartHour, setDayStartHour] = useState(2)
   const [sessionSize, setSessionSize] = useState(20)
   const [buttonColor, setButtonColor] = useState(DEFAULT_BUTTON_COLOR)
+  const [readingTextScale, setReadingTextScale] = useState(1)
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const colorSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scaleSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     fetch('/api/settings')
@@ -34,12 +36,13 @@ export default function SettingsPage() {
         setDayStartHour(d.dayStartHour ?? 2)
         setSessionSize(d.sessionSize ?? 20)
         setButtonColor(d.buttonColor ?? DEFAULT_BUTTON_COLOR)
+        setReadingTextScale(d.readingTextScale ?? 1)
         setLoaded(true)
       })
       .catch(() => setLoaded(true))
   }, [])
 
-  const save = async (patch: { dailyGoalSeconds?: number; dayStartHour?: number; sessionSize?: number; buttonColor?: string }) => {
+  const save = async (patch: { dailyGoalSeconds?: number; dayStartHour?: number; sessionSize?: number; buttonColor?: string; readingTextScale?: number }) => {
     setSaving(true)
     setSaved(false)
     try {
@@ -53,11 +56,19 @@ export default function SettingsPage() {
       if (typeof d.dayStartHour === 'number') setDayStartHour(d.dayStartHour)
       if (typeof d.sessionSize === 'number') setSessionSize(d.sessionSize)
       if (typeof d.buttonColor === 'string') setButtonColor(d.buttonColor)
+      if (typeof d.readingTextScale === 'number') setReadingTextScale(d.readingTextScale)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } finally {
       setSaving(false)
     }
+  }
+
+  const handleScaleChange = (val: number) => {
+    setReadingTextScale(val)
+    document.documentElement.style.setProperty('--reading-scale', String(val))
+    if (scaleSaveTimer.current) clearTimeout(scaleSaveTimer.current)
+    scaleSaveTimer.current = setTimeout(() => save({ readingTextScale: val }), 400)
   }
 
   const handleColorChange = (hex: string) => {
@@ -161,6 +172,40 @@ export default function SettingsPage() {
             ))}
           </select>
         </label>
+      </section>
+
+      {/* Reading text size */}
+      <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-3">
+        <div>
+          <h2 className="font-semibold text-gray-800 dark:text-gray-100">Korean text size</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            Scale Korean sentence text in study mode. Default is 1×.
+          </p>
+        </div>
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min="0.9"
+              max="1.4"
+              step="0.1"
+              value={readingTextScale}
+              onChange={(e) => handleScaleChange(Number(e.target.value))}
+              className="flex-1"
+              aria-label="Korean text size scale"
+            />
+            <span className="text-sm font-mono text-gray-600 dark:text-gray-300 w-8 text-right">
+              {readingTextScale.toFixed(1)}×
+            </span>
+          </div>
+          {/* Live preview */}
+          <p
+            className="hangul-sentence text-gray-700 dark:text-gray-200 bg-gray-50 dark:bg-gray-700/50 rounded-lg px-4 py-3"
+            style={{ fontSize: `calc(1rem * ${readingTextScale})` }}
+          >
+            저는 매일 한국어를 공부해요.
+          </p>
+        </div>
       </section>
 
       {/* Button color */}

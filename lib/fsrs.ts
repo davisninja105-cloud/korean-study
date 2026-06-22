@@ -29,12 +29,29 @@ function formatInterval(due: Date, now: Date): string {
   const diffHr = Math.round(diffMin / 60)
   if (diffHr < 24) return `${diffHr}h`
   const diffDays = Math.round(diffHr / 24)
-  return `${diffDays}d`
+  if (diffDays < 30) return `${diffDays}d`
+  const diffWk = Math.round(diffDays / 7)
+  if (diffDays < 365) return `${diffWk}w`
+  return `${Math.round(diffDays / 30)}mo`
 }
 
-// Returns human-readable next-interval labels for grades 1–4 (Again/Hard/Good/Easy).
-// Must be called from event handlers, not during render (calls new Date()).
-export function previewIntervals(review: PartialReview | null | undefined): [string, string, string, string] {
+// Returns mastery-language copy for a given interval, e.g. "Memory strengthening → 3d".
+function masteryPhrase(due: Date, now: Date): string {
+  const short = formatInterval(due, now)
+  const diffMs = due.getTime() - now.getTime()
+  const diffDays = diffMs / 86_400_000
+  if (diffDays < 1)    return `Again → ${short}`
+  if (diffDays < 7)    return `Memory strengthening → ${short}`
+  if (diffDays < 30)   return `Memory solidifying → ${short}`
+  if (diffDays < 180)  return `Long-term memory → ${short}`
+  return `Mastered — next in ${short}`
+}
+
+// Returns [short, mastery] label pair for each grade (Again/Hard/Good/Easy).
+// Must be called from event handlers, not during render.
+export function previewIntervalLabels(
+  review: PartialReview | null | undefined,
+): { short: string; mastery: string }[] {
   const now = new Date()
   const lastReview = review ? toDate(review.lastReview) : null
 
@@ -60,8 +77,14 @@ export function previewIntervals(review: PartialReview | null | undefined): [str
   const grades = [Rating.Again, Rating.Hard, Rating.Good, Rating.Easy] as Grade[]
   return grades.map((grade) => {
     const result = fsrs.next(card, now, grade)
-    return formatInterval(result.card.due, now)
-  }) as [string, string, string, string]
+    return { short: formatInterval(result.card.due, now), mastery: masteryPhrase(result.card.due, now) }
+  })
+}
+
+// Returns human-readable next-interval labels for grades 1–4 (Again/Hard/Good/Easy).
+// Kept for backward compatibility; prefer previewIntervalLabels for new code.
+export function previewIntervals(review: PartialReview | null | undefined): [string, string, string, string] {
+  return previewIntervalLabels(review).map((l) => l.short) as [string, string, string, string]
 }
 
 interface CardReviewFields {

@@ -5,11 +5,13 @@ import Link from 'next/link'
 import StatsBar from '@/components/StatsBar'
 import HabitTracker from '@/components/HabitTracker'
 import SyncPanel from '@/components/SyncPanel'
+import ProficiencyArc from '@/components/ProficiencyArc'
 
 interface Stats {
   totalCards: number
   dueCards: number
   totalLessons: number
+  masteredCount: number
 }
 
 export default function Home() {
@@ -56,6 +58,10 @@ export default function Home() {
       ) : null}
 
       <SyncPanel onSynced={loadStats} />
+
+      {stats && typeof stats.masteredCount === 'number' && (
+        <ProficiencyArc masteredCount={stats.masteredCount} />
+      )}
     </div>
   )
 }

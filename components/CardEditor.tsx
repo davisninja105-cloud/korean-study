@@ -107,7 +107,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
         value={front}
         onChange={(e) => setFront(e.target.value)}
         placeholder="Front (Korean)"
-        className={inputCls}
+        className={`hangul ${inputCls}`}
       />
       <input
         value={back}
@@ -146,7 +146,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
                 value={s.korean}
                 onChange={(e) => updateSentence(idx, 'korean', e.target.value)}
                 placeholder="Korean sentence (e.g. 저는 학교에 가요)"
-                className={inputCls}
+                className={`hangul ${inputCls}`}
               />
 
               {/* Target form + delete button */}

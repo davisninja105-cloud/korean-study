@@ -64,26 +64,54 @@ export interface StreakInfo {
   longest: number
   todaySeconds: number
   metSet: Set<string>
+  freezeBudget: number
+}
+
+// Returns the number of freeze tokens available: 1 per fully-met 7-day block
+// in the last 90 days. Each token can bridge one missed day in the current streak.
+export function computeFreezeBudget(metSet: Set<string>, todayStr: string): number {
+  let budget = 0
+  // Walk back through the last 90 days in 7-day windows.
+  for (let week = 0; week < 13; week++) {
+    const windowEnd = shiftDate(todayStr, -(week * 7))
+    let allMet = true
+    for (let d = 0; d < 7; d++) {
+      if (!metSet.has(shiftDate(windowEnd, -d))) { allMet = false; break }
+    }
+    if (allMet) budget++
+  }
+  return budget
 }
 
 // Compute current/longest streak (in days meeting `goalSeconds`) plus today's
-// seconds and the set of met days (for heatmap shading).
+// seconds and the set of met days (for heatmap shading). Streak forgiveness:
+// freeze tokens bridge single missed days (1 token per frozen day).
 export function computeStreaks(days: DayRecord[], todayStr: string, goalSeconds: number): StreakInfo {
   const secByDate = new Map(days.map((d) => [d.date, d.seconds]))
   const metSet = new Set<string>()
   for (const d of days) if (d.seconds >= goalSeconds) metSet.add(d.date)
 
-  // Current streak: count back from today (or yesterday, if today isn't met yet
-  // so an in-progress day doesn't read as a broken streak).
+  const freezeBudget = computeFreezeBudget(metSet, todayStr)
+  let remainingFreezes = freezeBudget
+
+  // Current streak: count back from today, bridging single missed days with freezes.
   let current = 0
   let cursor = metSet.has(todayStr) ? todayStr : shiftDate(todayStr, -1)
-  while (metSet.has(cursor)) {
-    current++
-    cursor = shiftDate(cursor, -1)
+  while (true) {
+    if (metSet.has(cursor)) {
+      current++
+      cursor = shiftDate(cursor, -1)
+    } else if (remainingFreezes > 0) {
+      // Bridge this single missed day.
+      remainingFreezes--
+      current++
+      cursor = shiftDate(cursor, -1)
+    } else {
+      break
+    }
   }
 
-  // Longest streak: from each run-start (a met day whose previous day isn't met),
-  // count forward.
+  // Longest streak (without forgiveness, for "personal best" display).
   let longest = 0
   for (const date of metSet) {
     if (!metSet.has(shiftDate(date, -1))) {
@@ -94,7 +122,52 @@ export function computeStreaks(days: DayRecord[], todayStr: string, goalSeconds:
     }
   }
 
-  return { current, longest, todaySeconds: secByDate.get(todayStr) ?? 0, metSet }
+  return { current, longest, todaySeconds: secByDate.get(todayStr) ?? 0, metSet, freezeBudget }
+}
+
+// Milestones that trigger a celebration overlay (7/30/100/365 days).
+const MILESTONES = [7, 30, 100, 365]
+
+// Returns the milestone just crossed, or null if none.
+export function checkMilestone(current: number, previous: number): number | null {
+  for (const m of MILESTONES) {
+    if (previous < m && current >= m) return m
+  }
+  return null
+}
+
+// Returns one human-readable insight sentence about the user's habit data.
+export function computeHabitInsight(days: DayRecord[], todayStr: string, goalSeconds: number): string {
+  if (days.length === 0) return ''
+
+  const metSet = new Set<string>()
+  for (const d of days) if (d.seconds >= goalSeconds) metSet.add(d.date)
+
+  // Best weekday by total study seconds (0=Sun...6=Sat).
+  const secsByDow = Array<number>(7).fill(0)
+  for (const d of days) {
+    const [y, m, day] = d.date.split('-').map(Number)
+    const dow = new Date(Date.UTC(y, m - 1, day)).getUTCDay()
+    secsByDow[dow] += d.seconds
+  }
+  const bestDow = secsByDow.indexOf(Math.max(...secsByDow))
+  const DOW_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
+  // Days studied in last 90.
+  let studiedIn90 = 0
+  for (let i = 0; i < 90; i++) {
+    if (metSet.has(shiftDate(todayStr, -i))) studiedIn90++
+  }
+
+  // Current streak length.
+  let streak = 0
+  let cursor = metSet.has(todayStr) ? todayStr : shiftDate(todayStr, -1)
+  while (metSet.has(cursor)) { streak++; cursor = shiftDate(cursor, -1) }
+
+  if (streak >= 7) return `You've studied ${streak} days in a row.`
+  if (studiedIn90 > 0) return `You've studied ${studiedIn90} of the last 90 days.`
+  if (secsByDow[bestDow] > 0) return `Your best study day is ${DOW_NAMES[bestDow]}.`
+  return ''
 }
 
 export interface HabitStats {
