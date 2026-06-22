@@ -39,7 +39,7 @@ export default function LoginPage() {
       <img src="/icon-192.png" alt="" className="w-16 h-16 rounded-2xl shadow-md" />
       <div className="text-center">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Korean Study</h1>
-        <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Enter your password to continue</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Enter your password to continue</p>
       </div>
       <form onSubmit={submit} className="flex flex-col gap-3 w-full max-w-xs">
         <input

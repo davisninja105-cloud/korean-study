@@ -7,6 +7,7 @@ import HighlightedSentence from './HighlightedSentence'
 import { sentenceMatch, blankSentence } from '@/lib/sentence-match'
 import { previewIntervalLabels } from '@/lib/fsrs'
 import { haptic } from '@/lib/haptics'
+import { typeBadgeClass } from '@/lib/card-style'
 import ProgressRing from './ProgressRing'
 
 interface Sentence {
@@ -348,14 +349,8 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     : hasCloze ? realCard!.clozeAnswer! : currentCard.front
   const fillCorrect = normalizeAnswer(fillInput) === normalizeAnswer(fillAnswer)
 
-  // ── Type badge colours ────────────────────────────────────────────────────
-  const typeBadgeColor =
-    currentCard.type === 'vocabulary'     ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300' :
-    currentCard.type === 'grammar'        ? 'bg-purple-100 text-purple-600 dark:bg-purple-500/15 dark:text-purple-300' :
-    currentCard.type === 'example-sentence' ? 'bg-teal-100 text-teal-600 dark:bg-teal-500/15 dark:text-teal-300' :
-    currentCard.type === 'fill-blank'     ? 'bg-orange-100 text-orange-600 dark:bg-orange-500/15 dark:text-orange-300' :
-    currentCard.type === 'transformation' ? 'bg-pink-100 text-pink-600 dark:bg-pink-500/15 dark:text-pink-300' :
-    'bg-green-100 text-green-600 dark:bg-green-500/15 dark:text-green-300'
+  // ── Type badge colours (single source of truth: lib/card-style.ts) ──────────
+  const typeBadgeColor = typeBadgeClass(currentCard.type)
 
   // ── FSRS review submission ────────────────────────────────────────────────
   // FSRS ratings: 1=Again, 2=Hard, 3=Good, 4=Easy
@@ -503,7 +498,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       className="flex flex-col items-center gap-6 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] w-full max-w-xl mx-auto outline-none"
     >
       {/* Header: mode label + controls */}
-      <div className="flex justify-between items-center w-full text-sm text-gray-400 dark:text-gray-500">
+      <div className="flex justify-between items-center w-full text-sm text-gray-500 dark:text-gray-400">
         <span className="capitalize">
           {isPractice ? 'AI Practice' : mode.replace('-', ' ')}
         </span>
@@ -534,7 +529,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           color="var(--button)"
           aria-label={`Session progress: ${Math.round(progressPct)}%`}
         />
-        <p className="text-sm text-gray-400 dark:text-gray-500">
+        <p className="text-sm text-gray-500 dark:text-gray-400">
           {stats.reviewed} reviewed · {queue.length} left
         </p>
       </div>
@@ -544,7 +539,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
         <div className="card-flip-container w-full">
           <div className={`card-flip-inner ${revealed ? 'flipped' : ''}`} style={{ height: cardHeight }}>
             {/* ── Front face ── */}
-            <div ref={frontRef} className="card-flip-front w-full bg-white dark:bg-gray-800 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
+            <div ref={frontRef} className="card-flip-front w-full bg-surface-1 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
               <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
                 {currentCard.type}
               </span>
@@ -554,16 +549,17 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                     <p className="hangul-sentence text-gray-800 dark:text-gray-100 font-medium text-center text-2xl">
                       {recallBlanked}
                     </p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500 text-center">Recall the missing word</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 text-center">Recall the missing word</p>
                   </>
                 ) : (
                   <>
                     <HighlightedSentence
                       korean={chosenSentence.korean}
                       targetForm={chosenSentence.targetForm}
+                      cardType={currentCard.type}
                       className="font-medium text-center text-2xl text-gray-800 dark:text-gray-100"
                     />
-                    <p className="text-xs text-gray-400 dark:text-gray-500 text-center">Recall the meaning of the highlighted part</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 text-center">Recall the meaning of the highlighted part</p>
                   </>
                 )
               ) : (
@@ -572,7 +568,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
             </div>
 
             {/* ── Back face ── */}
-            <div ref={backRef} className="card-flip-back w-full bg-white dark:bg-gray-800 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
+            <div ref={backRef} className="card-flip-back w-full bg-surface-1 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
               <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
                 {currentCard.type}
               </span>
@@ -582,6 +578,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                     <HighlightedSentence
                       korean={displayedSentence.korean}
                       targetForm={displayedSentence.targetForm}
+                      cardType={currentCard.type}
                       className="text-xl text-gray-700 dark:text-gray-200 text-center"
                     />
                   )}
@@ -589,12 +586,12 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                   <p className="hangul text-3xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
                   <p className="text-xl text-gray-600 dark:text-gray-300 text-center">{currentCard.back}</p>
                   {displayedSentence?.translation && (
-                    <p className="text-sm text-gray-400 dark:text-gray-500 text-center italic hangul-gloss">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center italic hangul-gloss">
                       &ldquo;{displayedSentence.translation}&rdquo;
                     </p>
                   )}
                   {currentCard.notes && (
-                    <p className="text-sm text-gray-400 dark:text-gray-500 text-center italic">{currentCard.notes}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center italic">{currentCard.notes}</p>
                   )}
                   {cardSentences.length > 1 && (
                     <button
@@ -611,7 +608,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                   <hr className="w-full border-gray-200 dark:border-gray-700" />
                   <p className="text-xl text-gray-600 dark:text-gray-300 text-center">{currentCard.back}</p>
                   {currentCard.notes && (
-                    <p className="text-sm text-gray-400 dark:text-gray-500 text-center italic">{currentCard.notes}</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center italic">{currentCard.notes}</p>
                   )}
                 </div>
               )}
@@ -620,7 +617,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
         </div>
       ) : (
         /* Non-flashcard modes — no flip */
-        <div className="w-full bg-white dark:bg-gray-800 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
+        <div className="w-full bg-surface-1 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
           <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
             {currentCard.type}
           </span>
@@ -637,7 +634,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
                 let btnClass = 'border-2 rounded-xl p-3 min-h-11 text-sm font-medium transition-colors text-left'
                 if (!hasAnswered) {
-                  btnClass += ' border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:border-blue-400 hover:bg-blue-50 dark:hover:border-blue-500 dark:hover:bg-blue-500/10'
+                  btnClass += ' border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:border-button hover:bg-button-soft'
                 } else if (isCorrect) {
                   btnClass += ' border-green-500 bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-300'
                 } else if (isSelected) {
@@ -658,7 +655,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                     className={`relative ${btnClass}`}
                   >
                     {!hasAnswered && (
-                      <span className="absolute top-1 left-1.5 text-[10px] text-gray-400 dark:text-gray-500 font-mono leading-none select-none">
+                      <span className="absolute top-1 left-1.5 text-[10px] text-gray-500 dark:text-gray-400 font-mono leading-none select-none">
                         {i + 1}
                       </span>
                     )}
@@ -668,7 +665,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
               })}
             </div>
             {mcSelected && currentCard.notes && (
-              <p className="text-sm text-gray-400 dark:text-gray-500 text-center italic mt-2">{currentCard.notes}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 text-center italic mt-2">{currentCard.notes}</p>
             )}
           </>
         )}
@@ -682,9 +679,9 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                   {fillSentence}
                 </p>
                 {fillTranslation && (
-                  <p className="text-sm text-gray-400 dark:text-gray-500 text-center italic">{fillTranslation}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center italic">{fillTranslation}</p>
                 )}
-                <p className="text-xs text-gray-400 dark:text-gray-500 text-center">Fill in the blank (___)</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 text-center">Fill in the blank (___)</p>
               </>
             ) : (
               <>
@@ -698,7 +695,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
               onChange={(e) => setFillInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !revealed) handleReveal() }}
               placeholder="한국어로 입력하세요..."
-              className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg px-4 py-2 text-center text-xl focus:outline-none focus:ring-2 focus:ring-blue-300"
+              className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg px-4 py-2 text-center text-xl focus:outline-none focus:ring-2 focus:ring-button/50"
               disabled={revealed}
               autoFocus
             />
@@ -708,7 +705,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                   Correct answer: {fillAnswer}
                 </p>
                 {currentCard.notes && (
-                  <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">{currentCard.notes}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{currentCard.notes}</p>
                 )}
               </div>
             )}
@@ -718,7 +715,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       )}
 
       {/* ── Action bar (sticky above bottom nav on mobile) ── */}
-      <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] sm:bottom-2 bg-white/95 dark:bg-gray-900/95 backdrop-blur-sm -mx-4 px-4 pt-2 pb-2 w-[calc(100%+2rem)]">
+      <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] sm:bottom-2 bg-surface-1/95 backdrop-blur-md saturate-150 -mx-4 px-4 pt-2 pb-2 w-[calc(100%+2rem)]">
         {mode === 'flashcard' && !revealed && (
           <button
             onClick={handleReveal}
@@ -733,6 +730,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
             {/* Again — softer warning */}
             <button
               onClick={() => submitReview(1)}
+              aria-label={intervalHints ? `Again, review again in ${intervalHints[0].short}` : 'Again'}
               className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex flex-col items-center justify-center gap-0.5"
             >
               <span className="font-semibold">Again</span>
@@ -741,6 +739,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
             {/* Hard — tertiary */}
             <button
               onClick={() => submitReview(2)}
+              aria-label={intervalHints ? `Hard, review again in ${intervalHints[1].short}` : 'Hard'}
               className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex flex-col items-center justify-center gap-0.5"
             >
               <span className="font-semibold">Hard</span>
@@ -749,7 +748,8 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
             {/* Good — primary */}
             <button
               onClick={() => submitReview(3)}
-              className="flex-[1.5] min-h-14 py-2 px-2 rounded-xl font-semibold text-sm bg-green-500 text-white hover:bg-green-600 transition-colors flex flex-col items-center justify-center gap-0.5 shadow-sm"
+              aria-label={intervalHints ? `Good, ${intervalHints[2].mastery}` : 'Good'}
+              className="flex-[1.5] min-h-14 py-2 px-2 rounded-xl font-semibold text-sm bg-green-600 text-white hover:bg-green-700 transition-colors flex flex-col items-center justify-center gap-0.5 shadow-sm"
             >
               <span>Good</span>
               {intervalHints && <span className="text-[10px] font-normal opacity-80 text-center leading-tight">{intervalHints[2].mastery}</span>}
@@ -757,6 +757,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
             {/* Easy — teal tertiary */}
             <button
               onClick={() => submitReview(4)}
+              aria-label={intervalHints ? `Easy, review again in ${intervalHints[3].short}` : 'Easy'}
               className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-teal-50 text-teal-600 dark:bg-teal-500/10 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-500/20 transition-colors flex flex-col items-center justify-center gap-0.5"
             >
               <span className="font-semibold">Easy</span>
@@ -785,11 +786,11 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
         {mode === 'fill-blank' && revealed && (
           <div className="flex gap-3 w-full animate-reveal">
-            <button onClick={() => submitReview(1)} className="flex-1 min-h-14 py-2 rounded-xl font-medium text-sm bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex flex-col items-center justify-center gap-0.5">
+            <button onClick={() => submitReview(1)} aria-label={intervalHints ? `Wrong, review again in ${intervalHints[0].short}` : 'Wrong'} className="flex-1 min-h-14 py-2 rounded-xl font-medium text-sm bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex flex-col items-center justify-center gap-0.5">
               <span className="font-semibold">Wrong</span>
               {intervalHints && <span className="text-[10px] opacity-60">{intervalHints[0].short}</span>}
             </button>
-            <button onClick={() => submitReview(3)} className="flex-[1.5] min-h-14 py-2 rounded-xl font-semibold text-sm bg-green-500 text-white hover:bg-green-600 transition-colors flex flex-col items-center justify-center gap-0.5 shadow-sm">
+            <button onClick={() => submitReview(3)} aria-label={intervalHints ? `Correct, ${intervalHints[2].mastery}` : 'Correct'} className="flex-[1.5] min-h-14 py-2 rounded-xl font-semibold text-sm bg-green-600 text-white hover:bg-green-700 transition-colors flex flex-col items-center justify-center gap-0.5 shadow-sm">
               <span>Correct</span>
               {intervalHints && <span className="text-[10px] font-normal opacity-80">{intervalHints[2].mastery}</span>}
             </button>

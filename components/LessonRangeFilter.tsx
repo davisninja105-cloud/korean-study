@@ -51,7 +51,7 @@ export default function LessonRangeFilter({ lessons, from, to, onChange }: Props
           </option>
         ))}
       </select>
-      <span className="text-sm text-gray-400 dark:text-gray-500">–</span>
+      <span className="text-sm text-gray-500 dark:text-gray-400">–</span>
       <select
         value={to}
         onChange={(e) => handleTo(Number(e.target.value))}
@@ -67,7 +67,7 @@ export default function LessonRangeFilter({ lessons, from, to, onChange }: Props
       {!full && (
         <button
           onClick={() => onChange(1, maxOrder)}
-          className="text-xs text-button hover:text-button-hover px-2 py-1 rounded-md hover:bg-button-soft"
+          className="text-xs text-button hover:text-button-hover px-3 min-h-11 inline-flex items-center rounded-md hover:bg-button-soft"
         >
           All
         </button>

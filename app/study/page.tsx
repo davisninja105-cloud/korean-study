@@ -6,6 +6,8 @@ import ModeSelector, { StudyMode, FlashcardSubMode } from '@/components/ModeSele
 import StudySession from '@/components/StudySession'
 import LessonRangeFilter, { isFullSpan, type LessonItem } from '@/components/LessonRangeFilter'
 import ProgressRing from '@/components/ProgressRing'
+import Sheet from '@/components/Sheet'
+import { SlidersHorizontal } from 'lucide-react'
 import { haptic } from '@/lib/haptics'
 import { computeStreaks, habitDateStr, DEFAULT_DAY_START_HOUR, DEFAULT_GOAL_SECONDS, type DayRecord } from '@/lib/habit'
 
@@ -58,6 +60,8 @@ export default function StudyPage() {
   const [lessonFrom, setLessonFrom] = useState(1)
   const [lessonTo, setLessonTo] = useState(1)
   const [lessonsLoaded, setLessonsLoaded] = useState(false)
+  const [showModeSheet, setShowModeSheet] = useState(false)
+  const [showFilterSheet, setShowFilterSheet] = useState(false)
 
   // Build the URL params for the current lesson range.
   // Omit when the full span is selected so back-compat is preserved.
@@ -126,12 +130,14 @@ export default function StudyPage() {
   const maxOrder = lessons.length > 0 ? lessons[lessons.length - 1].orderIndex : 1
 
   const handleRangeChange = (from: number, to: number) => {
+    setShowFilterSheet(false)
     setLessonFrom(from)
     setLessonTo(to)
     loadDue(from, to, maxOrder)
   }
 
   const handleModeSelect = async (selectedMode: StudyMode, includeAI: boolean, subMode: FlashcardSubMode) => {
+    setShowModeSheet(false)
     setMode(selectedMode)
     setFlashcardSubMode(subMode)
 
@@ -196,18 +202,24 @@ export default function StudyPage() {
   if (phase === 'select-mode') {
     const noDue = studyCards.length === 0
     const noDueAndNoAhead = noDue && scope === 'ahead'
+    const rangeLabel = isFullSpan(lessonFrom, lessonTo, maxOrder)
+      ? 'All lessons'
+      : lessonFrom === lessonTo
+      ? `Lesson ${lessonFrom}`
+      : `Lessons ${lessonFrom}–${lessonTo}`
 
     return (
-      <div className="flex flex-col gap-6">
-        {/* Lesson filter (shown above mode selector / empty state) */}
-        {lessonsLoaded && (
+      <div className="flex flex-col gap-6 pt-4">
+        {/* Filter trigger → opens a bottom sheet */}
+        {lessonsLoaded && lessons.length >= 2 && (
           <div className="flex justify-center">
-            <LessonRangeFilter
-              lessons={lessons}
-              from={lessonFrom}
-              to={lessonTo}
-              onChange={handleRangeChange}
-            />
+            <button
+              onClick={() => setShowFilterSheet(true)}
+              className="flex items-center gap-2 px-4 py-2 min-h-11 rounded-full bg-surface-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-surface-3 transition-colors"
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              {rangeLabel}
+            </button>
           </div>
         )}
 
@@ -231,15 +243,47 @@ export default function StudyPage() {
                 >
                   Study ahead →
                 </button>
-                <Link href="/" className="text-sm text-gray-400 dark:text-gray-500 hover:underline">
+                <Link href="/" className="text-sm text-gray-500 dark:text-gray-400 hover:underline">
                   Back to Dashboard
                 </Link>
               </>
             )}
           </div>
         ) : (
-          <ModeSelector cardCount={studyCards.length} onSelect={handleModeSelect} />
+          <div className="flex flex-col items-center gap-6 py-6">
+            <div className="text-center">
+              <p className="text-5xl font-bold" style={{ color: 'var(--reward)' }}>
+                {studyCards.length}
+              </p>
+              <p className="text-gray-500 dark:text-gray-400 mt-1">
+                card{studyCards.length !== 1 ? 's' : ''} ready
+              </p>
+            </div>
+            <button
+              onClick={() => setShowModeSheet(true)}
+              className="w-full max-w-sm min-h-14 bg-button text-button-foreground rounded-2xl text-lg font-semibold hover:bg-button-hover transition-colors"
+            >
+              Start studying →
+            </button>
+          </div>
         )}
+
+        {/* Mode selection — bottom sheet (ModeSelector keeps its own heading) */}
+        <Sheet open={showModeSheet} onClose={() => setShowModeSheet(false)}>
+          <ModeSelector cardCount={studyCards.length} onSelect={handleModeSelect} />
+        </Sheet>
+
+        {/* Lesson range — bottom sheet */}
+        <Sheet open={showFilterSheet} onClose={() => setShowFilterSheet(false)} title="Lessons">
+          <div className="p-4 flex justify-center">
+            <LessonRangeFilter
+              lessons={lessons}
+              from={lessonFrom}
+              to={lessonTo}
+              onChange={handleRangeChange}
+            />
+          </div>
+        </Sheet>
       </div>
     )
   }
@@ -333,7 +377,7 @@ function SessionComplete({
       </div>
 
       {/* Today's goal ring + streak */}
-      <div className="flex items-center gap-6 bg-white dark:bg-gray-800 rounded-2xl shadow-md px-8 py-6 w-full justify-center">
+      <div className="flex items-center gap-6 bg-surface-1 rounded-2xl shadow-md px-8 py-6 w-full justify-center">
         <div className="flex flex-col items-center gap-2">
           <ProgressRing
             pct={todayPct}
@@ -342,31 +386,31 @@ function SessionComplete({
             color="var(--reward)"
             aria-label={`Today's goal: ${todayPct}%`}
           />
-          <p className="text-xs text-gray-400 dark:text-gray-500">Today&apos;s goal</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Today&apos;s goal</p>
         </div>
         {streakInfo && streakInfo.current > 0 && (
           <div className="flex flex-col items-center gap-1">
             <p className="text-4xl font-bold" style={{ color: 'var(--reward)' }}>
               🔥 {streakInfo.current}
             </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">day streak</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">day streak</p>
           </div>
         )}
       </div>
 
       {/* Stat tiles — supporting detail */}
       <div className="grid grid-cols-3 gap-3 w-full">
-        <div className="bg-gray-50 dark:bg-gray-800/60 rounded-xl p-3 text-center">
+        <div className="bg-surface-2 rounded-xl p-3 text-center">
           <span className="text-xl font-bold text-gray-700 dark:text-gray-200">{completeStats.reviewed}</span>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Reviewed</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Reviewed</p>
         </div>
-        <div className="bg-gray-50 dark:bg-gray-800/60 rounded-xl p-3 text-center">
+        <div className="bg-surface-2 rounded-xl p-3 text-center">
           <span className="text-xl font-bold text-green-500">{completeStats.correct}</span>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Correct</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Correct</p>
         </div>
-        <div className="bg-gray-50 dark:bg-gray-800/60 rounded-xl p-3 text-center">
-          <span className="text-xl font-bold text-blue-500">{accuracy}%</span>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">Accuracy</p>
+        <div className="bg-surface-2 rounded-xl p-3 text-center">
+          <span className="text-xl font-bold text-cat-vocab">{accuracy}%</span>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Accuracy</p>
         </div>
       </div>
 
@@ -377,7 +421,7 @@ function SessionComplete({
         Study {sessionSize} more →
       </button>
 
-      <Link href="/" className="text-sm text-gray-400 dark:text-gray-500 hover:underline">
+      <Link href="/" className="text-sm text-gray-500 dark:text-gray-400 hover:underline">
         Back to Dashboard
       </Link>
     </div>

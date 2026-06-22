@@ -112,7 +112,7 @@ export default function HabitTracker() {
                 <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
                   🔥 {current} day{current !== 1 ? 's' : ''}
                 </p>
-                <p className="text-xs text-gray-400 dark:text-gray-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   Longest: {longest} day{longest !== 1 ? 's' : ''}
                 </p>
               </>
@@ -121,7 +121,7 @@ export default function HabitTracker() {
                 <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
                   🔥 {longest} day{longest !== 1 ? 's' : ''}
                 </p>
-                <p className="text-xs text-gray-400 dark:text-gray-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   Personal best · study today to restart
                 </p>
               </>
@@ -130,7 +130,7 @@ export default function HabitTracker() {
                 <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
                   🔥 0 days
                 </p>
-                <p className="text-xs text-gray-400 dark:text-gray-500">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
                   Start your streak today
                 </p>
               </>
@@ -140,12 +140,12 @@ export default function HabitTracker() {
           <div className="flex flex-col items-center gap-1">
             <ProgressRing
               pct={pct}
-              size={64}
-              strokeWidth={6}
+              size={88}
+              strokeWidth={7}
               color="var(--reward)"
               aria-label={`Today's goal: ${pct}% complete`}
             />
-            <p className="text-xs text-gray-400 dark:text-gray-500">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               {Math.round(goal / 60)} min goal
             </p>
           </div>
@@ -159,7 +159,7 @@ export default function HabitTracker() {
         )}
 
         {/* Today's time */}
-        <p className="text-xs text-gray-400 dark:text-gray-500">
+        <p className="text-xs text-gray-500 dark:text-gray-400">
           Today: {formatDuration(todaySeconds)} / {formatDuration(goal)}
         </p>
 
@@ -170,7 +170,7 @@ export default function HabitTracker() {
           <div className="flex justify-between">
             {weekDays.map(({ date, letter }) => (
               <div key={date} className="flex flex-col items-center gap-1.5">
-                <span className="text-xs text-gray-400 dark:text-gray-500 font-medium">{letter}</span>
+                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">{letter}</span>
                 <div
                   role="img"
                   aria-label={`${date}: ${formatDuration(secByDate.get(date) ?? 0)}`}

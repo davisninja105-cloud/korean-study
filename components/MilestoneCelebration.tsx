@@ -44,7 +44,7 @@ export default function MilestoneCelebration({ milestone, streakDays, onDismiss 
       onClick={onDismiss}
     >
       <div
-        className="relative bg-white dark:bg-gray-900 rounded-3xl shadow-2xl p-10 mx-6 max-w-sm w-full text-center flex flex-col items-center gap-5"
+        className="relative bg-surface-1 rounded-3xl shadow-2xl p-10 mx-6 max-w-sm w-full text-center flex flex-col items-center gap-5"
         onClick={(e) => e.stopPropagation()}
       >
         <span className="text-7xl select-none">{copy.badge}</span>
@@ -56,7 +56,7 @@ export default function MilestoneCelebration({ milestone, streakDays, onDismiss 
           <p className="text-4xl font-bold" style={{ color: 'var(--reward)' }}>
             {streakDays}
           </p>
-          <p className="text-sm text-gray-400 dark:text-gray-500">day streak</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">day streak</p>
         </div>
         <button
           onClick={onDismiss}

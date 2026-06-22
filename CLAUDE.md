@@ -42,6 +42,8 @@ the schema engine only speaks `file:`/postgres). To apply a schema change:
 
 **No romanization:** card fronts must be Hangul, never Latin-letter romanization (e.g. `(kkujunhada)`). Short **English clarifying glosses** in parentheses are fine (e.g. `~(으)로 (direction particle)`). `normalizeFront` strips these glosses when computing the dedup key.
 
+**Color system & theming (2026-06 P1):** Card-type taxonomy is recolored off the primary action color — vocabulary→indigo, grammar→violet, phrase→teal (`lib/card-style.ts:typeBadgeClass` is the single source for type badges; **blue is reserved for actions**). Semantic CSS tokens live in `app/globals.css`: `--surface-1/2/3` (**surface-1** = elevated card/sheet/nav, most prominent in both themes; **surface-2** = quiet recessed strip/tile; **surface-3** = deep well), `--reward` (warm orange for streaks/goal/celebration), `--highlight-bg/fg` (the sentence marker), `--cat-vocab/grammar/phrase`. Tokens are exposed as Tailwind utilities via `@theme inline` (e.g. `bg-surface-1`, `text-cat-vocab`, `bg-reward`). Stat/habit displays use these — never literal `blue-*`. **Dark mode is a manual System/Light/Dark toggle:** a pre-paint `<script>` in `app/layout.tsx` resolves the choice (from `localStorage` key `theme`; absent = System) and sets `data-theme` on `<html>` before first paint (no flash; `<html suppressHydrationWarning>`). Tailwind's `dark:` variant is rebound to `[data-theme="dark"]` via `@custom-variant dark` in `globals.css`; the OS `@media (prefers-color-scheme: dark)` block stays as a no-JS fallback for the CSS variables. **When adding a dark value, mirror it in BOTH the media-query `:root` block and the `:root[data-theme="dark"]` block.** `lib/theme.ts` (`getStoredTheme`/`applyTheme`/`resolveTheme`) + `components/ThemeWatcher.tsx` (live OS-change sync) drive the Settings ▸ Appearance control. Theme is **client-only (localStorage), not a DB Setting**; `buttonColor` (DB) and `--reading-scale` / `hangul-spaced` (reading aid) are still injected as an inline `style`/class on `<html>` server-side in `layout.tsx`.
+
 **Auth:** A single shared-password gate. `middleware.ts` guards all pages/APIs except `/login`, `/api/login`, and static/PWA assets; `lib/auth.ts` issues/verifies an HMAC session cookie (Web Crypto). Configured via `APP_PASSWORD` and `AUTH_SECRET`.
 
 **Key files:**
@@ -52,24 +54,31 @@ the schema engine only speaks `file:`/postgres). To apply a schema change:
 - `lib/sentence-match.ts` — Pure helper for locating `targetForm` in a Korean sentence (safe-to-blank rules); single source of truth used by StudySession, HighlightedSentence, CardEditor
 - `lib/google-docs.ts` — Fetches the `수업 노트` tab via Docs API v1; captures `textStyle` emphasis (bold/underline/highlight) per run; returns `{ text, emphasized }[]`
 - `lib/generate-practice.ts` — Claude prompt that generates extra practice from existing cards
-- `lib/settings.ts` — Server-side getters/setters for all app settings (`dailyGoalSeconds`, `habitDayStartHour`, `sessionSize`, `readingTextScale`)
+- `lib/settings.ts` — Server-side getters/setters for all DB app settings (`dailyGoalSeconds`, `habitDayStartHour`, `sessionSize`, `readingTextScale`, `readingAid`, `buttonColor`). Add new persisted settings here, then plumb GET/PUT in `app/api/settings/route.ts`.
+- `lib/card-style.ts` — `typeBadgeClass(type)`: single source for card-type badge classes (indigo/violet/teal off the primary). Used by `app/cards/page.tsx` + `components/StudySession.tsx`.
+- `lib/theme.ts` — manual theme helper: `getStoredTheme`/`applyTheme`/`resolveTheme` (localStorage `theme`; sets `data-theme` on `<html>`). Pairs with the pre-paint script in `layout.tsx`.
+- `lib/usePullToRefresh.ts` — touch pull-to-refresh hook (engages only at scroll-top, with resistance; returns `{ pullDistance, refreshing }`). Mounted on Home → `POST /api/sync`. Pass a stable (useCallback) `onRefresh`.
 - `lib/habit.ts` — Pure habit-tracking helpers: `computeStreaks` (with freeze-budget bridging), `computeFreezeBudget`, `computeHabitStats`, `checkMilestone`, `shiftDate`, `habitDateStr`, `formatDuration`, `nextHabitDayStart`
 - `lib/haptics.ts` — `haptic('selection'|'success'|'impact-light'|'impact-heavy')` over `navigator.vibrate`; no-op-safe on iOS Safari.
 - `lib/proficiency.ts` — Pure CEFR band mapper: `CEFR_BANDS` (A1 0–500 … C1+ 8000+), `computeProficiency(masteredCount)` → `{ band, label, masteredCount, withinBandPct, nextBand }`.
 - `components/StudySession.tsx` — All three study modes (flashcard, multiple-choice, fill-blank). 3D flip with **dynamic card height** (`useLayoutEffect` measures each face; height and rotation transition simultaneously). Mastery-language grade bar with haptics. Consumes cards **in server order** (foundation-first). Mutable queue (`queue[0]` = current card); REQUEUE_GAP=4; undo restores snapshots.
-- `components/HighlightedSentence.tsx` — Pure component; renders a Korean sentence with `targetForm` highlighted
+- `components/HighlightedSentence.tsx` — Pure component; renders a Korean sentence with `targetForm` in a bespoke `--highlight-bg/fg` marker. Accepts `cardType`; for `grammar` cards it tints the trailing particle (via `splitParticle` in `lib/sentence-match.ts`) distinctly from the stem.
 - `components/ModeSelector.tsx` — Mode picker + Exposure/Recall sub-toggle for Flashcards
-- `components/ProgressRing.tsx` — Reusable SVG ring (`pct`, `size`, `strokeWidth`, `color`, `aria-label`); animates via `ringFill` keyframe; reduced-motion jumps to final value.
+- `components/ProgressRing.tsx` — Reusable SVG ring (`pct`, `size`, `strokeWidth`, `color`, required `aria-label`); fill animates via the `.ring-fill` class (`ringFill` keyframe + dashoffset transition), gated by the globals.css `prefers-reduced-motion` block.
+- `components/Sheet.tsx` — Portal bottom-sheet primitive (`open`/`onClose`/`title`): spring slide-up + blurred backdrop, drag handle, Escape/backdrop close, focus trap, body-scroll lock, `role="dialog"`; reduced-motion → crossfade. Used by the Study page (ModeSelector + LessonRangeFilter).
+- `components/ThemeWatcher.tsx` — Renders nothing; re-applies the resolved theme on OS color-scheme change while in System mode.
 - `components/HabitTracker.tsx` — Dashboard habit card: streak + ProgressRing + 7-day week-strip; freeze-budget nudge; ring-close triggers haptic + confetti.
 - `components/HabitHeatmap.tsx` — Reusable full-history heatmap grid (parameterized by `weeks`)
 - `components/MilestoneCelebration.tsx` — Full-screen overlay: confetti, milestone badge (7/30/100/365 days), personal stat summary, warm copy, dismiss.
 - `components/ProficiencyArc.tsx` — Current CEFR band badge + labeled arc to next band; indigo fill; mounts on Home and Habits pages.
 - `components/LessonRangeFilter.tsx` — Shared "Lessons [From] – [To] / All" filter used by Cards and Study pages
-- `components/Nav.tsx` — Bottom tab bar on mobile (lucide-react icons); inline text links on desktop (`sm+`)
-- `components/SyncPanel.tsx` — UI for triggering a Google Doc sync; surfaces per-lesson failure details with retry guidance.
+- `components/Nav.tsx` — 4-tab bottom bar on mobile (Home/Study/Cards/Habits, lucide icons) + a top-right Settings gear (all sizes); inline links on desktop (`sm+`). Tab tap fires `haptic('selection')`; `aria-current="page"` on the active tab; bars use `bg-surface-1/95 backdrop-blur-md saturate-150`.
+- `components/StatsBar.tsx` — Quiet 3-col secondary stats strip on Home (cards / lessons / CEFR level); `surface-2`, no shadow. The actionable due count lives in the Home hero, not here.
+- `components/SyncPanel.tsx` — UI for triggering a Google Doc sync; surfaces per-lesson failure details with retry guidance. **Lives in Settings ▸ Advanced** (removed from Home; Home triggers the same sync via pull-to-refresh).
 - `components/CardEditor.tsx` — Inline card editing with full sentence editor (add/edit/delete, live highlight preview, auto-fill targetForm, mismatch warning)
+- `app/page.tsx` — Home dashboard: hero (effect-only time greeting, large `--reward` due count, primary Study CTA), quiet `StatsBar` strip, `HabitTracker`, `ProficiencyArc`; pull-to-refresh → sync (`lib/usePullToRefresh.ts`).
 - `app/habits/page.tsx` — Dedicated habit stats page: streak hero, all-time totals, averages/consistency, 30-day trend bars, full heatmap, heatmap insight line, ProficiencyArc
-- `app/settings/page.tsx` — Dedicated settings page (daily goal, habit day-start hour, session size, reading text scale); add new settings here
+- `app/settings/page.tsx` — Dedicated settings page: Appearance (System/Light/Dark theme), daily goal, habit day-start hour, session size, reading text size, reading aid, button color, and a collapsible **Advanced** section housing the Google Doc sync. Add new settings here (theme is localStorage; the rest are DB settings via `lib/settings.ts`).
 
 **Database (Prisma + libSQL):**
 - `Lesson` → raw doc snapshot per section + contentHash for dedup + **`orderIndex` (Int, 1-based)** for stable lesson numbering. New lessons get `max(orderIndex) + 1` on sync.
@@ -78,7 +87,7 @@ the schema engine only speaks `file:`/postgres). To apply a schema change:
 - **`CardDependency`** *(new 2026-06)* → directed prerequisite edge: `cardId` is built from `prerequisiteId`. `@@unique([cardId, prerequisiteId])`. Created at sync time by resolving `Card.components` lemmas → matching `normalizedFront`. Scripts: `apply-graph-ddl.mjs` (one-time DDL), `relink-dependencies.mjs` (full retroactive relink after a corpus-wide resync).
 - `CardReview` → FSRS state per card (stability, difficulty, state, reps, lapses, nextReview)
 - `StudyDay` → per-day active study time (`date` = user-local habit-day "YYYY-MM-DD", `seconds`, `reviews`)
-- `Setting` → generic key/value app settings: `dailyGoalSeconds`, `habitDayStartHour` (int 0–23, default 2), `sessionSize` (int 5–100, default 20)
+- `Setting` → generic key/value app settings: `dailyGoalSeconds`, `habitDayStartHour` (int 0–23, default 2), `sessionSize` (int 5–100, default 20), `readingTextScale` (0.9–1.4), `readingAid` ('0'/'1'), `buttonColor` (hex). NB: the light/dark **theme** is client-only (localStorage), not stored here.
 
 **Habit tracking:** `components/StudySession.tsx` measures active study time and flushes increments to `POST /api/activity` (keyed by the client's **habit-day** date). Use `habitDateStr(hour)` from `lib/habit.ts` wherever you need "today as a habit date"; never use raw `localDateStr()` for activity logging.
 

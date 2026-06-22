@@ -6,6 +6,7 @@ const DAY_START_KEY = 'habitDayStartHour'
 const BUTTON_COLOR_KEY = 'buttonColor'
 const SESSION_SIZE_KEY = 'sessionSize'
 const READING_SCALE_KEY = 'readingTextScale'
+const READING_AID_KEY = 'readingAid'
 
 export const DEFAULT_BUTTON_COLOR = '#3b82f6'
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
@@ -72,6 +73,20 @@ export async function setReadingTextScale(scale: number): Promise<number> {
     update: { value: String(clamped) },
   })
   return clamped
+}
+
+export async function getReadingAid(): Promise<boolean> {
+  const row = await prisma.setting.findUnique({ where: { key: READING_AID_KEY } })
+  return row?.value === '1'
+}
+
+export async function setReadingAid(on: boolean): Promise<boolean> {
+  await prisma.setting.upsert({
+    where: { key: READING_AID_KEY },
+    create: { key: READING_AID_KEY, value: on ? '1' : '0' },
+    update: { value: on ? '1' : '0' },
+  })
+  return on
 }
 
 export async function getButtonColor(): Promise<string> {

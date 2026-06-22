@@ -5,41 +5,45 @@ import {
   getButtonColor, setButtonColor,
   getSessionSize, setSessionSize,
   getReadingTextScale, setReadingTextScale,
+  getReadingAid, setReadingAid,
 } from '@/lib/settings'
 
 export async function GET() {
-  const [dailyGoalSeconds, dayStartHour, buttonColor, sessionSize, readingTextScale] = await Promise.all([
+  const [dailyGoalSeconds, dayStartHour, buttonColor, sessionSize, readingTextScale, readingAid] = await Promise.all([
     getDailyGoalSeconds(),
     getDayStartHour(),
     getButtonColor(),
     getSessionSize(),
     getReadingTextScale(),
+    getReadingAid(),
   ])
-  return NextResponse.json({ dailyGoalSeconds, dayStartHour, buttonColor, sessionSize, readingTextScale })
+  return NextResponse.json({ dailyGoalSeconds, dayStartHour, buttonColor, sessionSize, readingTextScale, readingAid })
 }
 
 export async function PUT(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
-  const { dailyGoalSeconds, dayStartHour, buttonColor, sessionSize, readingTextScale } = body
+  const { dailyGoalSeconds, dayStartHour, buttonColor, sessionSize, readingTextScale, readingAid } = body
 
   const hasGoal  = typeof dailyGoalSeconds === 'number' && Number.isFinite(dailyGoalSeconds)
   const hasHour  = typeof dayStartHour === 'number' && Number.isFinite(dayStartHour)
   const hasColor = typeof buttonColor === 'string'
   const hasSize  = typeof sessionSize === 'number' && Number.isFinite(sessionSize)
   const hasScale = typeof readingTextScale === 'number' && Number.isFinite(readingTextScale)
-  if (!hasGoal && !hasHour && !hasColor && !hasSize && !hasScale) {
+  const hasAid   = typeof readingAid === 'boolean'
+  if (!hasGoal && !hasHour && !hasColor && !hasSize && !hasScale && !hasAid) {
     return NextResponse.json(
-      { error: 'provide dailyGoalSeconds, dayStartHour, buttonColor, sessionSize, and/or readingTextScale' },
+      { error: 'provide dailyGoalSeconds, dayStartHour, buttonColor, sessionSize, readingTextScale, and/or readingAid' },
       { status: 400 },
     )
   }
 
-  const [newGoal, newHour, newColor, newSize, newScale] = await Promise.all([
+  const [newGoal, newHour, newColor, newSize, newScale, newAid] = await Promise.all([
     hasGoal  ? setDailyGoalSeconds(dailyGoalSeconds) : getDailyGoalSeconds(),
     hasHour  ? setDayStartHour(dayStartHour)         : getDayStartHour(),
     hasColor ? setButtonColor(buttonColor)            : getButtonColor(),
     hasSize  ? setSessionSize(sessionSize)            : getSessionSize(),
     hasScale ? setReadingTextScale(readingTextScale)  : getReadingTextScale(),
+    hasAid   ? setReadingAid(readingAid)              : getReadingAid(),
   ])
   return NextResponse.json({
     dailyGoalSeconds: newGoal,
@@ -47,5 +51,6 @@ export async function PUT(req: NextRequest) {
     buttonColor: newColor,
     sessionSize: newSize,
     readingTextScale: newScale,
+    readingAid: newAid,
   })
 }

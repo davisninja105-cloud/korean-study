@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import CardEditor from '@/components/CardEditor'
 import LessonRangeFilter, { isFullSpan, type LessonItem } from '@/components/LessonRangeFilter'
 import HighlightedSentence from '@/components/HighlightedSentence'
+import { typeBadgeClass } from '@/lib/card-style'
 
 interface Sentence {
   id: string
@@ -28,17 +29,6 @@ type ActiveView = 'cards' | 'sentences'
 
 // Canonical type groups. Any type not in the first three goes to "other".
 const TYPE_GROUPS = ['vocabulary', 'grammar', 'phrase'] as const
-
-const TYPE_COLORS: Record<string, string> = {
-  vocabulary: 'bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300',
-  grammar:    'bg-purple-100 text-purple-600 dark:bg-purple-500/15 dark:text-purple-300',
-  phrase:     'bg-green-100 text-green-600 dark:bg-green-500/15 dark:text-green-300',
-}
-const TYPE_COLOR_DEFAULT = 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
-
-function typeColor(type: string) {
-  return TYPE_COLORS[type] ?? TYPE_COLOR_DEFAULT
-}
 
 export default function CardsPage() {
   const [cards, setCards] = useState<Card[]>([])
@@ -181,7 +171,7 @@ export default function CardsPage() {
 
       {/* Add card form */}
       {showAdd && (
-        <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 flex flex-col gap-3">
+        <div className="bg-surface-1 rounded-xl shadow-sm p-4 flex flex-col gap-3">
           <select value={newCard.type} onChange={(e) => setNewCard({ ...newCard, type: e.target.value })} className={inputCls}>
             <option value="vocabulary">Vocabulary</option>
             <option value="grammar">Grammar</option>
@@ -226,8 +216,8 @@ export default function CardsPage() {
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-3 py-2 text-sm rounded-lg capitalize ${
-              filter === f ? 'bg-blue-100 text-blue-600 dark:bg-blue-500/15 dark:text-blue-300 font-medium' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+            className={`px-3 py-2 min-h-11 text-sm rounded-lg capitalize ${
+              filter === f ? 'bg-button-soft text-button font-medium' : 'bg-surface-1 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
             }`}
           >
             {f}
@@ -245,7 +235,7 @@ export default function CardsPage() {
       {activeView === 'cards' && (
         <>
           {filteredCards.length === 0 && (
-            <p className="text-gray-400 dark:text-gray-500 text-center py-8">
+            <p className="text-gray-500 dark:text-gray-400 text-center py-8">
               {cards.length === 0 ? 'No cards yet. Sync your Google Doc to get started.' : 'No cards match your search.'}
             </p>
           )}
@@ -257,43 +247,46 @@ export default function CardsPage() {
                 onClick={() => toggleCollapse(key)}
                 className="flex items-center gap-2 text-sm font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors py-1"
               >
-                <span className={`text-xs px-2 py-0.5 rounded-full ${typeColor(key === 'other' ? 'other' : key)}`}>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${typeBadgeClass(key === 'other' ? 'other' : key)}`}>
                   {label}
                 </span>
-                <span className="text-xs font-normal text-gray-400 dark:text-gray-500">
+                <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
                   {groupCards.length} card{groupCards.length !== 1 ? 's' : ''}
                 </span>
                 <span className="ml-auto text-xs opacity-50">{collapsed[key] ? '▶' : '▼'}</span>
               </button>
 
-              {!collapsed[key] && groupCards.map((card) => (
+              {!collapsed[key] && groupCards.map((card, i) => (
                 <div key={card.id}>
                   {editingId === card.id ? (
                     <CardEditor card={card} onSave={handleSave} onCancel={() => setEditingId(null)} />
                   ) : (
-                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 flex flex-col gap-2">
+                    <div
+                      className="bg-surface-1 rounded-xl shadow-sm p-4 flex flex-col gap-2 animate-slide-in"
+                      style={{ animationDelay: `${Math.min(i * 25, 250)}ms` }}
+                    >
                       {/* Card header */}
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeColor(card.type)}`}>
+                          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeClass(card.type)}`}>
                             {card.type}
                           </span>
                           {card.lesson && (
-                            <span className="text-xs text-gray-400 dark:text-gray-500">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
                               Lesson {card.lesson.orderIndex}
                             </span>
                           )}
                         </div>
                         <div className="flex items-center gap-1">
                           {card.review && (
-                            <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">
+                            <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">
                               {card.review.reps} review{card.review.reps !== 1 ? 's' : ''}
                             </span>
                           )}
-                          <button onClick={() => setEditingId(card.id)} className="text-sm text-button hover:text-button-hover px-2 py-1 rounded-md hover:bg-button-soft">
+                          <button onClick={() => setEditingId(card.id)} className="text-sm text-button hover:text-button-hover px-3 min-h-11 inline-flex items-center rounded-md hover:bg-button-soft">
                             Edit
                           </button>
-                          <button onClick={() => handleDelete(card.id)} className="text-sm text-red-400 hover:text-red-600 px-2 py-1 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10">
+                          <button onClick={() => handleDelete(card.id)} className="text-sm text-red-400 hover:text-red-600 px-3 min-h-11 inline-flex items-center rounded-md hover:bg-red-50 dark:hover:bg-red-500/10">
                             Delete
                           </button>
                         </div>
@@ -302,20 +295,21 @@ export default function CardsPage() {
                       {/* Word / pattern */}
                       <p className="font-bold text-gray-800 dark:text-gray-100">{card.front}</p>
                       <p className="text-gray-500 dark:text-gray-400">{card.back}</p>
-                      {card.notes && <p className="text-sm text-gray-400 dark:text-gray-500 italic">{card.notes}</p>}
+                      {card.notes && <p className="text-sm text-gray-500 dark:text-gray-400 italic">{card.notes}</p>}
 
                       {/* Example sentences — indented with left border */}
                       {(card.sentences ?? []).length > 0 && (
-                        <div className="flex flex-col gap-1.5 mt-1 pl-3 border-l-2 border-yellow-200 dark:border-yellow-500/30">
+                        <div className="flex flex-col gap-1.5 mt-1 pl-3 border-l-2" style={{ borderColor: 'var(--highlight-bg)' }}>
                           {(card.sentences ?? []).map((s) => (
                             <div key={s.id}>
                               <HighlightedSentence
                                 korean={s.korean}
                                 targetForm={s.targetForm}
+                                cardType={card.type}
                                 className="text-sm text-gray-700 dark:text-gray-200"
                               />
                               {s.translation && (
-                                <p className="text-xs text-gray-400 dark:text-gray-500 italic">{s.translation}</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 italic">{s.translation}</p>
                               )}
                             </div>
                           ))}
@@ -334,7 +328,7 @@ export default function CardsPage() {
       {activeView === 'sentences' && (
         <>
           {allSentences.length === 0 && (
-            <p className="text-gray-400 dark:text-gray-500 text-center py-8">
+            <p className="text-gray-500 dark:text-gray-400 text-center py-8">
               {filteredCards.length === 0
                 ? 'No cards match your filter.'
                 : 'No example sentences yet. Sync a lesson to generate them.'}
@@ -342,10 +336,11 @@ export default function CardsPage() {
           )}
 
           <div className="flex flex-col gap-3">
-            {allSentences.map(({ sentence, card }) => (
+            {allSentences.map(({ sentence, card }, i) => (
               <div
                 key={sentence.id}
-                className="bg-white dark:bg-gray-800 rounded-xl shadow-sm p-4 flex flex-col gap-1 cursor-pointer hover:ring-1 hover:ring-blue-200 dark:hover:ring-blue-500/30 transition-all"
+                className="bg-surface-1 rounded-xl shadow-sm p-4 flex flex-col gap-1 cursor-pointer hover:ring-1 hover:ring-button/40 transition-all animate-slide-in"
+                style={{ animationDelay: `${Math.min(i * 25, 250)}ms` }}
                 onClick={() => { setEditingId(card.id); setActiveView('cards') }}
                 role="button"
                 tabIndex={0}
@@ -355,14 +350,15 @@ export default function CardsPage() {
                 <HighlightedSentence
                   korean={sentence.korean}
                   targetForm={sentence.targetForm}
+                  cardType={card.type}
                   className="text-base text-gray-800 dark:text-gray-100 font-medium leading-relaxed"
                 />
                 {sentence.translation && (
-                  <p className="text-sm text-gray-400 dark:text-gray-500 italic">{sentence.translation}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 italic">{sentence.translation}</p>
                 )}
                 {/* Parent card reference */}
                 <div className="flex items-center gap-2 mt-1">
-                  <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${typeColor(card.type)}`}>
+                  <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${typeBadgeClass(card.type)}`}>
                     {card.type}
                   </span>
                   <span className="text-xs text-gray-500 dark:text-gray-400">

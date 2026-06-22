@@ -30,7 +30,7 @@ export default function ModeSelector({ cardCount, onSelect }: Props) {
           <div key={mode.value}>
             <button
               onClick={() => onSelect(mode.value, includeAI, flashcardSubMode)}
-              className="w-full flex flex-col items-center bg-white dark:bg-gray-800 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-5 font-semibold text-gray-800 dark:text-gray-100 hover:border-button hover:bg-button-soft transition-colors text-lg"
+              className="w-full flex flex-col items-center bg-surface-1 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-5 font-semibold text-gray-800 dark:text-gray-100 hover:border-button hover:bg-button-soft transition-colors text-lg"
             >
               {mode.label}
               <span className="text-sm text-gray-500 dark:text-gray-400 mt-1 font-normal">{mode.desc}</span>

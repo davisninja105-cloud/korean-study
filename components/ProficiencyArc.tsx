@@ -71,7 +71,7 @@ export default function ProficiencyArc({ masteredCount }: Props) {
           {/* Centre label */}
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span className="text-2xl font-bold text-gray-800 dark:text-gray-100">{band}</span>
-            <span className="text-xs text-gray-400 dark:text-gray-500">{label}</span>
+            <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
           </div>
         </div>
 
@@ -81,7 +81,7 @@ export default function ProficiencyArc({ masteredCount }: Props) {
             <p className="text-2xl font-bold" style={{ color: 'var(--cat-vocab)' }}>
               {masteredCount.toLocaleString()}
             </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500">cards mastered</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">cards mastered</p>
           </div>
           {nextBand && (
             <div>
@@ -96,7 +96,7 @@ export default function ProficiencyArc({ masteredCount }: Props) {
               </div>
             </div>
           )}
-          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
             C1 target: 4,500 cards
           </p>
         </div>

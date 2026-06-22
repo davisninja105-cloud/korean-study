@@ -1,0 +1,334 @@
+# Korean Study — Design Audit
+*June 2026 · iPhone-first Korean habit app · goal: best-in-class path to C1 reading*
+
+---
+
+## North star
+
+> Build the iPhone app that makes a daily Korean habit feel inevitable — and
+> makes the multi-year climb to C1 reading feel visible, achievable, and worth
+> celebrating every single day.
+
+Every change below serves one of two pillars:
+
+1. **Korean-native soul** — Hangul is the product, and the design should feel
+   like it was built *for* Korean, not translated from a generic flashcard tool.
+2. **Emotional progression arc** — streaks measure yesterday; the design must
+   also make the destination (C1) feel real and close enough to pull learners
+   forward across years.
+
+---
+
+## Priority key
+
+| Level | Meaning |
+|-------|---------|
+| **P0** | Foundational — do first; blocks everything else feeling right |
+| **P1** | High-impact — significant retention / delight uplift |
+| **P2** | Polish & delight — separates good from best-in-class |
+
+---
+
+## 1 · Korean typography `P0`
+
+The single biggest gap. The app loads only Geist and lets the OS render Hangul —
+so 한국어 looks different on every device, never pairs intentionally with the Latin
+UI, and is visually demoted to a system fallback. For a Korean app this is like a
+cookbook with no food photos.
+
+### Recommended changes
+
+- **Adopt Pretendard** (or Apple SD Gothic Neo as the iOS-native fallback) as a
+  dedicated `--font-korean` token. Pretendard is purpose-built to pair with
+  Inter/Geist-class Latin sans, has every weight (100–900), and gives Hangul an
+  even, modern color across platforms.
+- **Distinct type treatment for Hangul vs. gloss.** Korean needs ~1.6–1.7 leading
+  and slightly more letter-spacing than Latin at the same px size. English glosses
+  should be smaller and lighter to visually subordinate to the Korean they explain.
+  Today both share one type ramp.
+- **Flashcard Hangul scale.** 40 px is the floor for the front-of-card hero word;
+  48–56 px with real optical tracking is ideal. The card is the most-seen surface
+  in the app — it should feel generous, not cramped.
+- **Add a reading-size control and respect Dynamic Type.** Learners reading towards
+  C1 encounter long, complex sentences. They must be able to scale text without
+  breaking the layout.
+
+---
+
+## 2 · Color & brand identity `P1`
+
+### What's working
+Clean, calm palette. The single blue-500 accent keeps things from getting busy.
+
+### Problems
+
+- **The accent collides with the taxonomy.** Primary CTA is blue-500; "vocabulary"
+  badges are *also* blue. The color doing "main action" should not also mean a
+  content category — it creates ambiguity in both directions.
+- **No warm color for reward.** The palette is entirely cool/clinical. Habit
+  products need a warm "you did it" color that the streak and goal-completion
+  system owns. A coral or amber secondary would carry celebration without
+  compromising the clean everyday feel.
+- **The yellow highlight is under-designed.** `yellow-200` on white is
+  low-contrast and reads like a browser default highlighter. This is the
+  signature element of the app — it deserves a bespoke token: slightly deeper
+  fill, AA-contrast text, soft rounded "marker" feel.
+- **Dark mode is unrefined.** `#0b0f1a` (very black-navy) with a single surface
+  level reads as an inversion, not a designed experience. Evening study is when
+  dark mode is used most — it deserves first-class surface tiers (base, elevated,
+  modal) and its own light/shadow system.
+
+### Recommended changes
+
+- Recolor card-type taxonomy off the primary: vocabulary → indigo, grammar →
+  violet, phrase → teal. Reserve blue strictly for *action*.
+- Add one warm secondary token (`--reward`) for streaks, goal rings, and
+  celebration moments.
+- Promote the sentence highlight to a design token (`--highlight-bg`,
+  `--highlight-fg`) with a crafted, AA-compliant value.
+- Build dark mode as a three-tier surface system (`--surface-1/2/3`) rather than
+  a single background color.
+
+---
+
+## 3 · The sentence highlight — push the signature element further `P1`
+
+The highlighted sentence is the app's most distinctive mechanic. Right now it is
+a single `<mark>` tag. It should be the richest object in the product.
+
+### Recommended changes
+
+- **Tap-to-gloss.** Tap any word in the sentence → inline definition / dictionary
+  form popover. Turns every sentence into a mini-reader. Directly serves the C1
+  reading goal.
+- **Audio.** A speaker affordance on the sentence and target form (TTS now, native
+  voice actor later). Reading + listening together is how reading fluency builds;
+  it also supports learners studying away from a desk.
+- **Pitch/structure cues for grammar cards.** Highlight the particle vs. the stem
+  in different tints — a grammar card already knows the `targetForm`; use that
+  structure visually.
+- **Reading-aid toggle.** Optional spacing or segmentation helper for beginners,
+  off by default for intermediate+ learners. Respects the range from A2 to C1
+  without cluttering the default experience.
+
+---
+
+## 4 · The study loop `P0`
+
+This is where 90% of learner time is spent. Every rough edge here compounds.
+
+### Problems
+
+- **The grading bar is Anki-UI.** Again / Hard / Good / Easy as four equal
+  candy-colored pills is power-user vocabulary that intimidates beginners and isn't
+  iOS-native. It is the right *information* (FSRS needs 4 signals) but the wrong
+  *presentation*.
+- **The card answer has no physical feel.** The answer fades up in 150 ms. A real
+  3D flip (or a crisp spring-driven slide) makes the core interaction feel like a
+  polished app, not a webpage.
+- **The schedule payoff is invisible.** Interval hints (`3d`, `7d`) exist but are
+  tiny and abstract. Beginners have no model of what "3 days" means in terms of
+  mastery.
+- **Progress is presented as a stat, not a shape.** `1 reviewed · 19 left` is
+  fine data; it is not satisfying to watch fill up.
+
+### Recommended changes
+
+- **Replace or redesign the grading bar.** Option A: swipe gestures — swipe left
+  = Again, swipe right = Got it; the 4-grade nuance appears on long-press for
+  advanced users. Option B: two primary buttons (Got it / Missed it) with Hard/Easy
+  as a secondary refinement. Pair every grade with haptic feedback.
+- **Card flip.** Add a real 3D CSS flip transform (180° Y-axis, spring easing) on
+  reveal. This is one animation, and it defines the entire kinesthetic feel of the
+  app.
+- **Frame intervals as mastery language.** *"You'll see this again in 3 days"* →
+  *"Memory strengthening to 3 days"* → *"Long-term memory — next review in 3
+  weeks."* Celebrate growing intervals as progress, not scheduling metadata.
+- **Progress ring.** Replace or supplement the top progress bar with a ring that
+  fills arc-by-arc so the session has a satisfying visual shape.
+- **Session-complete moment.** Make it a real emotional beat: confetti burst, streak
+  update, today's goal ring closing. Right now it is three small stat tiles and a
+  "Study again" button.
+
+---
+
+## 5 · Habit & progression system `P0`
+
+The retention engine. The most important screens in the app after the study loop.
+
+### Problems
+
+- **Streaks are brittle.** One missed day wipes the streak. This is the #1 churn
+  moment in every habit app ever shipped. There is no forgiveness, no freeze, no
+  "rest day" concept.
+- **No milestone celebration.** 7 days, 30 days, 100 days — nothing happens. The
+  🔥 number increments silently.
+- **The goal bar is functional, not emotional.** A horizontal `h-2.5` bar does the
+  job. A ring that *closes* is one of the  most effective habit mechanics ever
+  shipped, and it is iOS-native vocabulary.
+
+### Recommended changes
+
+- **Streak forgiveness.** Add streak freezes / grace days (one per week earned,
+  or purchasable). Frame rest days as part of the habit, not a failure of it. Add
+  an at-risk nudge: *"Keep your 24-day streak — 5 min left today."*
+- **Milestone moments.** At 7 / 30 / 100 / 365 days, surface a special
+  full-screen celebration with a personal stat summary.
+- **Habit ring.** Replace or supplement the linear goal bar with a circular
+  ring — the ring closing is the primary daily reward trigger.
+- **Heatmap insight line.** The heatmap already tells a data story; add one
+  generated sentence beneath it: *"Your best streak day is Tuesday."* *"You've
+  studied 142 days this year."* Data without narrative is just squares.
+---
+
+## 6 · Home dashboard `P1`
+
+### Problems
+
+- **Three equal stat tiles give equal weight to unequal things.** "Due today" is
+  the only number that drives action. "Total Cards" and "Lessons" are reference
+  numbers. They should not compete with each other visually.
+- **The Sync panel is back-office plumbing on the home screen.** It belongs in
+  Settings or behind a pull-to-refresh gesture, not as a primary card.
+- **The "Study now" CTA is present but not obviously primary.** It is the same
+  visual weight as the habit tracker card.
+
+### Recommended changes
+
+- **Hero: due count + study CTA.** One large, warm, prominent block for "X cards
+  ready — Study now." Everything else recedes.
+- **Secondary row.** Total cards / lessons / level as a quiet three-column stats
+  strip below, smaller and lighter.
+- **Move Sync to Settings.** The home screen should be entirely motivational, not
+  administrative.
+- **Context greeting.** A time-aware one-liner: *"Good evening — 12 cards to lock
+  in before midnight."* The data is already there (day-start hour, due count);
+  the voice just needs to surface it.
+
+---
+
+## 7 · Cards / content management `P2`
+
+### Problems
+
+- The Cards screen stacks search + 4 filter pills + lesson-range selects + group
+  toggles before any content is visible — high cognitive load before the learner
+  has a reason to filter anything.
+- The inline blue `CardEditor` form is not iOS-native; it opens in-place and has
+  no clear dismiss gesture.
+
+### Recommended changes
+
+- **Sticky search/filter bar.** Collapse all filters into a single bar with a
+  filter icon that opens a bottom sheet — content breathes, and the common case
+  (browse all cards) is zero-friction.
+- **iOS-native rows.** Swipe-to-delete on card rows; the edit form slides up as
+  a modal sheet rather than expanding in-place.
+- **Promote the Sentences view.** This is the bridge to C1 reading — it surfaces
+  every example sentence the learner has encountered. Label it prominently: *"Reading
+  practice"* rather than the hidden tab label "sentences."
+
+---
+
+## 8 · Navigation & information architecture `P1`
+
+Five tabs is one too many for a focused, single-goal app.
+
+### Recommended changes
+
+- **Remove Settings from the tab bar.** Move it behind an avatar/profile icon in
+  the top-right corner of the nav bar — this is the iOS convention for settings in
+  a focused-mode app, and it frees a tab slot.
+- **Consider merging Habits into Home** as the hero section, freeing the tab bar
+  for a future **Read** tab (graded reading passages — the literal C1 destination).
+  The proposed five-tab end state: Home / Study / Read / Cards / Profile.
+- **Active tab haptics.** The 2.5-stroke icon treatment is correct; add a haptic
+  on switch to complete the iOS-native feel.
+
+---
+
+## 9 · iOS-native craft & motion `P1`
+
+The biggest gap between "web app in a phone frame" and "feels like it was built
+for iPhone."
+
+### Recommended changes
+
+- **iOS layout conventions.** Large navigation titles (34 pt), grouped inset card
+  lists, bottom sheets for transient tasks (CardEditor, lesson filter, mode select),
+  system blur (`backdrop-filter: blur(20px) saturate(180%)`) for sticky bars.
+- **Motion system.** Define three animation primitives:
+  - *Spring* — card flip, sheet present/dismiss, progress ring.
+  - *Ease-out* — progress bar fills, list items entering.
+  - *Burst* — goal met, streak milestone, session complete.
+  Today there is exactly one animation (150 ms fade). One deliberate motion system
+  at three levels is all that is needed.
+- **Haptics.** Grade tap (selection), correct answer (success notification), goal
+  ring close (impact heavy), streak milestone (impact medium). Free, and
+  transformative on device.
+- **Pull-to-refresh.** On the home screen to sync. Removes the need for a Sync
+  card entirely.
+
+---
+
+## 10 · Accessibility & inclusivity `P1`
+
+A reading-to-C1 app should be fully operable one-handed, on a commute, by everyone.
+
+### Recommended changes
+
+- **Contrast audit.** The `yellow-200` highlight, `gray-400` hint text, and several
+  badge foreground/background pairs are likely below WCAG AA (4.5:1 for text,
+  3:1 for UI components). Fix at the token level.
+- **44 pt minimum tap targets everywhere.** Filter pills, sentence remove buttons
+  (✕), grade interval hints, and small inline actions are currently below this.
+  Enforce `min-height: 44px; min-width: 44px` as a utility.
+- **VoiceOver labels.** The heatmap cells, streak dots, progress ring, and grade
+  buttons all need descriptive `aria-label` values. The study loop must be fully
+  operable without touch (keyboard, Switch Control).
+- **Reduce motion.** The card flip and celebration burst should respect
+  `prefers-reduced-motion`.
+
+---
+
+## 11 · Voice, delight & the long game `P2`
+
+### What's working
+The copy voice is already a strength — calm, encouraging, sentence-case, no hype.
+The 🔥 / ✓ emoji discipline is correct.
+
+### Recommended additions
+
+- **Use the copy voice at emotional beats it currently misses.** Session complete,
+  streak milestone, band unlock, comeback after a missed day, hitting 100 days of
+  study. The warmth is there in the codebase; it just needs more moments to speak.
+- **A real app icon and a small identity mark.** The current icon is a placeholder
+  blue disc. A real mark — even a simple stylized 한 or a meaningful geometric —
+  gives the habit something to feel loyal to. Keep it restrained; the goal is
+  recognition, not a mascot.
+- **Long-game identity: "My Korean" summary.** A shareable yearly / milestone stat
+  card (à la Spotify Wrapped, but quarterly). *"In 90 days you reviewed 1,240 cards,
+  built a 24-day streak, and mastered Lessons 7–12."* Both a reward and organic
+  sharing surface.
+
+---
+
+## Suggested implementation sequence
+
+### Phase 1 — Foundations `P0` (do first)
+1. Korean typeface — add Pretendard; update `--font-korean`; re-scale Hangul in cards.
+2. Study loop — 3D card flip; redesign grading bar (swipe or 2-tier); session-complete moment.
+3. Proficiency ladder — A1→C1 visible arc in the dashboard and habits views.
+
+### Phase 2 — Identity & retention `P1`
+4. Color system — recolor taxonomy off primary; add warm `--reward` token; refine highlight token; rebuild dark-mode surface tiers.
+5. Habit ring — circular daily-goal ring; streak forgiveness; milestone celebrations.
+6. Dashboard hierarchy — hero CTA; move sync to Settings; context greeting.
+7. Navigation — remove Settings tab; add profile icon; plan Read tab slot.
+8. iOS conventions — bottom sheets, pull-to-refresh, motion system, haptics.
+9. Accessibility — contrast pass, 44pt targets, VoiceOver labels, reduce-motion.
+
+### Phase 3 — Polish `P2`
+10. Tap-to-gloss + audio on sentences.
+12. Sentence highlight as a fully crafted design token.
+13. App icon and brand mark.

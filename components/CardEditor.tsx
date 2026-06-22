@@ -96,7 +96,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
   const inputCls = 'border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg px-3 py-2 text-sm w-full'
 
   return (
-    <div className="bg-blue-50 dark:bg-gray-800 rounded-xl p-4 flex flex-col gap-3">
+    <div className="bg-surface-2 rounded-xl p-4 flex flex-col gap-3">
       {/* ── Core fields ── */}
       <select value={type} onChange={(e) => setType(e.target.value)} className={inputCls}>
         <option value="vocabulary">Vocabulary</option>
@@ -139,7 +139,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
           return (
             <div
               key={idx}
-              className="bg-white dark:bg-gray-900 rounded-lg p-3 flex flex-col gap-2 border border-gray-200 dark:border-gray-700"
+              className="bg-surface-1 rounded-lg p-3 flex flex-col gap-2 border border-gray-200 dark:border-gray-700"
             >
               {/* Korean sentence */}
               <input
@@ -180,8 +180,9 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
                 </div>
                 <button
                   onClick={() => removeSentence(idx)}
-                  className="text-red-400 hover:text-red-600 px-2 py-2 rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 text-sm mt-0.5 shrink-0"
+                  className="text-red-400 hover:text-red-600 min-h-11 min-w-11 flex items-center justify-center rounded-md hover:bg-red-50 dark:hover:bg-red-500/10 text-sm shrink-0"
                   title="Remove sentence"
+                  aria-label="Remove sentence"
                 >
                   ✕
                 </button>
@@ -197,8 +198,8 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
 
               {/* Live highlight preview */}
               {s.korean.length > 0 && (
-                <div className="text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-800 rounded px-2 py-1.5 leading-relaxed">
-                  <span className="text-xs text-gray-400 dark:text-gray-500 mr-1">Preview:</span>
+                <div className="text-sm text-gray-500 dark:text-gray-400 bg-surface-2 rounded px-2 py-1.5 leading-relaxed">
+                  <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">Preview:</span>
                   <HighlightedSentence korean={s.korean} targetForm={s.targetForm} />
                 </div>
               )}

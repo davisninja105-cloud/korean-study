@@ -53,7 +53,7 @@ export default function SyncPanel({ onSynced }: Props) {
   }
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6">
+    <div className="bg-surface-1 rounded-2xl shadow-md p-6">
       <h2 className="text-lg font-semibold text-gray-700 dark:text-gray-200 mb-1">Sync Google Doc</h2>
       <p className="text-sm text-gray-400 dark:text-gray-400 mb-4">Pull in any new lessons from your notes.</p>
       <button

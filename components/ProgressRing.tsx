@@ -1,7 +1,5 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
-
 interface Props {
   pct: number           // 0–100
   size?: number         // px diameter, default 80
@@ -25,12 +23,6 @@ export default function ProgressRing({
   const circumference = 2 * Math.PI * radius
   const clampedPct = Math.min(100, Math.max(0, pct))
   const offset = circumference - (clampedPct / 100) * circumference
-
-  // Check prefers-reduced-motion on the client; server renders static.
-  const prefersReduced = useRef(false)
-  useEffect(() => {
-    prefersReduced.current = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  }, [])
 
   return (
     <svg
@@ -70,10 +62,7 @@ export default function ProgressRing({
         strokeDasharray={circumference}
         strokeDashoffset={offset}
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
-        style={{
-          animation: 'ringFill 0.8s ease-out forwards',
-          transition: 'stroke-dashoffset 0.6s ease-out',
-        }}
+        className="ring-fill"
       />
     </svg>
   )

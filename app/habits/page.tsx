@@ -117,22 +117,22 @@ export default function HabitsPage() {
       {/* Page header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Habits</h1>
-        <Link href="/" className="text-sm text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 underline underline-offset-2">
+        <Link href="/" className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline underline-offset-2">
           ← Dashboard
         </Link>
       </div>
 
       {/* Streak hero + today progress ring */}
-      <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-4">
+      <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-4">
         <div className="flex items-center justify-between gap-4">
           <div>
             <p className="text-3xl font-bold text-gray-800 dark:text-gray-100">
               🔥 {current} day{current !== 1 ? 's' : ''}
             </p>
-            <p className="text-sm text-gray-400 dark:text-gray-500 mt-0.5">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
               Current streak · longest {longest}d
             </p>
-            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
               Today: {formatDuration(todaySeconds)} / {formatDuration(goal)}
             </p>
           </div>
@@ -144,36 +144,36 @@ export default function HabitsPage() {
               color="var(--reward)"
               aria-label={`Today's goal: ${todayPct}% complete`}
             />
-            <p className="text-xs text-gray-400 dark:text-gray-500">{Math.round(goal / 60)} min goal</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400">{Math.round(goal / 60)} min goal</p>
           </div>
         </div>
       </section>
 
       {/* All-time totals */}
-      <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-3">
+      <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <h2 className="font-semibold text-gray-800 dark:text-gray-100">All-time totals</h2>
         <div className="grid grid-cols-2 gap-3">
-          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
-            <p className="text-2xl font-bold text-blue-500">{formatTotalTime(stats.totalSeconds)}</p>
+          <div className="bg-surface-2 rounded-xl p-4">
+            <p className="text-2xl font-bold text-cat-vocab">{formatTotalTime(stats.totalSeconds)}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Total study time</p>
           </div>
-          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
-            <p className="text-2xl font-bold text-blue-500">{stats.totalReviews.toLocaleString()}</p>
+          <div className="bg-surface-2 rounded-xl p-4">
+            <p className="text-2xl font-bold text-cat-vocab">{stats.totalReviews.toLocaleString()}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Cards reviewed</p>
           </div>
-          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
-            <p className="text-2xl font-bold text-blue-500">{stats.daysStudied}</p>
+          <div className="bg-surface-2 rounded-xl p-4">
+            <p className="text-2xl font-bold text-cat-vocab">{stats.daysStudied}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Days studied</p>
           </div>
-          <div className="bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4">
-            <p className="text-2xl font-bold text-blue-500">{stats.goalMetDays}</p>
+          <div className="bg-surface-2 rounded-xl p-4">
+            <p className="text-2xl font-bold text-cat-vocab">{stats.goalMetDays}</p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Goal-met days</p>
           </div>
         </div>
       </section>
 
       {/* Averages & consistency */}
-      <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-3">
+      <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <h2 className="font-semibold text-gray-800 dark:text-gray-100">Averages &amp; consistency</h2>
         <div className="flex flex-col gap-3">
           <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
@@ -200,12 +200,12 @@ export default function HabitsPage() {
       </section>
 
       {/* 30-day trend chart */}
-      <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-3">
+      <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <h2 className="font-semibold text-gray-800 dark:text-gray-100">Last 30 days</h2>
         <div className="relative h-16">
           {/* Goal reference line */}
           <div
-            className="absolute inset-x-0 border-t border-dashed border-blue-300 dark:border-blue-700 pointer-events-none"
+            className="absolute inset-x-0 border-t border-dashed border-reward/60 pointer-events-none"
             style={{ bottom: `${goalLinePct}%` }}
           />
           {/* Bars */}
@@ -215,8 +215,8 @@ export default function HabitsPage() {
               // Ensure a tiny visible sliver for any non-zero day
               const displayPct = secs > 0 ? Math.max(heightPct, 3) : 0
               let barColor = 'bg-gray-100 dark:bg-gray-700'
-              if (secs >= goal) barColor = 'bg-blue-500'
-              else if (secs > 0) barColor = 'bg-blue-300 dark:bg-blue-500/40'
+              if (secs >= goal) barColor = 'bg-reward'
+              else if (secs > 0) barColor = 'bg-orange-300 dark:bg-orange-500/40'
               return (
                 <div
                   key={date}
@@ -228,24 +228,24 @@ export default function HabitsPage() {
             })}
           </div>
         </div>
-        <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500">
+        <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
           <span>30 days ago</span>
-          <span className="text-blue-400">— goal ({Math.round(goal / 60)}m)</span>
+          <span className="text-reward">— goal ({Math.round(goal / 60)}m)</span>
           <span>today</span>
         </div>
       </section>
 
       {/* Full history heatmap */}
-      <section className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-3">
+      <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <h2 className="font-semibold text-gray-800 dark:text-gray-100">History</h2>
         {days.length === 0 ? (
-          <p className="text-sm text-gray-400 dark:text-gray-500 text-center py-4">
+          <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
             Complete your first session to start tracking history.
           </p>
         ) : (
           <HabitHeatmap days={days} today={today} goal={goal} weeks={heatmapWeeks} />
         )}
-        <div className="flex gap-3 text-xs text-gray-400 dark:text-gray-500">
+        <div className="flex gap-3 text-xs text-gray-500 dark:text-gray-400">
           <span className="flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded-sm" style={{ background: 'var(--reward)' }} /> Goal met
           </span>
@@ -264,7 +264,7 @@ export default function HabitsPage() {
       {/* Proficiency arc */}
       {masteredCount !== null && <ProficiencyArc masteredCount={masteredCount} />}
 
-      <p className="text-xs text-gray-400 dark:text-gray-500 text-center">
+      <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
         <Link href="/settings" className="underline underline-offset-2 hover:text-gray-600 dark:hover:text-gray-300">
           Change goal or day-start time
         </Link>
