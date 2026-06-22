@@ -125,7 +125,7 @@ body {
 }
 
 .card-flip-inner {
-  position: relative;
+  display: grid;
   transform-style: preserve-3d;
   transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
@@ -136,14 +136,13 @@ body {
 
 .card-flip-front,
 .card-flip-back {
+  grid-area: 1 / 1;
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
 }
 
 .card-flip-back {
   transform: rotateY(180deg);
-  position: absolute;
-  inset: 0;
 }
 
 /* Reduced-motion: disable all animations */
