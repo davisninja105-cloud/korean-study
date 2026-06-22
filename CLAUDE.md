@@ -45,26 +45,31 @@ the schema engine only speaks `file:`/postgres). To apply a schema change:
 **Auth:** A single shared-password gate. `middleware.ts` guards all pages/APIs except `/login`, `/api/login`, and static/PWA assets; `lib/auth.ts` issues/verifies an HMAC session cookie (Web Crypto). Configured via `APP_PASSWORD` and `AUTH_SECRET`.
 
 **Key files:**
-- `lib/fsrs.ts` — FSRS spaced repetition algorithm via ts-fsrs (Grade 1–4 → updated stability/difficulty)
+- `lib/fsrs.ts` — FSRS spaced repetition algorithm via ts-fsrs (Grade 1–4 → updated stability/difficulty). `formatInterval()` returns **mastery-language** copy ("Memory strengthening → Xd", "Long-term memory → Xw", "Mastered — next in Xmo") used by the grade bar.
 - `lib/extract-cards.ts` — Claude prompt that parses lesson notes into typed cards + example sentences + components[]. Model: claude-opus-4-8, adaptive thinking, streaming. **Exhaustive** — every distinct item gets a card.
 - `lib/card-key.ts` — `normalizeFront(front)`: pure dedup-key helper; single source of truth for "are two fronts the same item?" Used by sync upsert, card editor, and scripts.
 - `lib/sequence.ts` — `sequenceCards(cards, edges, now)`: pure blended-score foundation-first sequencer. Constants: `URGENCY_SCALE=7`, `MAX_BOOST=3`. Cycle-safe DFS depth computation.
 - `lib/sentence-match.ts` — Pure helper for locating `targetForm` in a Korean sentence (safe-to-blank rules); single source of truth used by StudySession, HighlightedSentence, CardEditor
 - `lib/google-docs.ts` — Fetches the `수업 노트` tab via Docs API v1; captures `textStyle` emphasis (bold/underline/highlight) per run; returns `{ text, emphasized }[]`
 - `lib/generate-practice.ts` — Claude prompt that generates extra practice from existing cards
-- `lib/settings.ts` — Server-side getters/setters for all app settings (`dailyGoalSeconds`, `habitDayStartHour`, `sessionSize`)
-- `lib/habit.ts` — Pure habit-tracking helpers: `computeStreaks`, `computeHabitStats`, `shiftDate`, `habitDateStr`, `formatDuration`, `nextHabitDayStart`
-- `components/StudySession.tsx` — All three study modes (flashcard, multiple-choice, fill-blank). Consumes cards **in server order** (foundation-first; seededShuffle removed from queue init). `seededShuffle` is kept for multiple-choice option ordering only. Mutable queue (`queue[0]` = current card); REQUEUE_GAP=4; undo restores snapshots.
+- `lib/settings.ts` — Server-side getters/setters for all app settings (`dailyGoalSeconds`, `habitDayStartHour`, `sessionSize`, `readingTextScale`)
+- `lib/habit.ts` — Pure habit-tracking helpers: `computeStreaks` (with freeze-budget bridging), `computeFreezeBudget`, `computeHabitStats`, `checkMilestone`, `shiftDate`, `habitDateStr`, `formatDuration`, `nextHabitDayStart`
+- `lib/haptics.ts` — `haptic('selection'|'success'|'impact-light'|'impact-heavy')` over `navigator.vibrate`; no-op-safe on iOS Safari.
+- `lib/proficiency.ts` — Pure CEFR band mapper: `CEFR_BANDS` (A1 0–500 … C1+ 8000+), `computeProficiency(masteredCount)` → `{ band, label, masteredCount, withinBandPct, nextBand }`.
+- `components/StudySession.tsx` — All three study modes (flashcard, multiple-choice, fill-blank). 3D flip with **dynamic card height** (`useLayoutEffect` measures each face; height and rotation transition simultaneously). Mastery-language grade bar with haptics. Consumes cards **in server order** (foundation-first). Mutable queue (`queue[0]` = current card); REQUEUE_GAP=4; undo restores snapshots.
 - `components/HighlightedSentence.tsx` — Pure component; renders a Korean sentence with `targetForm` highlighted
 - `components/ModeSelector.tsx` — Mode picker + Exposure/Recall sub-toggle for Flashcards
-- `components/HabitTracker.tsx` — Dashboard habit card: streak + today's progress bar + 7-day week-strip
+- `components/ProgressRing.tsx` — Reusable SVG ring (`pct`, `size`, `strokeWidth`, `color`, `aria-label`); animates via `ringFill` keyframe; reduced-motion jumps to final value.
+- `components/HabitTracker.tsx` — Dashboard habit card: streak + ProgressRing + 7-day week-strip; freeze-budget nudge; ring-close triggers haptic + confetti.
 - `components/HabitHeatmap.tsx` — Reusable full-history heatmap grid (parameterized by `weeks`)
+- `components/MilestoneCelebration.tsx` — Full-screen overlay: confetti, milestone badge (7/30/100/365 days), personal stat summary, warm copy, dismiss.
+- `components/ProficiencyArc.tsx` — Current CEFR band badge + labeled arc to next band; indigo fill; mounts on Home and Habits pages.
 - `components/LessonRangeFilter.tsx` — Shared "Lessons [From] – [To] / All" filter used by Cards and Study pages
 - `components/Nav.tsx` — Bottom tab bar on mobile (lucide-react icons); inline text links on desktop (`sm+`)
-- `components/SyncPanel.tsx` — UI for triggering a Google Doc sync
+- `components/SyncPanel.tsx` — UI for triggering a Google Doc sync; surfaces per-lesson failure details with retry guidance.
 - `components/CardEditor.tsx` — Inline card editing with full sentence editor (add/edit/delete, live highlight preview, auto-fill targetForm, mismatch warning)
-- `app/habits/page.tsx` — Dedicated habit stats page: streak hero, all-time totals, averages/consistency, 30-day trend bars, full heatmap
-- `app/settings/page.tsx` — Dedicated settings page (daily goal, habit day-start hour, session size); add new settings here
+- `app/habits/page.tsx` — Dedicated habit stats page: streak hero, all-time totals, averages/consistency, 30-day trend bars, full heatmap, heatmap insight line, ProficiencyArc
+- `app/settings/page.tsx` — Dedicated settings page (daily goal, habit day-start hour, session size, reading text scale); add new settings here
 
 **Database (Prisma + libSQL):**
 - `Lesson` → raw doc snapshot per section + contentHash for dedup + **`orderIndex` (Int, 1-based)** for stable lesson numbering. New lessons get `max(orderIndex) + 1` on sync.
