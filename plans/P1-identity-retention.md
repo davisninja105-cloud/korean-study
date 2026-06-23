@@ -193,4 +193,13 @@ habit ring is still 40% open — a gentle, honest nudge. It feels like a native 
 
 **Scope note:** Per request, the two additions *7-day review forecast* and *"Builds on" chips* were **not**
 implemented; *pull-to-refresh* was. Verified: `npm run lint` + `npm run build` clean; no literal `blue-*`
-remains in stat/habit displays; dev server boots and serves the pre-paint theme script. Not yet committed.
+remains in stat/habit displays; dev server boots and serves the pre-paint theme script.
+
+**Shipped:** all six sections committed in `b28d2a9` and deployed to production on 2026-06-22
+(Vercel build READY).
+
+**Follow-up fix — `2b9e8df` (2026-06-22):** the P1.2 grammar particle tinting (`splitParticle`) was
+over-splitting single-syllable stems (라는→라+는, 없이→없+이). Now single-char case markers only split off
+a 2+ syllable stem; multi-char particles (에서/부터/으로…) still split; auxiliary 도/만/나 dropped (collide
+with 먹어도/하지만/그러나). Known residual: a multi-syllable verb stem + modifier ending (기다리는) can still
+mis-split — orthography can't distinguish it from noun + particle.
