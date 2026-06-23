@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background: rounded-square, brand blue -->
+  <rect width="512" height="512" rx="115" ry="115" fill="#3b82f6"/>
+  <!-- 한 character: white, centered, sized to fill ~72% of the canvas -->
+  <text
+    x="256"
+    y="370"
+    text-anchor="middle"
+    font-family="'Apple SD Gothic Neo', 'Noto Sans KR', 'Malgun Gothic', sans-serif"
+    font-weight="700"
+    font-size="310"
+    fill="#ffffff"
+    letter-spacing="-4"
+  >한</text>
+</svg>

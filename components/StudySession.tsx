@@ -4,6 +4,8 @@ import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react'
 import { StudyMode, FlashcardSubMode } from './ModeSelector'
 import { habitDateStr, DEFAULT_DAY_START_HOUR, nextHabitDayStart } from '@/lib/habit'
 import HighlightedSentence from './HighlightedSentence'
+import { useWordTap } from './GlossProvider'
+import AudioButton from './AudioButton'
 import { sentenceMatch, blankSentence } from '@/lib/sentence-match'
 import { previewIntervalLabels } from '@/lib/fsrs'
 import { haptic } from '@/lib/haptics'
@@ -106,6 +108,9 @@ interface Props {
 }
 
 export default function StudySession({ cards, extraPractice, mode, flashcardSubMode = 'exposure', onComplete }: Props) {
+  // Tap-to-gloss callback (undefined when GlossProvider not mounted — safe)
+  const onWordTap = useWordTap()
+
   // Deterministic seed derived from the due-card set. Pure (no impure call in
   // render), and naturally varies between sessions because the set of due
   // cards differs each time.
@@ -553,17 +558,32 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                   </>
                 ) : (
                   <>
-                    <HighlightedSentence
-                      korean={chosenSentence.korean}
-                      targetForm={chosenSentence.targetForm}
-                      cardType={currentCard.type}
-                      className="font-medium text-center text-2xl text-gray-800 dark:text-gray-100"
-                    />
+                    <div className="flex items-start justify-center gap-1">
+                      <HighlightedSentence
+                        korean={chosenSentence.korean}
+                        targetForm={chosenSentence.targetForm}
+                        cardType={currentCard.type}
+                        className="font-medium text-center text-2xl text-gray-800 dark:text-gray-100"
+                        onWordTap={onWordTap}
+                      />
+                      <AudioButton
+                        text={chosenSentence.korean}
+                        aria-label={`Play sentence: ${chosenSentence.korean}`}
+                        size="sm"
+                      />
+                    </div>
                     <p className="text-xs text-gray-500 dark:text-gray-400 text-center">Recall the meaning of the highlighted part</p>
                   </>
                 )
               ) : (
-                <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                <div className="flex items-center justify-center gap-2">
+                  <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                  <AudioButton
+                    text={currentCard.front}
+                    aria-label={`Play: ${currentCard.front}`}
+                    size="sm"
+                  />
+                </div>
               )}
             </div>
 
@@ -575,15 +595,30 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
               {chosenSentence ? (
                 <div className="flex flex-col items-center gap-4 w-full">
                   {displayedSentence && (
-                    <HighlightedSentence
-                      korean={displayedSentence.korean}
-                      targetForm={displayedSentence.targetForm}
-                      cardType={currentCard.type}
-                      className="text-xl text-gray-700 dark:text-gray-200 text-center"
-                    />
+                    <div className="flex items-start justify-center gap-1">
+                      <HighlightedSentence
+                        korean={displayedSentence.korean}
+                        targetForm={displayedSentence.targetForm}
+                        cardType={currentCard.type}
+                        className="text-xl text-gray-700 dark:text-gray-200 text-center"
+                        onWordTap={onWordTap}
+                      />
+                      <AudioButton
+                        text={displayedSentence.korean}
+                        aria-label={`Play sentence: ${displayedSentence.korean}`}
+                        size="sm"
+                      />
+                    </div>
                   )}
                   <hr className="w-full border-gray-200 dark:border-gray-700" />
-                  <p className="hangul text-3xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="hangul text-3xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                    <AudioButton
+                      text={currentCard.front}
+                      aria-label={`Play: ${currentCard.front}`}
+                      size="sm"
+                    />
+                  </div>
                   <p className="text-xl text-gray-600 dark:text-gray-300 text-center">{currentCard.back}</p>
                   {displayedSentence?.translation && (
                     <p className="text-sm text-gray-500 dark:text-gray-400 text-center italic hangul-gloss">
@@ -604,7 +639,14 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                 </div>
               ) : (
                 <div className="flex flex-col items-center gap-4 w-full">
-                  <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                    <AudioButton
+                      text={currentCard.front}
+                      aria-label={`Play: ${currentCard.front}`}
+                      size="sm"
+                    />
+                  </div>
                   <hr className="w-full border-gray-200 dark:border-gray-700" />
                   <p className="text-xl text-gray-600 dark:text-gray-300 text-center">{currentCard.back}</p>
                   {currentCard.notes && (
@@ -625,7 +667,10 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
         {/* ── Multiple choice mode ── */}
         {mode === 'multiple-choice' && (
           <>
-            <p className="hangul text-4xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+            <div className="flex items-center justify-center gap-2">
+              <p className="hangul text-4xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+              <AudioButton text={currentCard.front} aria-label={`Play: ${currentCard.front}`} size="sm" />
+            </div>
             <div className="grid grid-cols-2 gap-3 w-full mt-4">
               {mcOptions.map((opt, i) => {
                 const isCorrect = opt === currentCard.back
@@ -704,6 +749,16 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                 <p className={`text-sm font-medium ${fillCorrect ? 'text-green-600 dark:text-green-400' : 'text-orange-500 dark:text-orange-400'}`}>
                   Correct answer: {fillAnswer}
                 </p>
+                {chosenSentence && (
+                  <div className="mt-2 flex items-center justify-center gap-1">
+                    <AudioButton
+                      text={chosenSentence.korean}
+                      aria-label={`Play sentence: ${chosenSentence.korean}`}
+                      size="sm"
+                    />
+                    <span className="text-xs text-gray-400 dark:text-gray-500">Hear it</span>
+                  </div>
+                )}
                 {currentCard.notes && (
                   <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{currentCard.notes}</p>
                 )}

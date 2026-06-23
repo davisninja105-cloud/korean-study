@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from 'next'
 import { Geist, Geist_Mono } from 'next/font/google'
 import Nav from '@/components/Nav'
 import ThemeWatcher from '@/components/ThemeWatcher'
+import { GlossProvider } from '@/components/GlossProvider'
 import { getButtonColor, getReadingTextScale, getReadingAid } from '@/lib/settings'
 import { readableForeground } from '@/lib/color'
 import './globals.css'
@@ -66,10 +67,12 @@ export default async function RootLayout({
           }}
         />
         <ThemeWatcher />
-        <Nav />
-        <main className="flex-1 max-w-2xl mx-auto w-full px-4 pt-8 pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:pb-8">
-          {children}
-        </main>
+        <GlossProvider>
+          <Nav />
+          <main className="flex-1 max-w-2xl mx-auto w-full px-4 pt-8 pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:pb-8">
+            {children}
+          </main>
+        </GlossProvider>
       </body>
     </html>
   )

@@ -12,6 +12,7 @@ import {
   DEFAULT_GOAL_SECONDS,
   DEFAULT_DAY_START_HOUR,
 } from '@/lib/habit'
+import { comebackMessage } from '@/lib/copy'
 import { haptic } from '@/lib/haptics'
 import ProgressRing from './ProgressRing'
 import MilestoneCelebration from './MilestoneCelebration'
@@ -42,10 +43,20 @@ export default function HabitTracker() {
     () => new Map((days ?? []).map((d) => [d.date, d.seconds])),
     [days]
   )
-  const { current, longest, todaySeconds } = useMemo(
+  const streakInfo = useMemo(
     () => computeStreaks(days ?? [], today, goal),
     [days, today, goal]
   )
+  const { current, longest, todaySeconds, metSet } = streakInfo
+
+  // Detect a freeze being used: streak is alive but yesterday wasn't a met day.
+  const yesterday = today ? shiftDate(today, -1) : ''
+  const dayBeforeYesterday = today ? shiftDate(today, -2) : ''
+  const freezeUsed =
+    current > 0 &&
+    today !== '' &&
+    !metSet.has(yesterday) &&
+    metSet.has(dayBeforeYesterday)
 
   // Check for newly crossed milestones.
   useEffect(() => {
@@ -150,6 +161,13 @@ export default function HabitTracker() {
             </p>
           </div>
         </div>
+
+        {/* Comeback message (freeze used yesterday) */}
+        {freezeUsed && !isAtRisk && (
+          <p className="text-xs font-medium px-3 py-2 rounded-lg text-green-700 dark:text-green-300" style={{ background: 'color-mix(in srgb, #22c55e 10%, transparent)' }}>
+            {comebackMessage(current)}
+          </p>
+        )}
 
         {/* At-risk nudge */}
         {isAtRisk && (

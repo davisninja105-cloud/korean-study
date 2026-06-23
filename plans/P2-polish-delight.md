@@ -52,70 +52,63 @@ proud to keep.
 
 ### P2.1 — Tap-to-gloss *(audit §3)*
 
-- [ ] **`/api/gloss` route** — `POST { word }` → resolve: (1) exact/normalized match against
+- [x] **`/api/gloss` route** — `POST { word }` → resolve: (1) exact/normalized match against
   existing cards (`lib/card-key.ts:normalizeFront`); (2) fallback to a Claude call
-  (`claude-opus-4-8`) returning `{ dictionaryForm, gloss, partOfSpeech }`; cache results in a
-  simple key/value store (Setting-style table or Blob JSON) so repeat taps are instant.
+  (`claude-haiku-4-5-20251001`) returning `{ dictionaryForm, gloss, partOfSpeech }`; cache results
+  in Setting table under `gloss:` prefix so repeat taps are instant.
   - **Why:** "Turns every sentence into a mini-reader — directly serves the C1 reading goal" (audit §3).
 
-- [ ] **`components/GlossPopover.tsx`** — small anchored popover (dictionary form, gloss, "add
-  as card?" affordance); dismiss on outside tap; `.hangul` for Korean; reduced-motion safe.
+- [x] **`components/GlossProvider.tsx`** — global context + anchored popover (dictionary form, gloss,
+  "add as card?" affordance); dismiss on outside tap; `.hangul` for Korean; reduced-motion safe.
+  Exposes `useWordTap()` hook.
 
-- [ ] **Wire tap handling into `HighlightedSentence.tsx`** — split the sentence into tappable
-  word spans (Korean word segmentation by whitespace + particle boundaries); tap → fetch gloss →
-  show `GlossPopover`. Off in editing contexts.
+- [x] **Wire tap handling into `HighlightedSentence.tsx`** — tappable word spans via `TappableSegment`;
+  tap → shows `GlossPopover` via context. Off when `onWordTap` not provided. Wired in
+  `StudySession.tsx` and `app/cards/page.tsx`.
 
 ### P2.2 — Audio (neural cloud TTS) *(audit §3/§11)*
 
-- [ ] **`lib/tts.ts`** — Google Cloud TTS client (reuse the service-account token minting from
-  `lib/google-docs.ts`); `synthesize(text, voice='ko-KR-Neural2-A')` → MP3 bytes.
+- [x] **`lib/tts.ts`** — `TtsProvider` interface + `googleNeural2Provider` (reuses service-account
+  token minting from `lib/google-docs.ts`, `cloud-platform` scope). `activeTtsProvider` chosen
+  by `TTS_PROVIDER` env (default: `'google'`). Provider-swappable — call sites never change.
 
-- [ ] **`/api/tts` route with caching** — `GET ?text=…&voice=…`: hash the inputs; if cached in
-  Vercel Blob return its URL, else synthesize, store, return. Idempotent; each sentence synth'd once.
+- [x] **`/api/tts` route with caching** — `GET ?text=…&voice=…`: hash of `(provider, voice, text)`;
+  checks Vercel Blob (`head()`); hit → returns cached URL; miss → synthesizes, `put()` to Blob.
+  Returns 503 (graceful) when `BLOB_READ_WRITE_TOKEN` not set.
 
-- [ ] **Speaker affordance** — a speaker button on the sentence and the target form in
-  `HighlightedSentence.tsx` / `StudySession.tsx` (build it as a small `<AudioButton>` so it can be
-  reused). `haptic('selection')` on play.
+- [x] **`components/AudioButton.tsx`** — speaker/stop/loading states; `haptic('selection')` on play;
+  fetches `/api/tts` → `new Audio(url).play()`; falls back to `window.speechSynthesis` (ko-KR)
+  when TTS API returns non-200. Wired into `StudySession.tsx`: sentence + card front on all modes.
   - **Why:** "Reading + listening together is how reading fluency builds" (audit §3).
 
-- [ ] **Listening / dictation mode** *(addition, stretch)* — a study sub-mode: play the sentence
-  audio, learner recalls/types the target — builds the listening half of reading fluency. Reuses
-  the fill-blank grading path in `StudySession.tsx`.
+- [ ] **Listening / dictation mode** *(stretch — confirm before adding)* — play sentence audio, learner types the target.
 
 ### P2.3 — Cards / content management *(audit §7)*
 
-- [ ] **Sticky single search bar + filter Sheet** — collapse the filter stack in
-  `app/cards/page.tsx` into one sticky search bar with a filter icon that opens a `Sheet` (reuse
-  P1.5) holding the type pills + lesson range. Content shows immediately (zero-friction browse).
-  - **Why:** "High cognitive load before the learner has a reason to filter anything" (audit §7).
+- [x] **Sticky single search bar + filter Sheet** — collapsed filter in `app/cards/page.tsx` into
+  sticky search bar + filter icon opening a `Sheet` with type pills + `LessonRangeFilter`.
 
-- [ ] **Swipe-to-delete card rows** — iOS-native swipe gesture on card rows in `app/cards/page.tsx`
-  (pointer-based; reveals a delete action), with confirm.
+- [x] **Swipe-to-delete card rows** — `components/SwipeRow.tsx`; pointer-based; reveals Delete action;
+  calls existing `handleDelete` confirm.
 
-- [ ] **CardEditor as a modal Sheet** — render `components/CardEditor.tsx` inside a `Sheet`
-  (slide-up) instead of the in-place blue panel; clear dismiss gesture.
-  - **Why:** "The inline blue CardEditor opens in-place and has no clear dismiss gesture" (audit §7).
+- [x] **CardEditor as a modal Sheet** — `CardEditor` renders inside a `Sheet` keyed by `editingId`;
+  add-card form similarly sheeted.
 
-- [ ] **Rename "sentences" view → "Reading practice"** in `app/cards/page.tsx` (the segmented
-  toggle + heading), and promote it visually.
-  - **Why:** "This is the bridge to C1 reading — label it prominently" (audit §7).
+- [x] **Rename "sentences" view → "Reading practice"** — `ActiveView` type + labels updated.
 
 ### P2.4 — Voice, delight & long game *(audit §11)*
 
-- [ ] **Copy voice at missed emotional beats** — comeback after a missed day ("Welcome back —
-  your X-day streak is safe."), 100-day note, band-up moment. Centralize warm strings (e.g.
-  `lib/copy.ts`) and surface in `app/page.tsx` / `HabitTracker.tsx` / session-complete.
-  - **Why:** "The warmth is there in the codebase; it just needs more moments to speak" (audit §11).
+- [x] **Copy voice at missed emotional beats** — `lib/copy.ts` (`comebackMessage`, `bandUpMessage`,
+  `sessionCompleteMessage`, `hundredDayMessage`, `atRiskMessage`). Wired into `HabitTracker.tsx`
+  (freeze-bridged comeback pill) and `app/page.tsx` (band-up banner + confetti).
 
-- [ ] **Real app icon + identity mark** — design a restrained mark (stylized 한 / geometric);
-  regenerate `public/icon-192.png`, `icon-512.png`, `apple-icon.png` + a maskable-safe variant;
-  update `app/manifest.ts` `theme_color`/`background_color`.
-  - **Why:** "The current icon is a placeholder blue disc" (audit §11).
+- [x] **Real app icon + identity mark** — `public/icon.svg` (한 on brand blue rounded-square);
+  `scripts/gen-icons.mjs` rasterizes to `icon-192.png`, `icon-512.png`, `apple-icon.png`,
+  `icon-512-maskable.png`. `app/manifest.ts` updated.
 
-- [ ] **"My Korean" summary** — a shareable quarterly/milestone stat card (Spotify-Wrapped-style)
-  from `computeHabitStats` + `computeProficiency`: *"In 90 days you reviewed 1,240 cards, built a
-  24-day streak, and reached B1."* New `app/wrapped/page.tsx` or a shareable component (image export).
-  - **Why:** "Both a reward and an organic sharing surface" (audit §11).
+- [x] **"My Korean" summary** — `app/wrapped/page.tsx`; fetches `/api/activity` + `/api/stats`;
+  renders streak + CEFR band + all-time stats + next milestone. Share via `navigator.share` /
+  clipboard fallback. Entry points on Home + Habits pages.
 
 ### P2 additions (mine)
 
@@ -145,4 +138,7 @@ proud to keep.
 
 ## Progress log
 
-*(Fill in as tasks land. Format: `[x] TASK — commit abc1234, YYYY-MM-DD`)*
+- [x] P2.3 — Cards page: sticky search + filter Sheet, SwipeRow, CardEditor Sheet, "Reading practice" rename — 2026-06-22
+- [x] P2.1 — Tap-to-gloss: `/api/gloss`, `lib/gloss.ts`, `GlossProvider.tsx`, `HighlightedSentence.tsx` wiring — 2026-06-22
+- [x] P2.4 — `lib/copy.ts`, app icon (`public/icon.svg` + PNGs), `app/wrapped/page.tsx`, Home/Habits entry points, HabitTracker comeback pill — 2026-06-22
+- [x] P2.2 — `lib/tts.ts`, `/api/tts`, `AudioButton.tsx`, wired into StudySession (sentence + front on all modes) — 2026-06-22

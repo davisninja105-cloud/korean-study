@@ -264,6 +264,18 @@ export default function HabitsPage() {
       {/* Proficiency arc */}
       {masteredCount !== null && <ProficiencyArc masteredCount={masteredCount} />}
 
+      {/* My Korean summary link */}
+      <Link
+        href="/wrapped"
+        className="flex items-center justify-between bg-surface-1 rounded-2xl shadow-md px-5 py-4 hover:shadow-lg transition-shadow"
+      >
+        <div>
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">My Korean summary</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">All-time stats &amp; shareable progress card</p>
+        </div>
+        <span className="text-gray-400 dark:text-gray-500 text-lg" aria-hidden="true">→</span>
+      </Link>
+
       <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
         <Link href="/settings" className="underline underline-offset-2 hover:text-gray-600 dark:hover:text-gray-300">
           Change goal or day-start time

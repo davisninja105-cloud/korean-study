@@ -7,6 +7,7 @@ import HabitTracker from '@/components/HabitTracker'
 import ProficiencyArc from '@/components/ProficiencyArc'
 import { computeProficiency } from '@/lib/proficiency'
 import { haptic } from '@/lib/haptics'
+import { bandUpMessage } from '@/lib/copy'
 import { usePullToRefresh, PULL_THRESHOLD } from '@/lib/usePullToRefresh'
 
 interface Stats {
@@ -23,11 +24,28 @@ export default function Home() {
   const [stats, setStats] = useState<Stats | null>(null)
   const [greeting, setGreeting] = useState('')
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
+  const [bandUpMsg, setBandUpMsg] = useState<string | null>(null)
 
   const loadStats = useCallback(() => {
     fetch('/api/stats')
       .then((r) => r.json())
-      .then(setStats)
+      .then((data: Stats) => {
+        setStats(data)
+        // Band-up detection: compare current CEFR band to stored band (client-only).
+        const { band, masteredCount } = computeProficiency(data.masteredCount)
+        const stored = typeof window !== 'undefined' ? localStorage.getItem('lastBand') : null
+        if (stored && stored !== band) {
+          setBandUpMsg(bandUpMessage(band, masteredCount))
+          // Confetti on band-up (lazy import, same pattern as MilestoneCelebration)
+          import('canvas-confetti').then((m) => {
+            const confetti = m.default
+            confetti({ particleCount: 80, spread: 60, origin: { y: 0.4 } })
+          }).catch(() => {})
+        }
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('lastBand', band)
+        }
+      })
       .catch(() => {})
   }, [])
 
@@ -84,6 +102,23 @@ export default function Home() {
         <p className="text-center text-xs text-gray-500 dark:text-gray-400">{syncMsg}</p>
       )}
 
+      {/* ── Band-up celebration banner ── */}
+      {bandUpMsg && (
+        <div className="bg-surface-1 rounded-2xl shadow-md px-5 py-4 flex items-start gap-3">
+          <span className="text-2xl" aria-hidden="true">🎉</span>
+          <div className="flex-1">
+            <p className="text-sm font-medium text-gray-800 dark:text-gray-100">{bandUpMsg}</p>
+          </div>
+          <button
+            onClick={() => setBandUpMsg(null)}
+            aria-label="Dismiss"
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-lg leading-none shrink-0 min-h-11 min-w-11 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* ── Hero: the one number that drives action ── */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-4">
         {greeting && <p className="text-sm text-gray-500 dark:text-gray-400">{greeting}</p>}
@@ -135,6 +170,18 @@ export default function Home() {
       {stats && typeof stats.masteredCount === 'number' && (
         <ProficiencyArc masteredCount={stats.masteredCount} />
       )}
+
+      {/* ── My Korean link ── */}
+      <Link
+        href="/wrapped"
+        className="flex items-center justify-between bg-surface-1 rounded-2xl shadow-md px-5 py-4 hover:shadow-lg transition-shadow"
+      >
+        <div>
+          <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">My Korean</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">All-time stats &amp; progress summary</p>
+        </div>
+        <span className="text-gray-400 dark:text-gray-500 text-lg" aria-hidden="true">→</span>
+      </Link>
     </div>
   )
 }
