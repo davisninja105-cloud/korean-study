@@ -42,7 +42,7 @@ export default function HabitHeatmap({ days, today, goal, weeks = 13 }: Props) {
       className += ''
       style = { background: 'var(--reward)' }
     } else if (secs > 0) {
-      className += 'bg-orange-300 dark:bg-orange-500/40'
+      className += 'bg-reward-soft'
     } else {
       className += 'bg-gray-100 dark:bg-gray-700'
     }

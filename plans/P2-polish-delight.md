@@ -74,12 +74,15 @@ proud to keep.
 
 - [x] **`/api/tts` route with caching** — `GET ?text=…&voice=…`: hash of `(provider, voice, text)`;
   checks Vercel Blob (`head()`); hit → returns cached URL; miss → synthesizes, `put()` to Blob.
-  Returns 503 (graceful) when `BLOB_READ_WRITE_TOKEN` not set.
+  Reads `KOREAN_BLOB_READ_WRITE_TOKEN` (falls back to `BLOB_READ_WRITE_TOKEN`); 503 when unset.
 
 - [x] **`components/AudioButton.tsx`** — speaker/stop/loading states; `haptic('selection')` on play;
   fetches `/api/tts` → `new Audio(url).play()`; falls back to `window.speechSynthesis` (ko-KR)
   when TTS API returns non-200. Wired into `StudySession.tsx`: sentence + card front on all modes.
   - **Why:** "Reading + listening together is how reading fluency builds" (audit §3).
+  - **Active provider:** ElevenLabs (`TTS_PROVIDER=elevenlabs`, `eleven_multilingual_v2`).
+    Google Neural2 also ships; swap via `TTS_PROVIDER` env. Public Blob store required
+    (`KOREAN_BLOB_READ_WRITE_TOKEN` in `.env.local` + Vercel env).
 
 - [ ] **Listening / dictation mode** *(stretch — confirm before adding)* — play sentence audio, learner types the target.
 
@@ -142,3 +145,4 @@ proud to keep.
 - [x] P2.1 — Tap-to-gloss: `/api/gloss`, `lib/gloss.ts`, `GlossProvider.tsx`, `HighlightedSentence.tsx` wiring — 2026-06-22
 - [x] P2.4 — `lib/copy.ts`, app icon (`public/icon.svg` + PNGs), `app/wrapped/page.tsx`, Home/Habits entry points, HabitTracker comeback pill — 2026-06-22
 - [x] P2.2 — `lib/tts.ts`, `/api/tts`, `AudioButton.tsx`, wired into StudySession (sentence + front on all modes) — 2026-06-22
+- [x] **Color pairing** — `lib/palettes.ts` (6 complementary pairings), `rewardColor` DB setting, both accents injected server-side in `app/layout.tsx`, `--reward-soft` derived shade, Settings **App colors** section (palette grid + Customize disclosure), 4 partial-tier literal-orange bypasses fixed — 2026-06-23

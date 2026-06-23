@@ -28,7 +28,7 @@ dashboard below so progress survives across sessions.
 |---|---|---|---|
 | [P0 — Foundations](./P0-foundations.md) | P0 | ✅ Complete | 20 / 20 tasks |
 | [P1 — Identity & Retention](./P1-identity-retention.md) | P1 | ✅ Complete (deployed 2026-06-22) | 23 / 25 tasks · 2 descoped |
-| [P2 — Polish & Delight](./P2-polish-delight.md) | P2 | ✅ Complete (deployed TBD) | 14 / 14 tasks · 1 stretch descoped |
+| [P2 — Polish & Delight](./P2-polish-delight.md) | P2 | ✅ Complete (deployed 2026-06-23) | 14 / 14 tasks · 1 stretch descoped |
 
 > **P1 descoped (by request):** the *7-day review forecast* and the *"Builds on" prerequisite
 > chips* were left out; *pull-to-refresh* was kept. See the P1 doc's progress log.

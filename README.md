@@ -10,8 +10,9 @@ make a daily habit stick and make the multi-year climb to C1 reading feel visibl
 ## Stack
 
 Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS v4 · Prisma 7 + libSQL
-(SQLite local / Turso prod) · Claude API (`claude-opus-4-8`) · Google Docs API v1 ·
-lucide-react.
+(SQLite local / Turso prod) · Claude API (`claude-opus-4-8` extraction, `claude-haiku-4-5` gloss) ·
+Google Docs API v1 · ElevenLabs / Google Neural2 TTS (swappable via `TTS_PROVIDER`) ·
+Vercel Blob (TTS audio cache) · lucide-react · sharp (icon generation).
 
 ## Develop
 
@@ -23,7 +24,8 @@ npm run build   # production build (runs `prisma generate` first)
 
 Needs a `.env` / `.env.local` — see **Environment Variables** in `CLAUDE.md`:
 `ANTHROPIC_API_KEY`, `GOOGLE_SERVICE_ACCOUNT_KEY`, `NEXT_PUBLIC_GOOGLE_DOC_ID`,
-`DATABASE_URL`, `DATABASE_AUTH_TOKEN`, `APP_PASSWORD`, `AUTH_SECRET`.
+`DATABASE_URL`, `DATABASE_AUTH_TOKEN`, `APP_PASSWORD`, `AUTH_SECRET`,
+`ELEVENLABS_API_KEY`, `TTS_PROVIDER`, `KOREAN_BLOB_READ_WRITE_TOKEN`.
 
 ## Deploy
 
@@ -35,5 +37,5 @@ Schema changes need the libSQL DDL workflow (not `prisma db push`) — see `CLAU
 
 - **`CLAUDE.md`** — architecture, data flow, conventions, and gotchas. Start here.
 - **`plans/`** — the design-overhaul roadmap: the `fixes_needed.txt` audit translated into
-  tiered plans. **P0 (foundations)** and **P1 (identity & retention)** are complete and
-  deployed; **P2 (polish & delight)** is next.
+  tiered plans. **P0 (foundations)**, **P1 (identity & retention)**, and **P2 (polish &
+  delight)** are all complete and deployed.

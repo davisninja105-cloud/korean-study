@@ -4,11 +4,11 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { readableForeground } from '@/lib/color'
 import { getStoredTheme, applyTheme, type Theme } from '@/lib/theme'
+import { PALETTES, DEFAULT_ACTION_COLOR, DEFAULT_REWARD_COLOR, findActivePaletteId } from '@/lib/palettes'
 import SyncPanel from '@/components/SyncPanel'
 
 const GOAL_OPTIONS_MIN = [1, 3, 5, 10, 15, 20, 30]
 const SESSION_SIZE_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50]
-const DEFAULT_BUTTON_COLOR = '#3b82f6'
 
 // Format hour as a readable label, e.g. 0 → "12:00 AM", 2 → "2:00 AM".
 function hourLabel(h: number): string {
@@ -22,13 +22,15 @@ export default function SettingsPage() {
   const [goal, setGoal] = useState(300)
   const [dayStartHour, setDayStartHour] = useState(2)
   const [sessionSize, setSessionSize] = useState(20)
-  const [buttonColor, setButtonColor] = useState(DEFAULT_BUTTON_COLOR)
+  const [buttonColor, setButtonColor] = useState(DEFAULT_ACTION_COLOR)
+  const [rewardColor, setRewardColor] = useState(DEFAULT_REWARD_COLOR)
   const [readingTextScale, setReadingTextScale] = useState(1)
   const [readingAid, setReadingAid] = useState(false)
   const [theme, setTheme] = useState<Theme>('system')
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [customizeOpen, setCustomizeOpen] = useState(false)
   const colorSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scaleSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -39,7 +41,8 @@ export default function SettingsPage() {
         setGoal(d.dailyGoalSeconds ?? 300)
         setDayStartHour(d.dayStartHour ?? 2)
         setSessionSize(d.sessionSize ?? 20)
-        setButtonColor(d.buttonColor ?? DEFAULT_BUTTON_COLOR)
+        setButtonColor(d.buttonColor ?? DEFAULT_ACTION_COLOR)
+        setRewardColor(d.rewardColor ?? DEFAULT_REWARD_COLOR)
         setReadingTextScale(d.readingTextScale ?? 1)
         setReadingAid(d.readingAid ?? false)
         setTheme(getStoredTheme())
@@ -48,7 +51,7 @@ export default function SettingsPage() {
       .catch(() => setLoaded(true))
   }, [])
 
-  const save = async (patch: { dailyGoalSeconds?: number; dayStartHour?: number; sessionSize?: number; buttonColor?: string; readingTextScale?: number; readingAid?: boolean }) => {
+  const save = async (patch: { dailyGoalSeconds?: number; dayStartHour?: number; sessionSize?: number; buttonColor?: string; rewardColor?: string; readingTextScale?: number; readingAid?: boolean }) => {
     setSaving(true)
     setSaved(false)
     try {
@@ -62,6 +65,7 @@ export default function SettingsPage() {
       if (typeof d.dayStartHour === 'number') setDayStartHour(d.dayStartHour)
       if (typeof d.sessionSize === 'number') setSessionSize(d.sessionSize)
       if (typeof d.buttonColor === 'string') setButtonColor(d.buttonColor)
+      if (typeof d.rewardColor === 'string') setRewardColor(d.rewardColor)
       if (typeof d.readingTextScale === 'number') setReadingTextScale(d.readingTextScale)
       if (typeof d.readingAid === 'boolean') setReadingAid(d.readingAid)
       setSaved(true)
@@ -78,7 +82,7 @@ export default function SettingsPage() {
     scaleSaveTimer.current = setTimeout(() => save({ readingTextScale: val }), 400)
   }
 
-  const handleColorChange = (hex: string) => {
+  const handleActionColorChange = (hex: string) => {
     setButtonColor(hex)
     // Instant live preview — update CSS variables on the root element immediately
     document.documentElement.style.setProperty('--button', hex)
@@ -88,7 +92,25 @@ export default function SettingsPage() {
     colorSaveTimer.current = setTimeout(() => save({ buttonColor: hex }), 400)
   }
 
-  const resetColor = () => handleColorChange(DEFAULT_BUTTON_COLOR)
+  const handleRewardColorChange = (hex: string) => {
+    setRewardColor(hex)
+    document.documentElement.style.setProperty('--reward', hex)
+    document.documentElement.style.setProperty('--reward-foreground', readableForeground(hex))
+    if (colorSaveTimer.current) clearTimeout(colorSaveTimer.current)
+    colorSaveTimer.current = setTimeout(() => save({ rewardColor: hex }), 400)
+  }
+
+  const selectPalette = (action: string, reward: string) => {
+    // Apply both instantly for live preview, then save both in a single request
+    setButtonColor(action)
+    setRewardColor(reward)
+    document.documentElement.style.setProperty('--button', action)
+    document.documentElement.style.setProperty('--button-foreground', readableForeground(action))
+    document.documentElement.style.setProperty('--reward', reward)
+    document.documentElement.style.setProperty('--reward-foreground', readableForeground(reward))
+    if (colorSaveTimer.current) clearTimeout(colorSaveTimer.current)
+    colorSaveTimer.current = setTimeout(() => save({ buttonColor: action, rewardColor: reward }), 400)
+  }
 
   const handleThemeChange = (t: Theme) => {
     setTheme(t)
@@ -281,40 +303,137 @@ export default function SettingsPage() {
         </div>
       </section>
 
-      {/* Button color */}
-      <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
+      {/* App colors */}
+      <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-4">
         <div>
-          <h2 className="font-semibold text-gray-800 dark:text-gray-100">Button color</h2>
+          <h2 className="font-semibold text-gray-800 dark:text-gray-100">App colors</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-            Changes the color of primary buttons and links throughout the app.
+            Pick a complementary pairing — one tap sets both accents at once.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <input
-            type="color"
-            value={buttonColor}
-            onChange={(e) => handleColorChange(e.target.value)}
-            className="w-10 h-10 rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer p-0.5 bg-white dark:bg-gray-900"
-            aria-label="Pick button color"
-          />
-          <span className="text-sm font-mono text-gray-600 dark:text-gray-300">{buttonColor}</span>
-          {buttonColor !== DEFAULT_BUTTON_COLOR && (
-            <button
-              onClick={resetColor}
-              className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline underline-offset-2"
-            >
-              Reset to default
-            </button>
-          )}
+
+        {/* Palette grid */}
+        <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label="Color pairing">
+          {PALETTES.map((p) => {
+            const isActive = findActivePaletteId(buttonColor, rewardColor) === p.id
+            return (
+              <button
+                key={p.id}
+                type="button"
+                role="radio"
+                aria-checked={isActive}
+                onClick={() => selectPalette(p.action, p.reward)}
+                className={`flex flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 border-2 transition-colors ${
+                  isActive
+                    ? 'border-gray-800 dark:border-gray-200 bg-surface-2'
+                    : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600 hover:bg-surface-2'
+                }`}
+              >
+                {/* Two-swatch preview */}
+                <div className="flex gap-1">
+                  <span
+                    className="w-5 h-5 rounded-full shadow-sm"
+                    style={{ background: p.action }}
+                    aria-hidden="true"
+                  />
+                  <span
+                    className="w-5 h-5 rounded-full shadow-sm"
+                    style={{ background: p.reward }}
+                    aria-hidden="true"
+                  />
+                </div>
+                <span className="text-xs font-medium text-gray-600 dark:text-gray-300 leading-tight text-center">
+                  {p.name}
+                </span>
+              </button>
+            )
+          })}
         </div>
-        {/* Live preview swatch */}
-        <div className="flex items-center gap-2 mt-1">
-          <span
-            className="px-4 py-2 rounded-lg text-sm font-medium"
-            style={{ backgroundColor: buttonColor, color: readableForeground(buttonColor) }}
+
+        {/* Customize disclosure */}
+        <div className="border-t border-gray-100 dark:border-gray-700 pt-3">
+          <button
+            type="button"
+            onClick={() => setCustomizeOpen((o) => !o)}
+            className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            aria-expanded={customizeOpen}
           >
-            Preview button
-          </span>
+            <span
+              className={`text-xs transition-transform duration-150 ${customizeOpen ? 'rotate-90' : ''}`}
+              aria-hidden="true"
+            >
+              ▶
+            </span>
+            Customize
+          </button>
+
+          {customizeOpen && (
+            <div className="mt-3 flex flex-col gap-3">
+              {/* Action color */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Action color
+                </span>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={buttonColor}
+                    onChange={(e) => handleActionColorChange(e.target.value)}
+                    className="w-9 h-9 rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer p-0.5 bg-white dark:bg-gray-900"
+                    aria-label="Pick action color"
+                  />
+                  <span className="text-sm font-mono text-gray-600 dark:text-gray-300">{buttonColor}</span>
+                  {buttonColor !== DEFAULT_ACTION_COLOR && (
+                    <button
+                      onClick={() => handleActionColorChange(DEFAULT_ACTION_COLOR)}
+                      className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline underline-offset-2"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+                <span
+                  className="self-start px-3 py-1.5 rounded-lg text-xs font-medium"
+                  style={{ backgroundColor: buttonColor, color: readableForeground(buttonColor) }}
+                  aria-hidden="true"
+                >
+                  Preview
+                </span>
+              </div>
+
+              {/* Reward color */}
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                  Reward color
+                </span>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={rewardColor}
+                    onChange={(e) => handleRewardColorChange(e.target.value)}
+                    className="w-9 h-9 rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer p-0.5 bg-white dark:bg-gray-900"
+                    aria-label="Pick reward color"
+                  />
+                  <span className="text-sm font-mono text-gray-600 dark:text-gray-300">{rewardColor}</span>
+                  {rewardColor !== DEFAULT_REWARD_COLOR && (
+                    <button
+                      onClick={() => handleRewardColorChange(DEFAULT_REWARD_COLOR)}
+                      className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline underline-offset-2"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+                <span
+                  className="self-start px-3 py-1.5 rounded-lg text-xs font-medium"
+                  style={{ backgroundColor: rewardColor, color: readableForeground(rewardColor) }}
+                  aria-hidden="true"
+                >
+                  Preview
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 

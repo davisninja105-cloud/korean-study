@@ -33,6 +33,7 @@
   /* Reward (warm orange) */
   --reward: #f97316;
   --reward-foreground: #ffffff;
+  --reward-soft: color-mix(in srgb, var(--reward) 40%, transparent); /* partial progress tier */
 
   /* Sentence highlight — AA-contrast token */
   --highlight-bg: #fde68a;
@@ -101,6 +102,7 @@ html {
   /* Reward */
   --color-reward: var(--reward);
   --color-reward-foreground: var(--reward-foreground);
+  --color-reward-soft: var(--reward-soft);
 
   /* Sentence highlight */
   --color-highlight-bg: var(--highlight-bg);

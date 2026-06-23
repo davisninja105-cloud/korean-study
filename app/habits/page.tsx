@@ -216,7 +216,7 @@ export default function HabitsPage() {
               const displayPct = secs > 0 ? Math.max(heightPct, 3) : 0
               let barColor = 'bg-gray-100 dark:bg-gray-700'
               if (secs >= goal) barColor = 'bg-reward'
-              else if (secs > 0) barColor = 'bg-orange-300 dark:bg-orange-500/40'
+              else if (secs > 0) barColor = 'bg-reward-soft'
               return (
                 <div
                   key={date}
@@ -250,7 +250,7 @@ export default function HabitsPage() {
             <span className="inline-block w-3 h-3 rounded-sm" style={{ background: 'var(--reward)' }} /> Goal met
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block w-3 h-3 rounded-sm bg-orange-300 dark:bg-orange-500/40" /> Partial
+            <span className="inline-block w-3 h-3 rounded-sm bg-reward-soft" /> Partial
           </span>
           <span className="flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded-sm bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" /> No study

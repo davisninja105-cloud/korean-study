@@ -1,14 +1,17 @@
 import { prisma } from '@/lib/prisma'
 import { DEFAULT_GOAL_SECONDS, DEFAULT_DAY_START_HOUR, DEFAULT_SESSION_SIZE } from '@/lib/habit'
+import { DEFAULT_ACTION_COLOR, DEFAULT_REWARD_COLOR } from '@/lib/palettes'
 
 const GOAL_KEY = 'dailyGoalSeconds'
 const DAY_START_KEY = 'habitDayStartHour'
 const BUTTON_COLOR_KEY = 'buttonColor'
+const REWARD_COLOR_KEY = 'rewardColor'
 const SESSION_SIZE_KEY = 'sessionSize'
 const READING_SCALE_KEY = 'readingTextScale'
 const READING_AID_KEY = 'readingAid'
 
-export const DEFAULT_BUTTON_COLOR = '#3b82f6'
+/** @deprecated — import DEFAULT_ACTION_COLOR from lib/palettes instead */
+export const DEFAULT_BUTTON_COLOR = DEFAULT_ACTION_COLOR
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
 
 export async function getDailyGoalSeconds(): Promise<number> {
@@ -99,10 +102,29 @@ export async function getButtonColor(): Promise<string> {
 }
 
 export async function setButtonColor(hex: string): Promise<string> {
-  const value = HEX_RE.test(hex) ? hex.toLowerCase() : DEFAULT_BUTTON_COLOR
+  const value = HEX_RE.test(hex) ? hex.toLowerCase() : DEFAULT_ACTION_COLOR
   await prisma.setting.upsert({
     where: { key: BUTTON_COLOR_KEY },
     create: { key: BUTTON_COLOR_KEY, value },
+    update: { value },
+  })
+  return value
+}
+
+export async function getRewardColor(): Promise<string> {
+  try {
+    const row = await prisma.setting.findUnique({ where: { key: REWARD_COLOR_KEY } })
+    return row && HEX_RE.test(row.value) ? row.value : DEFAULT_REWARD_COLOR
+  } catch {
+    return DEFAULT_REWARD_COLOR
+  }
+}
+
+export async function setRewardColor(hex: string): Promise<string> {
+  const value = HEX_RE.test(hex) ? hex.toLowerCase() : DEFAULT_REWARD_COLOR
+  await prisma.setting.upsert({
+    where: { key: REWARD_COLOR_KEY },
+    create: { key: REWARD_COLOR_KEY, value },
     update: { value },
   })
   return value

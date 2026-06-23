@@ -3,7 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import Nav from '@/components/Nav'
 import ThemeWatcher from '@/components/ThemeWatcher'
 import { GlossProvider } from '@/components/GlossProvider'
-import { getButtonColor, getReadingTextScale, getReadingAid } from '@/lib/settings'
+import { getButtonColor, getRewardColor, getReadingTextScale, getReadingAid } from '@/lib/settings'
 import { readableForeground } from '@/lib/color'
 import './globals.css'
 
@@ -47,12 +47,14 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  const [buttonColor, readingScale, readingAid] = await Promise.all([
-    getButtonColor(), getReadingTextScale(), getReadingAid(),
+  const [buttonColor, rewardColor, readingScale, readingAid] = await Promise.all([
+    getButtonColor(), getRewardColor(), getReadingTextScale(), getReadingAid(),
   ])
   const buttonStyle = {
     '--button': buttonColor,
     '--button-foreground': readableForeground(buttonColor),
+    '--reward': rewardColor,
+    '--reward-foreground': readableForeground(rewardColor),
     '--reading-scale': readingScale,
   } as React.CSSProperties
 

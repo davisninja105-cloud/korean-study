@@ -93,7 +93,7 @@ export default function HabitTracker() {
     const secs = secByDate.get(date) ?? 0
     let base = 'w-5 h-5 rounded-full '
     if (secs >= goal) base += 'bg-reward'
-    else if (secs > 0) base += 'bg-orange-300 dark:bg-orange-500/40'
+    else if (secs > 0) base += 'bg-reward-soft'
     else base += 'bg-gray-100 dark:bg-gray-800'
     if (date === today) base += ' ring-2 ring-reward ring-offset-1 ring-offset-white dark:ring-offset-gray-800'
     return base
