@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { AUTH_COOKIE, computeAuthToken } from '@/lib/auth'
 
-export async function proxy(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const cookie = req.cookies.get(AUTH_COOKIE)?.value
 
   let authed = false
