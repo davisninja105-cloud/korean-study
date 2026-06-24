@@ -19,6 +19,7 @@ export async function GET(req: NextRequest) {
   const voice = searchParams.get('voice')?.trim() || activeTtsProvider.defaultVoice
 
   if (!text) return NextResponse.json({ error: 'Missing text' }, { status: 400 })
+  if (text.length > 500) return NextResponse.json({ error: 'Text too long' }, { status: 400 })
 
   // Vercel Blob token check — avoid importing the module when it's not configured.
   const blobToken = process.env.KOREAN_BLOB_READ_WRITE_TOKEN ?? process.env.BLOB_READ_WRITE_TOKEN

@@ -203,7 +203,7 @@ export async function POST(req: NextRequest) {
             if (!dbCard.components) continue
 
             let comps: string[] = []
-            try { comps = JSON.parse(dbCard.components) as string[] } catch { continue }
+            try { comps = JSON.parse(dbCard.components) as string[] } catch (err) { console.error('Failed to parse components for card:', dbCard.id, err); continue }
 
             for (const comp of comps) {
               if (!comp) continue

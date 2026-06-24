@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   res.cookies.set(AUTH_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: 'strict',
     path: '/',
     maxAge: 60 * 60 * 24 * 365, // 1 year
   })

@@ -26,10 +26,6 @@ interface Card {
   back: string
   notes?: string | null
   distractors?: string | null      // JSON array of wrong English meanings
-  // Legacy cloze fields — kept for backwards-compat fallback in fill-blank
-  clozeSentence?: string | null
-  clozeAnswer?: string | null
-  clozeTranslation?: string | null
   sentences?: Sentence[]
   review?: {
     reps?: number | null
@@ -237,7 +233,8 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       try {
         distractors = (JSON.parse(item.card.distractors) as string[])
           .filter((d) => d && d !== current.back)
-      } catch {
+      } catch (err) {
+        console.error('Failed to parse distractors for card', item.card.id, err)
         distractors = []
       }
     }
@@ -340,18 +337,16 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     ? blankSentence(chosenSentence.korean, chosenSentence.targetForm)
     : null  // null → Recall degrades to Exposure for this card
 
-  const hasCloze = !!(realCard?.clozeSentence && realCard.clozeAnswer)
-
-  // Fill-blank prompts (in priority order: new sentence > legacy cloze > plain)
+  // Fill-blank prompts: sentence-based when safe, otherwise plain front-prompt
   const fillSentence = useChosenForFill
     ? blankSentence(chosenSentence!.korean, chosenSentence!.targetForm)
-    : hasCloze ? realCard!.clozeSentence! : null
+    : null
   const fillTranslation = useChosenForFill
     ? chosenSentence!.translation
-    : hasCloze ? realCard!.clozeTranslation ?? null : null
+    : null
   const fillAnswer = useChosenForFill
     ? chosenSentence!.targetForm
-    : hasCloze ? realCard!.clozeAnswer! : currentCard.front
+    : currentCard.front
   const fillCorrect = normalizeAnswer(fillInput) === normalizeAnswer(fillAnswer)
 
   // ── Type badge colours (single source of truth: lib/card-style.ts) ──────────

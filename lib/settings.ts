@@ -10,8 +10,6 @@ const SESSION_SIZE_KEY = 'sessionSize'
 const READING_SCALE_KEY = 'readingTextScale'
 const READING_AID_KEY = 'readingAid'
 
-/** @deprecated — import DEFAULT_ACTION_COLOR from lib/palettes instead */
-export const DEFAULT_BUTTON_COLOR = DEFAULT_ACTION_COLOR
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
 
 export async function getDailyGoalSeconds(): Promise<number> {
@@ -95,9 +93,10 @@ export async function setReadingAid(on: boolean): Promise<boolean> {
 export async function getButtonColor(): Promise<string> {
   try {
     const row = await prisma.setting.findUnique({ where: { key: BUTTON_COLOR_KEY } })
-    return row && HEX_RE.test(row.value) ? row.value : DEFAULT_BUTTON_COLOR
-  } catch {
-    return DEFAULT_BUTTON_COLOR
+    return row && HEX_RE.test(row.value) ? row.value : DEFAULT_ACTION_COLOR
+  } catch (err) {
+    console.error('Failed to read buttonColor setting:', err)
+    return DEFAULT_ACTION_COLOR
   }
 }
 
@@ -115,7 +114,8 @@ export async function getRewardColor(): Promise<string> {
   try {
     const row = await prisma.setting.findUnique({ where: { key: REWARD_COLOR_KEY } })
     return row && HEX_RE.test(row.value) ? row.value : DEFAULT_REWARD_COLOR
-  } catch {
+  } catch (err) {
+    console.error('Failed to read rewardColor setting:', err)
     return DEFAULT_REWARD_COLOR
   }
 }

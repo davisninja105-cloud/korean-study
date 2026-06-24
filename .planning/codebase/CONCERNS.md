@@ -1,9 +1,9 @@
 # CONCERNS
-_Last updated: 2026-06-23_
+_Last updated: 2026-06-23 (partially resolved 2026-06-23)_
 
 ## Summary
 
-The Korean Study app is a single-user personal tool with a single shared-password auth model. Most concerns are low-severity given that context, but several infrastructure constraints are production-impacting today (Vercel 60 s timeout requiring manual workarounds for bulk operations), and there are real gaps in the auth layer (middleware is named `proxy.ts` and does not appear to be wired as a Next.js middleware), missing input length limits on LLM-backed routes, zero automated test coverage, and a handful of deprecated DB columns still referenced in production components. The codebase is otherwise well-structured, consistently linted, and clearly documented.
+The Korean Study app is a single-user personal tool with a single shared-password auth model. The previously-flagged critical issues (misnamed middleware, missing input limits, zero test coverage, deprecated cloze code, silent error swallowing, unbounded gloss cache, deprecated settings export) have all been addressed. Remaining open concerns are the Vercel 60 s Hobby-plan timeout (infra constraint, no code fix), the CSRF/SameSite gap (now set to Strict), and low-priority housekeeping items. The codebase is well-structured, consistently linted, and now has a 47-test Vitest suite covering all pure lib functions.
 
 ---
 

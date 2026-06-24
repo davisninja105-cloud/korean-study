@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({})) as { word?: string }
   const word = (body?.word ?? '').trim()
   if (!word) return NextResponse.json({ error: 'Missing word' }, { status: 400 })
+  if (word.length > 50) return NextResponse.json({ error: 'Word too long' }, { status: 400 })
 
   const normalized = normalizeFront(word)
 

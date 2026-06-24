@@ -25,9 +25,6 @@ interface Card {
   back: string
   notes?: string | null
   distractors?: string | null
-  clozeSentence?: string | null
-  clozeAnswer?: string | null
-  clozeTranslation?: string | null
   sentences?: Sentence[]
   review?: { reps?: number } | null
   lesson?: { id: string; orderIndex: number; title: string } | null
@@ -119,7 +116,8 @@ export default function StudyPage() {
         setLessonsLoaded(true)
         loadDue(from, to, to)
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        console.error('Failed to load lessons:', err)
         setLessonsLoaded(true)
         loadDue(1, 1, 1)
       })
@@ -153,7 +151,8 @@ export default function StudyPage() {
         })
         const data = await res.json()
         setPractice(data.practice ?? [])
-      } catch {
+      } catch (err) {
+        console.error('Failed to generate AI practice:', err)
         setPractice([])
       }
     }

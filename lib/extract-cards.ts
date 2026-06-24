@@ -177,19 +177,24 @@ ${notes}`,
         if (startBracket !== -1) {
           parsed = JSON.parse(salvaged.slice(startBracket)) as Partial<ExtractedCard>[]
         }
-      } catch { /* leave parsed empty */ }
+      } catch (err) {
+        console.warn('JSON salvage (no-bracket path) failed:', err)
+      }
     }
     if (parsed.length === 0) throw new Error('No JSON array found in response')
   } else {
     try {
       parsed = JSON.parse(jsonMatch[0]) as Partial<ExtractedCard>[]
-    } catch {
+    } catch (parseErr) {
       // Truncated mid-array; try to salvage
+      console.warn('Full JSON parse failed, attempting salvage:', parseErr)
       const lastBrace = jsonMatch[0].lastIndexOf('},')
       if (lastBrace !== -1) {
         try {
           parsed = JSON.parse(jsonMatch[0].slice(0, lastBrace + 1) + ']') as Partial<ExtractedCard>[]
-        } catch { /* leave empty */ }
+        } catch (salvageErr) {
+          console.warn('JSON salvage also failed:', salvageErr)
+        }
       }
       if (parsed.length === 0) throw new Error('Failed to parse JSON response')
     }

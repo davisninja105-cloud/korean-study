@@ -31,15 +31,23 @@ export async function getCachedGloss(normalizedWord: string): Promise<GlossResul
   if (!row) return null
   try {
     return JSON.parse(row.value) as GlossResult
-  } catch {
+  } catch (err) {
+    console.warn('Failed to parse cached gloss for', normalizedWord, err)
     return null
   }
 }
+
+const MAX_GLOSS_CACHE_ENTRIES = 2000
 
 export async function setCachedGloss(
   normalizedWord: string,
   result: GlossResult
 ): Promise<void> {
+  const count = await prisma.setting.count({
+    where: { key: { startsWith: CACHE_KEY_PREFIX } },
+  })
+  if (count >= MAX_GLOSS_CACHE_ENTRIES) return
+
   const key = `${CACHE_KEY_PREFIX}${normalizedWord}`
   await prisma.setting.upsert({
     where: { key },

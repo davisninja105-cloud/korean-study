@@ -78,7 +78,8 @@ export default function Home() {
           : 'Up to date'
       )
       loadStats()
-    } catch {
+    } catch (err) {
+      console.error('Home sync failed:', err)
       setSyncMsg('Sync failed — try again from Settings')
     }
   }, [loadStats])

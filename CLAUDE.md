@@ -8,6 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run dev          # Start dev server at http://localhost:3000
 npm run build        # Production build (runs `prisma generate` first)
 npm run lint         # ESLint
+npm test             # Vitest unit tests (pure lib functions — no DB/API needed)
 npx prisma generate  # Regenerate Prisma client after schema changes
 git push origin main # Deploy to production (GitHub → Vercel auto-deploy)
 ```
