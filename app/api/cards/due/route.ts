@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSessionSize } from '@/lib/settings'
 import { sequenceCards, selectSessionCards } from '@/lib/sequence'
+import { countUnknownWords } from '@/lib/known-words'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
@@ -73,6 +74,23 @@ export async function GET(req: NextRequest) {
 
   const chosen  = selectSessionCards(cards, edges, sessionSize, now)
   const ordered = sequenceCards(chosen, edges, now)
+
+  // Query cards the learner has mastered (FSRS state ≥ 2 = Review/Relearning) ONCE
+  // per request. Selecting only normalizedFront keeps this fast and allocation-light.
+  const knownRows = await prisma.card.findMany({
+    where: { review: { state: { gte: 2 } } },
+    select: { normalizedFront: true },
+  })
+  const knownLemmas = new Set(knownRows.map((r) => r.normalizedFront))
+
+  // Annotate each sentence with a unknownCount (pure ranking signal for the client).
+  // Cost: ≤ sessionSize × 3 sentence scans — well under the Vercel 60s limit.
+  for (const card of ordered) {
+    for (const s of card.sentences) {
+      (s as typeof s & { unknownCount: number }).unknownCount =
+        countUnknownWords(s.korean, s.targetForm, knownLemmas)
+    }
+  }
 
   return NextResponse.json(ordered)
 }
