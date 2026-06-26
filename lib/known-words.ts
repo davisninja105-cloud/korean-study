@@ -28,7 +28,7 @@ import { splitParticle } from './sentence-match'
  * @param targetForm The card's own target form — tokens belonging to the target
  *                   are skipped entirely (never counted as unknown, per D-05).
  * @param knownLemmas  Set of normalizedFront strings representing cards the
- *                   learner has mastered (FSRS state ≥ 2).
+ *                   learner has seen at least once (FSRS state ≥ 1).
  * @returns Number of unknown tokens (0 for empty input).
  */
 export function countUnknownWords(
