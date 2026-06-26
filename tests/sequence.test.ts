@@ -72,14 +72,14 @@ describe('selectSessionCards', () => {
   })
 
   it('pulls a less-due prerequisite into the session with its dependent', () => {
-    // 'dep' is 5 days overdue (very due); 'prereq' is only 1 day overdue (less due)
-    // With sessionSize=1, a naive most-due-only cap would take only 'dep' and skip 'prereq'.
-    // selectSessionCards should pull 'prereq' in as a prerequisite of 'dep'.
-    const dep    = card('dep',    5)   // more overdue → selected as seed first
-    const prereq = card('prereq', 1)   // less overdue → would be excluded without closure
-    const filler = card('filler', 0)   // least overdue
+    // 'dep' is 5 days overdue; 'filler' is 3 days overdue; 'prereq' is 1 day overdue.
+    // sessionSize=2, so a naive most-due-only cap would pick [dep, filler] and skip 'prereq'.
+    // selectSessionCards must pull 'prereq' in as a prerequisite of 'dep' instead.
+    const dep    = card('dep',    5)   // most overdue → selected as first seed
+    const filler = card('filler', 3)   // more overdue than prereq but not a prerequisite
+    const prereq = card('prereq', 1)   // less overdue → excluded by naive cap but required by dep
     const edges: SeqEdge[] = [{ cardId: 'dep', prerequisiteId: 'prereq' }]
-    const result = selectSessionCards([dep, prereq, filler], edges, 1, NOW)
+    const result = selectSessionCards([dep, filler, prereq], edges, 2, NOW)
     const ids = result.map((c) => c.id)
     expect(ids).toContain('dep')
     expect(ids).toContain('prereq')

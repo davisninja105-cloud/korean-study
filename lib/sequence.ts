@@ -26,6 +26,32 @@
  * is safe to call in server contexts and unit tests alike.
  */
 
+/**
+ * Foundation-first session selector.
+ *
+ * Given the whole eligible pool of cards, prerequisite edges, and a session-size
+ * cap, returns a downward-closed subset: every card in the result has all of its
+ * in-pool prerequisites present in the result too.
+ *
+ * Algorithm:
+ *   1. Early exit: if pool.length <= sessionSize, return pool unchanged.
+ *   2. Build inPool set, poolById map, and in-pool prereqs adjacency map
+ *      (only edges whose both endpoints are in the pool are considered).
+ *   3. Sort pool most-due-first as seeds (nextReview ascending; tiebreak by
+ *      lesson.orderIndex then id — stable, purity-safe, no Date.now() needed).
+ *   4. Iterate seeds: before starting each, break if result.length >= sessionSize.
+ *      addClosure(seed) recurses into prerequisites first (foundations-before-
+ *      dependent, DFS) guarded by `visiting` (cycle-safe) and `added` (dedup).
+ *   5. Return result.slice(0, sessionSize). Because prerequisites always precede
+ *      their dependent in the result, any prefix is still downward-closed — the
+ *      slice only drops dependents, never orphans a prerequisite.
+ *
+ * Overshoot: at most one closure beyond sessionSize (the last seed may pull in
+ * its prerequisite chain before the break fires).
+ *
+ * Pure — `now` is a parameter; no Date.now()/new Date()/Math.random() in the body.
+ */
+
 const URGENCY_SCALE = 7   // days overdue per depth level
 const MAX_BOOST     = 3   // max depth levels a card can climb via urgency
 
@@ -104,4 +130,82 @@ export function sequenceCards<T extends SeqCard>(
     // Tiebreak 3: id lexicographic — stable, purity-safe
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
   })
+}
+
+export function selectSessionCards<T extends SeqCard>(
+  pool: T[],
+  edges: SeqEdge[],
+  sessionSize: number,
+  now: Date = new Date()
+): T[] {
+  // Early exit: everything fits — return the pool unchanged.
+  if (pool.length <= sessionSize) return pool
+
+  // `now` is accepted as a parameter for purity parity with sequenceCards.
+  // It is not used directly in the body below; the seed sort reads nextReview
+  // directly as an absolute timestamp (no relative-to-now arithmetic needed).
+  void now
+
+  // Build fast-lookup structures scoped to the pool.
+  const inPool   = new Set(pool.map((c) => c.id))
+  const poolById = new Map(pool.map((c) => [c.id, c]))
+
+  // Build in-pool prerequisite adjacency map (only edges where both endpoints
+  // are in the pool — same filter pattern as sequenceCards' inSession map).
+  const prereqs = new Map<string, Set<string>>()
+  for (const c of pool) prereqs.set(c.id, new Set())
+  for (const e of edges) {
+    if (inPool.has(e.cardId) && inPool.has(e.prerequisiteId)) {
+      prereqs.get(e.cardId)!.add(e.prerequisiteId)
+    }
+  }
+
+  // Sort pool most-due-first to determine seed priority.
+  // Comparator is pure (reads stored dates; no Date.now()/Math.random()).
+  const seeds = [...pool].sort((a, b) => {
+    // Most-due first: nextReview ascending (null/undefined → 0, i.e. most urgent)
+    const nrA = a.nextReview ? (typeof a.nextReview === 'string' ? new Date(a.nextReview).getTime() : a.nextReview.getTime()) : 0
+    const nrB = b.nextReview ? (typeof b.nextReview === 'string' ? new Date(b.nextReview).getTime() : b.nextReview.getTime()) : 0
+    if (nrA !== nrB) return nrA - nrB
+    // Tiebreak: lesson orderIndex ascending
+    const loA = a.lesson?.orderIndex ?? 0
+    const loB = b.lesson?.orderIndex ?? 0
+    if (loA !== loB) return loA - loB
+    // Tiebreak: id lexicographic — stable, purity-safe
+    return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  })
+
+  // DFS that adds a card and all of its in-pool prerequisites to `result`,
+  // prerequisites first (foundations before dependents — downward-closed).
+  // `visiting` is the DFS recursion stack guard (cycle-safe: back-edges are ignored).
+  // `added` ensures each card is pushed at most once (dedup).
+  const result:   T[]         = []
+  const added     = new Set<string>()
+  const visiting  = new Set<string>()
+
+  function addClosure(card: T): void {
+    if (added.has(card.id) || visiting.has(card.id)) return
+    visiting.add(card.id)
+    for (const pId of prereqs.get(card.id) ?? []) {
+      const prereq = poolById.get(pId)
+      if (prereq) addClosure(prereq)
+    }
+    visiting.delete(card.id)
+    // Guard again after recursion: a cycle-back-edge may have already added this node.
+    if (!added.has(card.id)) {
+      added.add(card.id)
+      result.push(card)
+    }
+  }
+
+  // Iterate seeds most-due-first; stop starting new seeds once at capacity.
+  // Overshoot is bounded to one closure (the in-flight addClosure for the last seed).
+  for (const seed of seeds) {
+    if (result.length >= sessionSize) break
+    addClosure(seed)
+  }
+
+  // Slice to sessionSize. Because prerequisites always appear before their
+  // dependent in `result`, any prefix is still downward-closed.
+  return result.slice(0, sessionSize)
 }
