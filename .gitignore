@@ -46,3 +46,5 @@ dev.db-journal
 next-env.d.ts
 
 /app/generated/prisma
+
+.planning/

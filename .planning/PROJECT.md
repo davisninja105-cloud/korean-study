@@ -20,13 +20,13 @@ When you study, what you're meant to learn is always learnable in the moment —
 - ✓ Foundation-first *reordering* of the in-session card set via `sequenceCards()` (blended depth + urgency score) — existing
 - ✓ Sentence-centric cards (1–3 example sentences per card; rotation across reviews) with highlighted target form — existing
 - ✓ TTS audio, tap-to-gloss, habit/streak tracking, CEFR proficiency, theming — existing
+- ✓ Sessions are prerequisite-coherent: `selectSessionCards()` drags still-due, in-pool prerequisites into the session (downward-closed under the prerequisite relation), not just reshuffles — **validated in Phase 1**
+- ✓ Session selection honors `sessionSize` *during* selection (whole-pool fetch → select → sequence; bounded overshoot) — **validated in Phase 1**
 
 ### Active
 
 <!-- This milestone. Building toward these. -->
 
-- [ ] Sessions are prerequisite-coherent: a due dependent never appears without its still-unlearned, in-pool prerequisites (foundations dragged into the session, not just reshuffled)
-- [ ] Session selection accounts for `sessionSize` during selection, not only after the cap
 - [ ] Brand-new words are introduced bare (word-front first); the example sentence becomes back-of-card context
 - [ ] When a sentence is shown, prefer the one whose other words are already known (least-unknown ranking)
 - [ ] Pure helpers (`selectSessionCards`, `countUnknownWords`) are unit-tested; behavior is verifiable in a real dev study session
@@ -56,7 +56,7 @@ When you study, what you're meant to learn is always learnable in the moment —
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Selection: pull prerequisites into the session (keep most-due seeds, drag still-due prereqs in) | Makes sessions prerequisite-coherent without abandoning urgency ordering | — Pending |
+| Selection: pull prerequisites into the session (keep most-due seeds, drag still-due prereqs in) | Makes sessions prerequisite-coherent without abandoning urgency ordering | ✓ Shipped in Phase 1 (`selectSessionCards`); seed/urgency due-date read corrected to use the `review` relation (CR-01) |
 | Presentation: bare word first for new cards + prefer known-word sentences | Matches the lived problem — isolate the new word, then give readable context | — Pending |
 | Scope: the plan + small obvious follow-ons surfaced during implementation | User wants room for adjacent fixes without a separate cycle | — Pending |
 | Success measured by real-study feel (tests + manual walkthrough as support) | It's a personal learning tool; the felt experience is the real bar | — Pending |
@@ -79,4 +79,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-25 after initialization*
+*Last updated: 2026-06-26 after Phase 1 (Foundation-Aware Session Selection) completion*
