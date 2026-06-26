@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { getSessionSize } from '@/lib/settings'
-import { sequenceCards } from '@/lib/sequence'
+import { sequenceCards, selectSessionCards } from '@/lib/sequence'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl
@@ -36,9 +36,9 @@ export async function GET(req: NextRequest) {
 
   const sessionSize = await getSessionSize()
 
-  // Fetch the most urgent set of cards (capped at sessionSize).
-  // orderBy: nextReview asc ensures the most-due cards are selected before we apply
-  // the foundation-first sequencer below.
+  // Fetch the whole eligible pool (generous safety cap of 1000).
+  // Selection and sessionSize capping now happen in selectSessionCards below;
+  // orderBy: nextReview asc pre-sorts so the most-due cards are available first.
   const cards = await prisma.card.findMany({
     where: {
       ...lessonClause,
@@ -52,17 +52,16 @@ export async function GET(req: NextRequest) {
       sentences: { orderBy: { orderIndex: 'asc' } },
     },
     orderBy: { review: { nextReview: 'asc' } },
-    take: sessionSize,
+    take: 1000,
   })
 
   if (cards.length === 0) {
     return NextResponse.json([])
   }
 
-  // Fetch prerequisite edges restricted to the in-session card set, then apply
-  // the blended foundation-first sequencer (lib/sequence.ts).
-  // Only edges whose BOTH endpoints are in-session are relevant — the sequencer
-  // ignores out-of-session edges anyway, but restricting the query is cheaper.
+  // Fetch prerequisite edges across the whole pool.
+  // sequenceCards ignores out-of-session edges, so passing the full pool edge
+  // list to both selectSessionCards and sequenceCards is safe.
   const ids = cards.map((c) => c.id)
   const edges = await prisma.cardDependency.findMany({
     where: {
@@ -72,7 +71,8 @@ export async function GET(req: NextRequest) {
     select: { cardId: true, prerequisiteId: true },
   })
 
-  const ordered = sequenceCards(cards, edges, now)
+  const chosen  = selectSessionCards(cards, edges, sessionSize, now)
+  const ordered = sequenceCards(chosen, edges, now)
 
   return NextResponse.json(ordered)
 }
