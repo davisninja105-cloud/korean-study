@@ -17,6 +17,7 @@ interface Sentence {
   korean: string
   targetForm: string
   translation: string
+  unknownCount?: number
 }
 
 interface Card {
@@ -292,30 +293,49 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   const realCard = item.kind === 'real' ? item.card : null
   const cardSentences = realCard?.sentences ?? []
 
+  // Bare-word-first gate: new/learning cards (FSRS state 0 or 1) show bare word on
+  // the flashcard Exposure front. State 2 (Review) and state 3 (Relearning) keep
+  // sentence-on-front. Pure — reads stored review.state; no Date.now().
+  const isNewCard = !realCard?.review || (realCard.review.state ?? 0) <= 1
+  const showBareFront =
+    mode === 'flashcard' &&
+    flashcardSubMode === 'exposure' &&
+    isNewCard &&
+    cardSentences.length > 0
+
   // Whether the current mode needs a blank-safe sentence to function correctly.
   // Exposure flashcard rotates freely; Recall and fill-blank require safeToBlank.
   const needsBlank =
     mode === 'fill-blank' ||
     (mode === 'flashcard' && flashcardSubMode === 'recall')
 
-  // Rotation base — decorrelated by card id, varies across reviews as reps grows.
-  const rotationIdx = cardSentences.length > 0
-    ? (hashStr(realCard!.id) + (realCard!.review?.reps ?? 0)) % cardSentences.length
-    : -1
-
-  // When a blank is needed and rotation lands on an unsafe sentence, use the first
-  // blank-safe sentence instead (the prompt guarantees index 0 is blank-safe).
-  // Exposure always uses rotationIdx for contextual variety across sessions.
+  // Least-unknown sentence selection — replaces bare rotation.
+  // Step 1: find the minimum unknownCount tier among all sentences.
+  // Step 2: collect candidate indices at that tier.
+  // Step 3: pick within the tier by the existing hashStr rotation (variety once words are known).
+  // Step 4: when a blank is needed, override with the first blank-safe index.
+  // Pure — Math.min/Array.map/Array.filter are all pure; no Date.now() or Math.random().
   const chosenIdx = (() => {
-    if (rotationIdx < 0) return -1
-    if (!needsBlank) return rotationIdx
-    if (sentenceMatch(cardSentences[rotationIdx].korean, cardSentences[rotationIdx].targetForm).safeToBlank) {
-      return rotationIdx
+    if (cardSentences.length === 0) return -1
+    const reps = realCard!.review?.reps ?? 0
+
+    // Least-unknown tier pick (Exposure and non-blank modes).
+    const minUnknown = Math.min(...cardSentences.map((s) => s.unknownCount ?? Infinity))
+    const candidates = cardSentences
+      .map((_, i) => i)
+      .filter((i) => (cardSentences[i].unknownCount ?? Infinity) === minUnknown)
+    const tierIdx = candidates[(hashStr(realCard!.id) + reps) % candidates.length]
+
+    if (!needsBlank) return tierIdx
+
+    // Blank-safe override: if the tier pick is unsafe, find first safe sentence.
+    if (sentenceMatch(cardSentences[tierIdx].korean, cardSentences[tierIdx].targetForm).safeToBlank) {
+      return tierIdx
     }
     const safeIdx = cardSentences.findIndex(
       (s) => sentenceMatch(s.korean, s.targetForm).safeToBlank
     )
-    return safeIdx >= 0 ? safeIdx : rotationIdx  // preserve graceful degrade if none safe
+    return safeIdx >= 0 ? safeIdx : tierIdx  // graceful degrade: no safe sentence
   })()
 
   // chosenSentence = selected for this review; used for fill-blank answer / Recall front
@@ -543,7 +563,17 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
               <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
                 {currentCard.type}
               </span>
-              {chosenSentence ? (
+              {showBareFront ? (
+                // New card (state 0/1): show bare word on front; sentence stays on back.
+                <>
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                    <AudioButton text={currentCard.front} aria-label={`Play: ${currentCard.front}`} size="sm" />
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 text-center">Recall the meaning</p>
+                </>
+              ) : chosenSentence ? (
+                // Matured card (state 2/3) or Recall mode: existing sentence-on-front logic unchanged.
                 flashcardSubMode === 'recall' && recallBlanked ? (
                   <>
                     <p className="hangul-sentence text-gray-800 dark:text-gray-100 font-medium text-center text-2xl">
@@ -571,6 +601,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                   </>
                 )
               ) : (
+                // No sentences at all: bare-word block unchanged.
                 <div className="flex items-center justify-center gap-2">
                   <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
                   <AudioButton
