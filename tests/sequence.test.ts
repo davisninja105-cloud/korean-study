@@ -4,7 +4,11 @@ import { sequenceCards, selectSessionCards, SeqCard, SeqEdge } from '../lib/sequ
 function card(id: string, daysOverdue = 0): SeqCard {
   const now = new Date('2026-06-23T12:00:00Z')
   const nextReview = new Date(now.getTime() - daysOverdue * 86_400_000)
-  return { id, nextReview }
+  // Mirror the real Prisma shape: nextReview lives on the `review` relation
+  // (the due-cards route fetches with include: { review: true }). Using the
+  // relation shape here guards against CR-01 (reading card.nextReview directly,
+  // which is undefined for real cards) regressing.
+  return { id, review: { nextReview } }
 }
 
 const NOW = new Date('2026-06-23T12:00:00Z')
@@ -139,5 +143,18 @@ describe('selectSessionCards', () => {
     const result = selectSessionCards([seed, p1, p2], edges, 1, NOW)
     // Final slice must be <= sessionSize
     expect(result.length).toBeLessThanOrEqual(1)
+  })
+
+  it('prioritizes the most-due card as seed, reading nextReview from the review relation', () => {
+    // Independent cards (no edges). ids are deliberately REVERSE-alphabetical to
+    // due-ness: 'aaa' is least due, 'zzz' is most due. With sessionSize 1, correct
+    // most-due-first selection must pick 'zzz'. If nextReview were read off the
+    // (absent) flat field instead of card.review.nextReview, all cards would tie at
+    // 0 and the id tiebreak would wrongly pick 'aaa' — so this asserts the CR-01
+    // relation read, which the membership/ordering cases above do not discriminate.
+    const pool = [card('aaa', 1), card('mmm', 5), card('zzz', 10)]
+    const result = selectSessionCards(pool, [], 1, NOW)
+    expect(result).toHaveLength(1)
+    expect(result[0].id).toBe('zzz')
   })
 })

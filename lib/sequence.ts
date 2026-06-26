@@ -57,6 +57,11 @@ const MAX_BOOST     = 3   // max depth levels a card can climb via urgency
 
 export interface SeqCard {
   id: string
+  // The due date lives on the CardReview relation in Prisma (the route fetches
+  // with include: { review: true }), so the relation is the primary source.
+  // The flat `nextReview` is accepted as a fallback for already-flattened
+  // callers and test fixtures.
+  review?: { nextReview?: Date | string | null } | null
   nextReview?: Date | string | null
   lesson?: { orderIndex?: number | null } | null
 }
@@ -64,6 +69,22 @@ export interface SeqCard {
 export interface SeqEdge {
   cardId: string
   prerequisiteId: string
+}
+
+/**
+ * Resolve a card's next-review time to epoch milliseconds.
+ *
+ * Prefers the `review` relation (the real Prisma shape from
+ * `include: { review: true }`), falling back to a flattened `nextReview` field.
+ * Missing/null → 0 (treated as most-due). Pure — no Date.now()/Math.random().
+ *
+ * Single source of truth for "when is this card due?" so the seed sort,
+ * urgency boost, and tiebreaks all read the date from the same place.
+ */
+function nextReviewMs(card: SeqCard): number {
+  const nr = card.review?.nextReview ?? card.nextReview
+  if (!nr) return 0
+  return typeof nr === 'string' ? new Date(nr).getTime() : nr.getTime()
 }
 
 export function sequenceCards<T extends SeqCard>(
@@ -107,9 +128,8 @@ export function sequenceCards<T extends SeqCard>(
   }
 
   function urgencyBoost(card: T): number {
-    const nr = card.nextReview
-    if (!nr) return 0
-    const nrMs = typeof nr === 'string' ? new Date(nr).getTime() : nr.getTime()
+    const nrMs = nextReviewMs(card)
+    if (!nrMs) return 0
     const daysOverdue = (nowMs - nrMs) / dayMs
     if (daysOverdue <= 0) return 0   // not yet due
     return Math.min(daysOverdue / URGENCY_SCALE, MAX_BOOST)
@@ -124,8 +144,8 @@ export function sequenceCards<T extends SeqCard>(
     const loB = b.lesson?.orderIndex ?? 0
     if (loA !== loB) return loA - loB
     // Tiebreak 2: nextReview ascending (most urgent first among ties)
-    const nrA = a.nextReview ? (typeof a.nextReview === 'string' ? new Date(a.nextReview).getTime() : a.nextReview.getTime()) : 0
-    const nrB = b.nextReview ? (typeof b.nextReview === 'string' ? new Date(b.nextReview).getTime() : b.nextReview.getTime()) : 0
+    const nrA = nextReviewMs(a)
+    const nrB = nextReviewMs(b)
     if (nrA !== nrB) return nrA - nrB
     // Tiebreak 3: id lexicographic — stable, purity-safe
     return a.id < b.id ? -1 : a.id > b.id ? 1 : 0
@@ -164,8 +184,8 @@ export function selectSessionCards<T extends SeqCard>(
   // Comparator is pure (reads stored dates; no Date.now()/Math.random()).
   const seeds = [...pool].sort((a, b) => {
     // Most-due first: nextReview ascending (null/undefined → 0, i.e. most urgent)
-    const nrA = a.nextReview ? (typeof a.nextReview === 'string' ? new Date(a.nextReview).getTime() : a.nextReview.getTime()) : 0
-    const nrB = b.nextReview ? (typeof b.nextReview === 'string' ? new Date(b.nextReview).getTime() : b.nextReview.getTime()) : 0
+    const nrA = nextReviewMs(a)
+    const nrB = nextReviewMs(b)
     if (nrA !== nrB) return nrA - nrB
     // Tiebreak: lesson orderIndex ascending
     const loA = a.lesson?.orderIndex ?? 0
