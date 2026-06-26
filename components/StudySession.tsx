@@ -293,15 +293,9 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   const realCard = item.kind === 'real' ? item.card : null
   const cardSentences = realCard?.sentences ?? []
 
-  // Bare-word-first gate: new/learning cards (FSRS state 0 or 1) show bare word on
-  // the flashcard Exposure front. State 2 (Review) and state 3 (Relearning) keep
-  // sentence-on-front. Pure — reads stored review.state; no Date.now().
+  // Bare-word-first gate: computed after chosenSentence (needs unknownCount).
+  // isNewCard = never reviewed or still in Learning (state 0 or 1).
   const isNewCard = !realCard?.review || (realCard.review.state ?? 0) <= 1
-  const showBareFront =
-    mode === 'flashcard' &&
-    flashcardSubMode === 'exposure' &&
-    isNewCard &&
-    cardSentences.length > 0
 
   // Whether the current mode needs a blank-safe sentence to function correctly.
   // Exposure flashcard rotates freely; Recall and fill-blank require safeToBlank.
@@ -340,6 +334,17 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
   // chosenSentence = selected for this review; used for fill-blank answer / Recall front
   const chosenSentence = chosenIdx >= 0 ? cardSentences[chosenIdx] : null
+
+  // Show the bare Korean word on the Exposure front only when the card is new AND
+  // the best available sentence still contains words the learner hasn't seen yet.
+  // Once all context words are known (unknownCount === 0), show the sentence directly
+  // so the learner encounters the new word in a fully readable sentence.
+  const showBareFront =
+    mode === 'flashcard' &&
+    flashcardSubMode === 'exposure' &&
+    isNewCard &&
+    cardSentences.length > 0 &&
+    (chosenSentence?.unknownCount ?? 0) > 0
 
   // displayedSentence = shown on revealed side; cycles via "See another example →"
   const displayedSentence = chosenSentence !== null
@@ -564,14 +569,11 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                 {currentCard.type}
               </span>
               {showBareFront ? (
-                // New card (state 0/1): show bare word on front; sentence stays on back.
-                <>
-                  <div className="flex items-center justify-center gap-2">
-                    <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
-                    <AudioButton text={currentCard.front} aria-label={`Play: ${currentCard.front}`} size="sm" />
-                  </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 text-center">Recall the meaning</p>
-                </>
+                // New card whose context words aren't all known yet: bare word on front.
+                <div className="flex items-center justify-center gap-2">
+                  <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                  <AudioButton text={currentCard.front} aria-label={`Play: ${currentCard.front}`} size="sm" />
+                </div>
               ) : chosenSentence ? (
                 // Matured card (state 2/3) or Recall mode: existing sentence-on-front logic unchanged.
                 flashcardSubMode === 'recall' && recallBlanked ? (

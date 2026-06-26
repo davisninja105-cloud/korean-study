@@ -75,10 +75,11 @@ export async function GET(req: NextRequest) {
   const chosen  = selectSessionCards(cards, edges, sessionSize, now)
   const ordered = sequenceCards(chosen, edges, now)
 
-  // Query cards the learner has mastered (FSRS state ≥ 2 = Review/Relearning) ONCE
-  // per request. Selecting only normalizedFront keeps this fast and allocation-light.
+  // Query cards the learner has seen at least once (FSRS state ≥ 1) ONCE per request.
+  // "Seen once" is the threshold for counting a word as known context.
+  // Selecting only normalizedFront keeps this fast and allocation-light.
   const knownRows = await prisma.card.findMany({
-    where: { review: { state: { gte: 2 } } },
+    where: { review: { state: { gte: 1 } } },
     select: { normalizedFront: true },
   })
   const knownLemmas = new Set(knownRows.map((r) => r.normalizedFront))
