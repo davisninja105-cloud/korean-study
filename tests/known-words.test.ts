@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { countUnknownWords } from '@/lib/known-words'
+import { countUnknownWords } from '../lib/known-words'
 
 describe('countUnknownWords', () => {
   it('counts tokens not in knownLemmas', () => {
