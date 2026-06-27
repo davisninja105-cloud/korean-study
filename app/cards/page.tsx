@@ -125,10 +125,13 @@ export default function CardsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...newCard, notes: newCard.notes || null }),
       })
+      if (!res.ok) throw new Error(`Failed: ${res.status}`)
       const created = await res.json()
       setCards((prev) => [created, ...prev])
       setNewCard({ type: 'vocabulary', front: '', back: '', notes: '' })
       setShowAdd(false)
+    } catch (err) {
+      console.error('Add card failed:', err)
     } finally {
       setAdding(false)
     }
