@@ -122,14 +122,17 @@ export default function WrappedPage() {
       {/* ── Wrapped summary card ────────────────────────────────────────── */}
       <section className="bg-surface-1 rounded-2xl shadow-md overflow-hidden">
         {/* Hero strip */}
-        <div className="px-6 py-5" style={{ background: 'linear-gradient(135deg, #3b82f6 0%, #6366f1 100%)' }}>
-          <p className="text-white/80 text-sm font-medium mb-1">Your journey so far</p>
-          <p className="text-white text-3xl font-bold leading-tight">
+        <div
+          className="px-6 py-5"
+          style={{ background: 'linear-gradient(135deg, var(--button) 0%, var(--cat-vocab) 100%)' }}
+        >
+          <p className="text-button-foreground/80 text-sm font-medium mb-1">Your journey so far</p>
+          <p className="text-button-foreground text-3xl font-bold leading-tight">
             {stats.totalReviews.toLocaleString()}{' '}
-            <span className="text-white/70 text-lg font-normal">reviews</span>
+            <span className="text-button-foreground/70 text-lg font-normal">reviews</span>
           </p>
           {stats.daysStudied > 0 && (
-            <p className="text-white/80 text-sm mt-1">
+            <p className="text-button-foreground/80 text-sm mt-1">
               across {stats.daysStudied} study day{stats.daysStudied !== 1 ? 's' : ''}
             </p>
           )}
