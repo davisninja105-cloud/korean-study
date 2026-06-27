@@ -93,7 +93,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
   }
 
   // ── Shared input class ────────────────────────────────────────────────────
-  const inputCls = 'border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg px-3 py-2 text-sm w-full'
+  const inputCls = 'border border-border bg-surface-1 text-foreground rounded-lg px-3 py-2 text-sm w-full'
 
   return (
     <div className="bg-surface-2 rounded-xl p-4 flex flex-col gap-3">
@@ -125,7 +125,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
 
       {/* ── Sentences editor ── */}
       <div className="flex flex-col gap-2">
-        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+        <p className="text-xs font-semibold text-muted uppercase tracking-wide">
           Example Sentences
         </p>
 
@@ -139,7 +139,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
           return (
             <div
               key={idx}
-              className="bg-surface-1 rounded-lg p-3 flex flex-col gap-2 border border-gray-200 dark:border-gray-700"
+              className="bg-surface-1 rounded-lg p-3 flex flex-col gap-2 border border-border"
             >
               {/* Korean sentence */}
               <input
@@ -198,8 +198,8 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
 
               {/* Live highlight preview */}
               {s.korean.length > 0 && (
-                <div className="text-sm text-gray-500 dark:text-gray-400 bg-surface-2 rounded px-2 py-1.5 leading-relaxed">
-                  <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">Preview:</span>
+                <div className="text-sm text-muted bg-surface-2 rounded px-2 py-1.5 leading-relaxed">
+                  <span className="text-xs text-muted mr-1">Preview:</span>
                   <HighlightedSentence korean={s.korean} targetForm={s.targetForm} />
                 </div>
               )}
@@ -219,7 +219,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
       <div className="flex gap-2 justify-end">
         <button
           onClick={onCancel}
-          className="px-4 py-2 min-h-11 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
+          className="px-4 py-2 min-h-11 text-sm text-muted hover:bg-surface-3 rounded-lg"
         >
           Cancel
         </button>

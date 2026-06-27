@@ -12,8 +12,8 @@ interface Props {
 }
 
 const SELECT_CLASS =
-  'border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 ' +
-  'text-gray-800 dark:text-gray-100 rounded-lg px-2 py-1.5 text-sm'
+  'border border-border bg-surface-1 ' +
+  'text-foreground rounded-lg px-2 py-1.5 text-sm'
 
 export function isFullSpan(from: number, to: number, maxOrder: number): boolean {
   return from <= 1 && to >= maxOrder
@@ -38,7 +38,7 @@ export default function LessonRangeFilter({ lessons, from, to, onChange }: Props
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <span className="text-sm text-gray-500 dark:text-gray-400 whitespace-nowrap">Lessons</span>
+      <span className="text-sm text-muted whitespace-nowrap">Lessons</span>
       <select
         value={from}
         onChange={(e) => handleFrom(Number(e.target.value))}
@@ -51,7 +51,7 @@ export default function LessonRangeFilter({ lessons, from, to, onChange }: Props
           </option>
         ))}
       </select>
-      <span className="text-sm text-gray-500 dark:text-gray-400">–</span>
+      <span className="text-sm text-muted">–</span>
       <select
         value={to}
         onChange={(e) => handleTo(Number(e.target.value))}
