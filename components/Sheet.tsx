@@ -82,9 +82,9 @@ export default function Sheet({ open, onClose, title, children }: Props) {
       >
         {/* Drag handle + optional title (sticky so it stays while content scrolls) */}
         <div className="sticky top-0 bg-surface-1 pt-3 pb-2 flex flex-col items-center rounded-t-3xl z-10">
-          <div className="w-10 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600" />
+          <div className="w-10 h-1.5 rounded-full bg-surface-3" />
           {title && (
-            <h2 className="mt-2 text-base font-semibold text-gray-800 dark:text-gray-100">{title}</h2>
+            <h2 className="mt-2 text-base font-semibold text-foreground">{title}</h2>
           )}
         </div>
         <div className="px-2 pb-2">{children}</div>

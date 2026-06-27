@@ -22,29 +22,29 @@ export default function ModeSelector({ cardCount, onSelect }: Props) {
 
   return (
     <div className="flex flex-col items-center gap-6 p-8">
-      <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Choose Study Mode</h2>
-      <p className="text-gray-500 dark:text-gray-400">{cardCount} card{cardCount !== 1 ? 's' : ''} due for review</p>
+      <h2 className="text-2xl font-bold text-foreground">Choose Study Mode</h2>
+      <p className="text-muted">{cardCount} card{cardCount !== 1 ? 's' : ''} due for review</p>
 
       <div className="grid grid-cols-1 gap-4 w-full max-w-sm">
         {modes.map((mode) => (
           <div key={mode.value}>
             <button
               onClick={() => onSelect(mode.value, includeAI, flashcardSubMode)}
-              className="w-full flex flex-col items-center bg-surface-1 border-2 border-gray-200 dark:border-gray-700 rounded-xl p-5 font-semibold text-gray-800 dark:text-gray-100 hover:border-button hover:bg-button-soft transition-colors text-lg"
+              className="w-full flex flex-col items-center bg-surface-1 border-2 border-border rounded-xl p-5 font-semibold text-foreground hover:border-button hover:bg-button-soft transition-colors text-lg"
             >
               {mode.label}
-              <span className="text-sm text-gray-500 dark:text-gray-400 mt-1 font-normal">{mode.desc}</span>
+              <span className="text-sm text-muted mt-1 font-normal">{mode.desc}</span>
             </button>
 
             {/* Exposure / Recall sub-toggle — only shown under Flashcards */}
             {mode.value === 'flashcard' && (
-              <div className="flex gap-1 mt-2 bg-gray-100 dark:bg-gray-800 rounded-lg p-1">
+              <div className="flex gap-1 mt-2 bg-surface-3 rounded-lg p-1">
                 <button
                   onClick={() => setFlashcardSubMode('exposure')}
                   className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     flashcardSubMode === 'exposure'
-                      ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                      ? 'bg-surface-1 text-foreground shadow-sm'
+                      : 'text-muted hover:text-muted-foreground'
                   }`}
                 >
                   Exposure
@@ -54,8 +54,8 @@ export default function ModeSelector({ cardCount, onSelect }: Props) {
                   onClick={() => setFlashcardSubMode('recall')}
                   className={`flex-1 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     flashcardSubMode === 'recall'
-                      ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm'
-                      : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                      ? 'bg-surface-1 text-foreground shadow-sm'
+                      : 'text-muted hover:text-muted-foreground'
                   }`}
                 >
                   Recall
@@ -67,7 +67,7 @@ export default function ModeSelector({ cardCount, onSelect }: Props) {
         ))}
       </div>
 
-      <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300 cursor-pointer">
+      <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer">
         <input
           type="checkbox"
           checked={includeAI}

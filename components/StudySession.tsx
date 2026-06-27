@@ -523,7 +523,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       className="flex flex-col items-center gap-6 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] w-full max-w-xl mx-auto outline-none"
     >
       {/* Header: mode label + controls */}
-      <div className="flex justify-between items-center w-full text-sm text-gray-500 dark:text-gray-400">
+      <div className="flex justify-between items-center w-full text-sm text-muted">
         <span className="capitalize">
           {isPractice ? 'AI Practice' : mode.replace('-', ' ')}
         </span>
@@ -531,7 +531,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           {canUndo && (
             <button
               onClick={handleUndo}
-              className="px-2 py-1 rounded-md hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+              className="px-2 py-1 rounded-md hover:text-muted-foreground hover:bg-surface-3 transition-colors"
               title="Undo last rating"
             >
               ↩
@@ -539,7 +539,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           )}
           <button
             onClick={() => onComplete(stats)}
-            className="px-2 py-1 rounded-md hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            className="px-2 py-1 rounded-md hover:text-muted-foreground hover:bg-surface-3 transition-colors"
           >
             End
           </button>
@@ -554,7 +554,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           color="var(--button)"
           aria-label={`Session progress: ${Math.round(progressPct)}%`}
         />
-        <p className="text-sm text-gray-500 dark:text-gray-400">
+        <p className="text-sm text-muted">
           {stats.reviewed} reviewed · {queue.length} left
         </p>
       </div>
@@ -571,17 +571,17 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
               {showBareFront ? (
                 // New card whose context words aren't all known yet: bare word on front.
                 <div className="flex items-center justify-center gap-2">
-                  <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                  <p className="hangul text-5xl font-bold text-foreground text-center">{currentCard.front}</p>
                   <AudioButton text={currentCard.front} aria-label={`Play: ${currentCard.front}`} size="sm" />
                 </div>
               ) : chosenSentence ? (
                 // Matured card (state 2/3) or Recall mode: existing sentence-on-front logic unchanged.
                 flashcardSubMode === 'recall' && recallBlanked ? (
                   <>
-                    <p className="hangul-sentence text-gray-800 dark:text-gray-100 font-medium text-center text-2xl">
+                    <p className="hangul-sentence text-foreground font-medium text-center text-2xl">
                       {recallBlanked}
                     </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 text-center">Recall the missing word</p>
+                    <p className="text-xs text-muted text-center">Recall the missing word</p>
                   </>
                 ) : (
                   <>
@@ -590,7 +590,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                         korean={chosenSentence.korean}
                         targetForm={chosenSentence.targetForm}
                         cardType={currentCard.type}
-                        className="font-medium text-center text-2xl text-gray-800 dark:text-gray-100"
+                        className="font-medium text-center text-2xl text-foreground"
                         onWordTap={onWordTap}
                       />
                       <AudioButton
@@ -599,13 +599,13 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                         size="sm"
                       />
                     </div>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 text-center">Recall the meaning of the highlighted part</p>
+                    <p className="text-xs text-muted text-center">Recall the meaning of the highlighted part</p>
                   </>
                 )
               ) : (
                 // No sentences at all: bare-word block unchanged.
                 <div className="flex items-center justify-center gap-2">
-                  <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                  <p className="hangul text-5xl font-bold text-foreground text-center">{currentCard.front}</p>
                   <AudioButton
                     text={currentCard.front}
                     aria-label={`Play: ${currentCard.front}`}
@@ -628,7 +628,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                         korean={displayedSentence.korean}
                         targetForm={displayedSentence.targetForm}
                         cardType={currentCard.type}
-                        className="text-xl text-gray-700 dark:text-gray-200 text-center"
+                        className="text-xl text-muted-foreground text-center"
                         onWordTap={onWordTap}
                       />
                       <AudioButton
@@ -638,23 +638,23 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                       />
                     </div>
                   )}
-                  <hr className="w-full border-gray-200 dark:border-gray-700" />
+                  <hr className="w-full border-border" />
                   <div className="flex items-center justify-center gap-2">
-                    <p className="hangul text-3xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                    <p className="hangul text-3xl font-bold text-foreground text-center">{currentCard.front}</p>
                     <AudioButton
                       text={currentCard.front}
                       aria-label={`Play: ${currentCard.front}`}
                       size="sm"
                     />
                   </div>
-                  <p className="text-xl text-gray-600 dark:text-gray-300 text-center">{currentCard.back}</p>
+                  <p className="text-xl text-muted-foreground text-center">{currentCard.back}</p>
                   {displayedSentence?.translation && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center italic hangul-gloss">
+                    <p className="text-sm text-muted text-center italic hangul-gloss">
                       &ldquo;{displayedSentence.translation}&rdquo;
                     </p>
                   )}
                   {currentCard.notes && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center italic">{currentCard.notes}</p>
+                    <p className="text-sm text-muted text-center italic">{currentCard.notes}</p>
                   )}
                   {cardSentences.length > 1 && (
                     <button
@@ -668,17 +668,17 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
               ) : (
                 <div className="flex flex-col items-center gap-4 w-full">
                   <div className="flex items-center justify-center gap-2">
-                    <p className="hangul text-5xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+                    <p className="hangul text-5xl font-bold text-foreground text-center">{currentCard.front}</p>
                     <AudioButton
                       text={currentCard.front}
                       aria-label={`Play: ${currentCard.front}`}
                       size="sm"
                     />
                   </div>
-                  <hr className="w-full border-gray-200 dark:border-gray-700" />
-                  <p className="text-xl text-gray-600 dark:text-gray-300 text-center">{currentCard.back}</p>
+                  <hr className="w-full border-border" />
+                  <p className="text-xl text-muted-foreground text-center">{currentCard.back}</p>
                   {currentCard.notes && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400 text-center italic">{currentCard.notes}</p>
+                    <p className="text-sm text-muted text-center italic">{currentCard.notes}</p>
                   )}
                 </div>
               )}
@@ -696,7 +696,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
         {mode === 'multiple-choice' && (
           <>
             <div className="flex items-center justify-center gap-2">
-              <p className="hangul text-4xl font-bold text-gray-800 dark:text-gray-100 text-center">{currentCard.front}</p>
+              <p className="hangul text-4xl font-bold text-foreground text-center">{currentCard.front}</p>
               <AudioButton text={currentCard.front} aria-label={`Play: ${currentCard.front}`} size="sm" />
             </div>
             <div className="grid grid-cols-2 gap-3 w-full mt-4">
@@ -707,13 +707,13 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
                 let btnClass = 'border-2 rounded-xl p-3 min-h-11 text-sm font-medium transition-colors text-left'
                 if (!hasAnswered) {
-                  btnClass += ' border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:border-button hover:bg-button-soft'
+                  btnClass += ' border-border text-muted-foreground hover:border-button hover:bg-button-soft'
                 } else if (isCorrect) {
                   btnClass += ' border-green-500 bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-300'
                 } else if (isSelected) {
                   btnClass += ' border-red-500 bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300'
                 } else {
-                  btnClass += ' border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 opacity-50'
+                  btnClass += ' border-border text-muted-foreground opacity-50'
                 }
 
                 return (
@@ -728,7 +728,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                     className={`relative ${btnClass}`}
                   >
                     {!hasAnswered && (
-                      <span className="absolute top-1 left-1.5 text-[10px] text-gray-500 dark:text-gray-400 font-mono leading-none select-none">
+                      <span className="absolute top-1 left-1.5 text-[10px] text-muted font-mono leading-none select-none">
                         {i + 1}
                       </span>
                     )}
@@ -738,7 +738,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
               })}
             </div>
             {mcSelected && currentCard.notes && (
-              <p className="text-sm text-gray-500 dark:text-gray-400 text-center italic mt-2">{currentCard.notes}</p>
+              <p className="text-sm text-muted text-center italic mt-2">{currentCard.notes}</p>
             )}
           </>
         )}
@@ -748,18 +748,18 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           <>
             {fillSentence !== null ? (
               <>
-                <p className="hangul-sentence text-gray-800 dark:text-gray-100 font-medium text-center">
+                <p className="hangul-sentence text-foreground font-medium text-center">
                   {fillSentence}
                 </p>
                 {fillTranslation && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center italic">{fillTranslation}</p>
+                  <p className="text-sm text-muted text-center italic">{fillTranslation}</p>
                 )}
-                <p className="text-xs text-gray-500 dark:text-gray-400 text-center">Fill in the blank (___)</p>
+                <p className="text-xs text-muted text-center">Fill in the blank (___)</p>
               </>
             ) : (
               <>
-                <p className="text-xl text-gray-600 dark:text-gray-300 text-center">Type the Korean for:</p>
-                <p className="text-lg text-gray-800 dark:text-gray-100 font-medium text-center">{currentCard.back}</p>
+                <p className="text-xl text-muted-foreground text-center">Type the Korean for:</p>
+                <p className="text-lg text-foreground font-medium text-center">{currentCard.back}</p>
               </>
             )}
             <input
@@ -768,7 +768,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
               onChange={(e) => setFillInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !revealed) handleReveal() }}
               placeholder="한국어로 입력하세요..."
-              className="w-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg px-4 py-2 text-center text-xl focus:outline-none focus:ring-2 focus:ring-button/50"
+              className="w-full border border-border bg-surface-1 text-foreground rounded-lg px-4 py-2 text-center text-xl focus:outline-none focus:ring-2 focus:ring-button/50"
               disabled={revealed}
               autoFocus
             />
@@ -784,11 +784,11 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
                       aria-label={`Play sentence: ${chosenSentence.korean}`}
                       size="sm"
                     />
-                    <span className="text-xs text-gray-400 dark:text-gray-500">Hear it</span>
+                    <span className="text-xs text-muted">Hear it</span>
                   </div>
                 )}
                 {currentCard.notes && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{currentCard.notes}</p>
+                  <p className="text-sm text-muted mt-1">{currentCard.notes}</p>
                 )}
               </div>
             )}
@@ -823,7 +823,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
             <button
               onClick={() => submitReview(2)}
               aria-label={intervalHints ? `Hard, review again in ${intervalHints[1].short}` : 'Hard'}
-              className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-gray-100 text-gray-500 dark:bg-gray-700/50 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex flex-col items-center justify-center gap-0.5"
+              className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-surface-3 text-muted hover:bg-surface-3 transition-colors flex flex-col items-center justify-center gap-0.5"
             >
               <span className="font-semibold">Hard</span>
               {intervalHints && <span className="text-[10px] opacity-60 text-center leading-tight">{intervalHints[1].short}</span>}

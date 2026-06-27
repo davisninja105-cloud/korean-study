@@ -123,26 +123,26 @@ function GlossPopoverUI({ state, onClose, onAddCard }: PopoverProps) {
     >
       <div
         ref={panelRef}
-        className="bg-surface-1 rounded-2xl shadow-xl border border-gray-200/60 dark:border-gray-700/60 p-4 flex flex-col gap-2"
+        className="bg-surface-1 rounded-2xl shadow-xl border border-border/60 p-4 flex flex-col gap-2"
       >
         {/* Close button */}
         <button
           onClick={onClose}
           aria-label="Close gloss"
-          className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-xs"
+          className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center text-muted hover:text-muted-foreground rounded-full hover:bg-surface-3 text-xs"
         >
           ✕
         </button>
 
         {loading && (
-          <div className="py-2 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+          <div className="py-2 flex items-center gap-2 text-sm text-muted">
             <span className="inline-block w-3 h-3 border-2 border-button border-t-transparent rounded-full animate-spin" />
             Looking up…
           </div>
         )}
 
         {error && !loading && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 py-1">
+          <p className="text-sm text-muted py-1">
             Couldn&apos;t find a gloss for <span className="hangul font-medium">{word}</span>.
           </p>
         )}
@@ -150,12 +150,12 @@ function GlossPopoverUI({ state, onClose, onAddCard }: PopoverProps) {
         {entry && !loading && (
           <>
             {/* Dictionary form */}
-            <p className="hangul font-bold text-gray-900 dark:text-gray-100 text-lg leading-tight pr-6">
+            <p className="hangul font-bold text-foreground text-lg leading-tight pr-6">
               {entry.dictionaryForm}
             </p>
 
             {/* Gloss */}
-            <p className="text-sm text-gray-600 dark:text-gray-300">{entry.gloss}</p>
+            <p className="text-sm text-muted-foreground">{entry.gloss}</p>
 
             {/* Part-of-speech chip */}
             <div className="flex items-center gap-2">
@@ -163,13 +163,13 @@ function GlossPopoverUI({ state, onClose, onAddCard }: PopoverProps) {
                 {entry.partOfSpeech}
               </span>
               {entry.source === 'corpus' && (
-                <span className="text-[10px] text-gray-400 dark:text-gray-500">in your deck</span>
+                <span className="text-[10px] text-muted">in your deck</span>
               )}
             </div>
 
             {/* Add as card — only for non-corpus results (corpus card already exists) */}
             {!entry.cardId && (
-              <div className="pt-1 border-t border-gray-100 dark:border-gray-700/60 mt-1">
+              <div className="pt-1 border-t border-border/60 mt-1">
                 {added ? (
                   <p className="text-xs text-green-600 dark:text-green-400">Card added ✓</p>
                 ) : (

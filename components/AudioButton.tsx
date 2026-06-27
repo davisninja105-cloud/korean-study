@@ -129,7 +129,7 @@ export default function AudioButton({
     <button
       onClick={play}
       aria-label={ariaLabel}
-      className={`${btnBase} text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700`}
+      className={`${btnBase} text-muted hover:text-muted-foreground hover:bg-surface-3`}
     >
       {/* Speaker icon */}
       <svg viewBox="0 0 16 16" fill="currentColor" className={iconSize} aria-hidden="true">
