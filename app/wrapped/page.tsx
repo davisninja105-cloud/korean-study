@@ -18,7 +18,7 @@ function fmtTime(seconds: number): string {
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
   if (h === 0) return `${m}m`
-  return `${h}h ${m > 0 ? ` ${m}m` : ''}`
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
 export default function WrappedPage() {
