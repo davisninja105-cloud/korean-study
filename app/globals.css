@@ -67,6 +67,10 @@
     --muted: #9ca3af;             /* gray-400 analog */
     --muted-foreground: #d1d5db; /* gray-300 analog */
     --border: #374151;            /* gray-700 analog */
+
+    /* Sentence highlight — reversed amber pairing (D-01; amber-200 text on amber-900 bg, 7.28:1 AAA) */
+    --highlight-bg: #78350f;     /* amber-900 */
+    --highlight-fg: #fde68a;     /* amber-200 */
   }
 }
 
@@ -84,6 +88,10 @@
   --muted: #9ca3af;             /* gray-400 analog */
   --muted-foreground: #d1d5db; /* gray-300 analog */
   --border: #374151;            /* gray-700 analog */
+
+  /* Sentence highlight — reversed amber pairing (mirrors @media dark block exactly) */
+  --highlight-bg: #78350f;     /* amber-900 */
+  --highlight-fg: #fde68a;     /* amber-200 */
 
   color-scheme: dark;
 }
