@@ -47,8 +47,7 @@ export default function HabitHeatmap({ days, today, goal, weeks = 13 }: Props) {
       className += 'bg-surface-3'
     }
     if (date === today) {
-      className += ' ring-2 ring-offset-1 ring-offset-surface-1'
-      style = { ...style, outlineColor: 'var(--reward)', boxShadow: '0 0 0 2px var(--reward)' }
+      className += ' ring-2 ring-reward ring-offset-1 ring-offset-surface-1'
     }
     return { className, style }
   }
