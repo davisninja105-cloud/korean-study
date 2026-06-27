@@ -164,7 +164,7 @@ export default function HabitTracker() {
 
         {/* Comeback message (freeze used yesterday) */}
         {freezeUsed && !isAtRisk && (
-          <p className="text-xs font-medium px-3 py-2 rounded-lg text-green-700 dark:text-green-300" style={{ background: 'color-mix(in srgb, #22c55e 10%, transparent)' }}>
+          <p className="text-xs font-medium px-3 py-2 rounded-lg bg-green-500/10 text-green-700 dark:text-green-300">
             {comebackMessage(current)}
           </p>
         )}
