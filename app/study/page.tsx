@@ -412,7 +412,7 @@ function SessionComplete({
           <p className="text-xs text-muted mt-0.5">Reviewed</p>
         </div>
         <div className="bg-surface-2 rounded-xl p-3 text-center">
-          <span className="text-xl font-bold text-green-500">{completeStats.correct}</span>
+          <span className="text-xl font-bold text-green-600 dark:text-green-400">{completeStats.correct}</span>
           <p className="text-xs text-muted mt-0.5">Correct</p>
         </div>
         <div className="bg-surface-2 rounded-xl p-3 text-center">
