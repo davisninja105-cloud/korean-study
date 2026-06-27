@@ -165,14 +165,14 @@ export default function CardsPage() {
 
   // ── Shared input classes ───────────────────────────────────────────────────
   const inputCls =
-    'border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 ' +
-    'text-gray-900 dark:text-gray-100 rounded-lg px-3 py-2 text-sm'
+    'border border-border bg-surface-1 ' +
+    'text-foreground rounded-lg px-3 py-2 text-sm'
 
   return (
     <div className="flex flex-col gap-4">
 
       {/* ── Sticky search + action bar ──────────────────────────────────────── */}
-      <div className="sticky top-0 z-10 -mx-4 px-4 py-3 bg-background border-b border-gray-200/60 dark:border-gray-800/60">
+      <div className="sticky top-0 z-10 -mx-4 px-4 py-3 bg-background border-b border-border/60">
         <div className="flex gap-2 items-center">
           <input
             type="text"
@@ -186,10 +186,10 @@ export default function CardsPage() {
           <button
             onClick={() => setFilterOpen(true)}
             aria-label={`Filters${activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ''}`}
-            className="relative min-h-11 min-w-11 flex items-center justify-center rounded-lg bg-surface-1 hover:bg-surface-2 border border-gray-200 dark:border-gray-700 transition-colors shrink-0"
+            className="relative min-h-11 min-w-11 flex items-center justify-center rounded-lg bg-surface-1 hover:bg-surface-2 border border-border transition-colors shrink-0"
           >
             <SlidersHorizontal
-              className={`w-4 h-4 ${activeFilterCount > 0 ? 'text-button' : 'text-gray-500 dark:text-gray-400'}`}
+              className={`w-4 h-4 ${activeFilterCount > 0 ? 'text-button' : 'text-muted'}`}
             />
             {activeFilterCount > 0 && (
               <span className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-button text-button-foreground text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
@@ -209,15 +209,15 @@ export default function CardsPage() {
       </div>
 
       {/* ── View toggle: Cards | Reading practice ───────────────────────────── */}
-      <div className="flex bg-gray-100 dark:bg-gray-800 rounded-lg p-1 self-start">
+      <div className="flex bg-surface-3 rounded-lg p-1 self-start">
         {(['cards', 'reading-practice'] as ActiveView[]).map((v) => (
           <button
             key={v}
             onClick={() => setActiveView(v)}
             className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
               activeView === v
-                ? 'bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-100 shadow-sm'
-                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                ? 'bg-surface-1 text-foreground shadow-sm'
+                : 'text-muted hover:text-muted-foreground'
             }`}
           >
             {v === 'cards'
@@ -231,7 +231,7 @@ export default function CardsPage() {
       {activeView === 'cards' && (
         <>
           {filteredCards.length === 0 && (
-            <p className="text-gray-500 dark:text-gray-400 text-center py-8">
+            <p className="text-muted text-center py-8">
               {cards.length === 0
                 ? 'No cards yet. Sync your Google Doc to get started.'
                 : 'No cards match your search.'}
@@ -243,12 +243,12 @@ export default function CardsPage() {
               {/* Group header */}
               <button
                 onClick={() => toggleCollapse(key)}
-                className="flex items-center gap-2 text-sm font-semibold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors py-1"
+                className="flex items-center gap-2 text-sm font-semibold text-muted hover:text-muted-foreground transition-colors py-1"
               >
                 <span className={`text-xs px-2 py-0.5 rounded-full ${typeBadgeClass(key === 'other' ? 'other' : key)}`}>
                   {label}
                 </span>
-                <span className="text-xs font-normal text-gray-500 dark:text-gray-400">
+                <span className="text-xs font-normal text-muted">
                   {groupCards.length} card{groupCards.length !== 1 ? 's' : ''}
                 </span>
                 <span className="ml-auto text-xs opacity-50">{collapsed[key] ? '▶' : '▼'}</span>
@@ -271,14 +271,14 @@ export default function CardsPage() {
                           {card.type}
                         </span>
                         {card.lesson && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                          <span className="text-xs text-muted">
                             Lesson {card.lesson.orderIndex}
                           </span>
                         )}
                       </div>
                       <div className="flex items-center gap-1">
                         {card.review && (
-                          <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">
+                          <span className="text-xs text-muted mr-1">
                             {card.review.reps} review{card.review.reps !== 1 ? 's' : ''}
                           </span>
                         )}
@@ -298,10 +298,10 @@ export default function CardsPage() {
                     </div>
 
                     {/* Word / pattern */}
-                    <p className="font-bold text-gray-800 dark:text-gray-100 hangul">{card.front}</p>
-                    <p className="text-gray-500 dark:text-gray-400">{card.back}</p>
+                    <p className="font-bold text-foreground hangul">{card.front}</p>
+                    <p className="text-muted">{card.back}</p>
                     {card.notes && (
-                      <p className="text-sm text-gray-500 dark:text-gray-400 italic">{card.notes}</p>
+                      <p className="text-sm text-muted italic">{card.notes}</p>
                     )}
 
                     {/* Example sentences — indented with left border */}
@@ -316,11 +316,11 @@ export default function CardsPage() {
                               korean={s.korean}
                               targetForm={s.targetForm}
                               cardType={card.type}
-                              className="text-sm text-gray-700 dark:text-gray-200"
+                              className="text-sm text-muted-foreground"
                               onWordTap={onWordTap}
                             />
                             {s.translation && (
-                              <p className="text-xs text-gray-500 dark:text-gray-400 italic">
+                              <p className="text-xs text-muted italic">
                                 {s.translation}
                               </p>
                             )}
@@ -340,7 +340,7 @@ export default function CardsPage() {
       {activeView === 'reading-practice' && (
         <>
           {allSentences.length === 0 && (
-            <p className="text-gray-500 dark:text-gray-400 text-center py-8">
+            <p className="text-muted text-center py-8">
               {filteredCards.length === 0
                 ? 'No cards match your filter.'
                 : 'No example sentences yet. Sync a lesson to generate them.'}
@@ -368,18 +368,18 @@ export default function CardsPage() {
                   korean={sentence.korean}
                   targetForm={sentence.targetForm}
                   cardType={card.type}
-                  className="text-base text-gray-800 dark:text-gray-100 font-medium leading-relaxed"
+                  className="text-base text-foreground font-medium leading-relaxed"
                   onWordTap={onWordTap}
                 />
                 {sentence.translation && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 italic">{sentence.translation}</p>
+                  <p className="text-sm text-muted italic">{sentence.translation}</p>
                 )}
                 {/* Parent card reference */}
                 <div className="flex items-center gap-2 mt-1">
                   <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${typeBadgeClass(card.type)}`}>
                     {card.type}
                   </span>
-                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                  <span className="text-xs text-muted">
                     {card.front} — {card.back}
                   </span>
                 </div>
@@ -394,7 +394,7 @@ export default function CardsPage() {
         <div className="px-4 pb-6 flex flex-col gap-5">
           {/* Card type */}
           <div>
-            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
+            <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-3">
               Card type
             </p>
             <div className="flex gap-2 flex-wrap">
@@ -405,7 +405,7 @@ export default function CardsPage() {
                   className={`px-3 py-2 min-h-11 text-sm rounded-lg capitalize ${
                     filter === f
                       ? 'bg-button-soft text-button font-medium'
-                      : 'bg-surface-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      : 'bg-surface-2 text-muted hover:bg-surface-3'
                   }`}
                 >
                   {f === 'all' ? 'All types' : f}
@@ -417,7 +417,7 @@ export default function CardsPage() {
           {/* Lesson range */}
           {lessons.length >= 2 && (
             <div>
-              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
+              <p className="text-xs font-semibold text-muted uppercase tracking-wide mb-3">
                 Lesson range
               </p>
               <LessonRangeFilter

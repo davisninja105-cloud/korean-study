@@ -191,9 +191,9 @@ export default function StudyPage() {
   if (phase === 'loading') {
     return (
       <div className="w-full max-w-xl mx-auto animate-pulse flex flex-col gap-4 pt-4">
-        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-full" />
-        <div className="h-[220px] bg-gray-100 dark:bg-gray-800 rounded-2xl" />
-        <div className="h-12 bg-gray-200 dark:bg-gray-700 rounded-xl" />
+        <div className="h-3 bg-surface-3 rounded w-full" />
+        <div className="h-[220px] bg-surface-3 rounded-2xl" />
+        <div className="h-12 bg-surface-3 rounded-xl" />
       </div>
     )
   }
@@ -214,7 +214,7 @@ export default function StudyPage() {
           <div className="flex justify-center">
             <button
               onClick={() => setShowFilterSheet(true)}
-              className="flex items-center gap-2 px-4 py-2 min-h-11 rounded-full bg-surface-2 text-sm text-gray-600 dark:text-gray-300 hover:bg-surface-3 transition-colors"
+              className="flex items-center gap-2 px-4 py-2 min-h-11 rounded-full bg-surface-2 text-sm text-muted-foreground hover:bg-surface-3 transition-colors"
             >
               <SlidersHorizontal className="w-4 h-4" />
               {rangeLabel}
@@ -226,7 +226,7 @@ export default function StudyPage() {
           <div className="text-center py-10 flex flex-col items-center gap-4">
             {noDueAndNoAhead ? (
               <>
-                <p className="text-gray-500 dark:text-gray-400">
+                <p className="text-muted">
                   🎉 All caught up in this range!
                 </p>
                 <Link href="/" className="inline-block bg-button text-button-foreground px-6 py-3 min-h-11 rounded-lg font-medium hover:bg-button-hover">
@@ -235,14 +235,14 @@ export default function StudyPage() {
               </>
             ) : (
               <>
-                <p className="text-gray-500 dark:text-gray-400">No cards due for review right now.</p>
+                <p className="text-muted">No cards due for review right now.</p>
                 <button
                   onClick={startAhead}
                   className="inline-block bg-button text-button-foreground px-6 py-3 min-h-11 rounded-lg font-medium hover:bg-button-hover"
                 >
                   Study ahead →
                 </button>
-                <Link href="/" className="text-sm text-gray-500 dark:text-gray-400 hover:underline">
+                <Link href="/" className="text-sm text-muted hover:underline">
                   Back to Dashboard
                 </Link>
               </>
@@ -254,7 +254,7 @@ export default function StudyPage() {
               <p className="text-5xl font-bold" style={{ color: 'var(--reward)' }}>
                 {studyCards.length}
               </p>
-              <p className="text-gray-500 dark:text-gray-400 mt-1">
+              <p className="text-muted mt-1">
                 card{studyCards.length !== 1 ? 's' : ''} ready
               </p>
             </div>
@@ -290,10 +290,10 @@ export default function StudyPage() {
   if (phase === 'loading-practice') {
     return (
       <div className="w-full max-w-xl mx-auto animate-pulse flex flex-col gap-4 pt-4">
-        <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-full" />
-        <div className="h-[220px] bg-gray-100 dark:bg-gray-800 rounded-2xl" />
-        <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-48 mx-auto" />
-        <div className="h-12 bg-gray-200 dark:bg-gray-700 rounded-xl" />
+        <div className="h-3 bg-surface-3 rounded w-full" />
+        <div className="h-[220px] bg-surface-3 rounded-2xl" />
+        <div className="h-4 bg-surface-3 rounded w-48 mx-auto" />
+        <div className="h-12 bg-surface-3 rounded-xl" />
       </div>
     )
   }
@@ -371,8 +371,8 @@ function SessionComplete({
     <div className="flex flex-col items-center gap-6 px-4 py-10 max-w-sm mx-auto text-center">
       {/* Heading */}
       <div>
-        <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">{heading}</h2>
-        <p className="text-gray-500 dark:text-gray-400 mt-1 text-sm">Keep showing up every day.</p>
+        <h2 className="text-3xl font-bold text-foreground">{heading}</h2>
+        <p className="text-muted mt-1 text-sm">Keep showing up every day.</p>
       </div>
 
       {/* Today's goal ring + streak */}
@@ -385,14 +385,14 @@ function SessionComplete({
             color="var(--reward)"
             aria-label={`Today's goal: ${todayPct}%`}
           />
-          <p className="text-xs text-gray-500 dark:text-gray-400">Today&apos;s goal</p>
+          <p className="text-xs text-muted">Today&apos;s goal</p>
         </div>
         {streakInfo && streakInfo.current > 0 && (
           <div className="flex flex-col items-center gap-1">
             <p className="text-4xl font-bold" style={{ color: 'var(--reward)' }}>
               🔥 {streakInfo.current}
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">day streak</p>
+            <p className="text-xs text-muted">day streak</p>
           </div>
         )}
       </div>
@@ -400,16 +400,16 @@ function SessionComplete({
       {/* Stat tiles — supporting detail */}
       <div className="grid grid-cols-3 gap-3 w-full">
         <div className="bg-surface-2 rounded-xl p-3 text-center">
-          <span className="text-xl font-bold text-gray-700 dark:text-gray-200">{completeStats.reviewed}</span>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Reviewed</p>
+          <span className="text-xl font-bold text-muted-foreground">{completeStats.reviewed}</span>
+          <p className="text-xs text-muted mt-0.5">Reviewed</p>
         </div>
         <div className="bg-surface-2 rounded-xl p-3 text-center">
           <span className="text-xl font-bold text-green-500">{completeStats.correct}</span>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Correct</p>
+          <p className="text-xs text-muted mt-0.5">Correct</p>
         </div>
         <div className="bg-surface-2 rounded-xl p-3 text-center">
           <span className="text-xl font-bold text-cat-vocab">{accuracy}%</span>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Accuracy</p>
+          <p className="text-xs text-muted mt-0.5">Accuracy</p>
         </div>
       </div>
 
@@ -420,7 +420,7 @@ function SessionComplete({
         Study {sessionSize} more →
       </button>
 
-      <Link href="/" className="text-sm text-gray-500 dark:text-gray-400 hover:underline">
+      <Link href="/" className="text-sm text-muted hover:underline">
         Back to Dashboard
       </Link>
     </div>
