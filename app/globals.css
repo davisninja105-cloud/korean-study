@@ -44,6 +44,11 @@
   --cat-grammar: #8b5cf6;
   --cat-phrase: #14b8a6;
 
+  /* Muted text & borders (gray analogs; semantic replacements for gray-* utilities) */
+  --muted: #6b7280;             /* gray-500 analog — secondary/caption text */
+  --muted-foreground: #4b5563; /* gray-600 analog — medium-emphasis labels */
+  --border: #e5e7eb;            /* gray-200 analog — default border/divider */
+
   /* Reading text scale (0.9–1.4, set per user in settings) */
   --reading-scale: 1;
 }
@@ -57,6 +62,11 @@
     --surface-1: #1c2030;
     --surface-2: #141824;
     --surface-3: #0b0f1a;
+
+    /* Muted text & borders (dark overrides) */
+    --muted: #9ca3af;             /* gray-400 analog */
+    --muted-foreground: #d1d5db; /* gray-300 analog */
+    --border: #374151;            /* gray-700 analog */
   }
 }
 
@@ -69,6 +79,12 @@
   --surface-1: #1c2030;
   --surface-2: #141824;
   --surface-3: #0b0f1a;
+
+  /* Muted text & borders (mirrors @media dark block exactly) */
+  --muted: #9ca3af;             /* gray-400 analog */
+  --muted-foreground: #d1d5db; /* gray-300 analog */
+  --border: #374151;            /* gray-700 analog */
+
   color-scheme: dark;
 }
 :root[data-theme="light"] {
@@ -112,6 +128,11 @@ html {
   --color-cat-vocab: var(--cat-vocab);
   --color-cat-grammar: var(--cat-grammar);
   --color-cat-phrase: var(--cat-phrase);
+
+  /* Muted text & borders — generates text-muted, text-muted-foreground, border-border utilities */
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
 }
 
 body {
