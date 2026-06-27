@@ -64,7 +64,7 @@ export default function SyncPanel({ onSynced }: Props) {
         {loading ? 'Syncing…' : 'Sync now'}
       </button>
       {!DOC_ID && (
-        <p className="mt-3 text-sm text-red-500">NEXT_PUBLIC_GOOGLE_DOC_ID is not configured.</p>
+        <p className="mt-3 text-sm text-red-500 dark:text-red-400">NEXT_PUBLIC_GOOGLE_DOC_ID is not configured.</p>
       )}
       {result && <p className="mt-3 text-sm text-green-600 dark:text-green-400">{result}</p>}
       {failures && (
