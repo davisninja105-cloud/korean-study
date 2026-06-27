@@ -38,8 +38,8 @@ export default function LoginPage() {
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src="/icon-192.png" alt="" className="w-16 h-16 rounded-2xl shadow-md" />
       <div className="text-center">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Korean Study</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Enter your password to continue</p>
+        <h1 className="text-2xl font-bold text-foreground">Korean Study</h1>
+        <p className="text-sm text-muted mt-1">Enter your password to continue</p>
       </div>
       <form onSubmit={submit} className="flex flex-col gap-3 w-full max-w-xs">
         <input
@@ -48,7 +48,7 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
           placeholder="Password"
           autoFocus
-          className="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 rounded-lg px-4 py-2 min-h-11 text-center focus:outline-none focus:ring-2 focus:ring-blue-300"
+          className="border border-border bg-surface-1 text-foreground rounded-lg px-4 py-2 min-h-11 text-center focus:outline-none focus:ring-2 focus:ring-button/50"
         />
         <button
           type="submit"
