@@ -93,14 +93,14 @@ export default function Home() {
       {/* ── Pull-to-refresh indicator ── */}
       {(pullDistance > 0 || refreshing) && (
         <div
-          className="flex items-center justify-center overflow-hidden text-xs text-gray-500 dark:text-gray-400"
+          className="flex items-center justify-center overflow-hidden text-xs text-muted"
           style={{ height: refreshing ? 28 : pullDistance }}
         >
           {refreshing ? 'Syncing…' : pullDistance >= PULL_THRESHOLD ? 'Release to sync' : 'Pull to sync'}
         </div>
       )}
       {syncMsg && !refreshing && pullDistance === 0 && (
-        <p className="text-center text-xs text-gray-500 dark:text-gray-400">{syncMsg}</p>
+        <p className="text-center text-xs text-muted">{syncMsg}</p>
       )}
 
       {/* ── Band-up celebration banner ── */}
@@ -108,12 +108,12 @@ export default function Home() {
         <div className="bg-surface-1 rounded-2xl shadow-md px-5 py-4 flex items-start gap-3">
           <span className="text-2xl" aria-hidden="true">🎉</span>
           <div className="flex-1">
-            <p className="text-sm font-medium text-gray-800 dark:text-gray-100">{bandUpMsg}</p>
+            <p className="text-sm font-medium text-foreground">{bandUpMsg}</p>
           </div>
           <button
             onClick={() => setBandUpMsg(null)}
             aria-label="Dismiss"
-            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 text-lg leading-none shrink-0 min-h-11 min-w-11 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="text-muted hover:text-muted-foreground text-lg leading-none shrink-0 min-h-11 min-w-11 flex items-center justify-center rounded-lg hover:bg-surface-3"
           >
             ✕
           </button>
@@ -122,7 +122,7 @@ export default function Home() {
 
       {/* ── Hero: the one number that drives action ── */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-4">
-        {greeting && <p className="text-sm text-gray-500 dark:text-gray-400">{greeting}</p>}
+        {greeting && <p className="text-sm text-muted">{greeting}</p>}
 
         {stats && stats.dueCards > 0 ? (
           <>
@@ -130,7 +130,7 @@ export default function Home() {
               <span className="text-6xl font-bold leading-none" style={{ color: 'var(--reward)' }}>
                 {stats.dueCards}
               </span>
-              <span className="text-gray-500 dark:text-gray-400 mb-1">
+              <span className="text-muted mb-1">
                 card{stats.dueCards !== 1 ? 's' : ''} ready to review
               </span>
             </div>
@@ -143,8 +143,8 @@ export default function Home() {
           </>
         ) : stats ? (
           <>
-            <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">All caught up ✓</p>
-            <p className="text-sm text-gray-500 dark:text-gray-400">
+            <p className="text-2xl font-bold text-foreground">All caught up ✓</p>
+            <p className="text-sm text-muted">
               No cards due right now. Study ahead to get a head start.
             </p>
             <Link
@@ -178,10 +178,10 @@ export default function Home() {
         className="flex items-center justify-between bg-surface-1 rounded-2xl shadow-md px-5 py-4 hover:shadow-lg transition-shadow"
       >
         <div>
-          <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">My Korean</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">All-time stats &amp; progress summary</p>
+          <p className="text-sm font-semibold text-foreground">My Korean</p>
+          <p className="text-xs text-muted">All-time stats &amp; progress summary</p>
         </div>
-        <span className="text-gray-400 dark:text-gray-500 text-lg" aria-hidden="true">→</span>
+        <span className="text-muted text-lg" aria-hidden="true">→</span>
       </Link>
     </div>
   )

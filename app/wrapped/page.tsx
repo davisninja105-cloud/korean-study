@@ -96,11 +96,11 @@ export default function WrappedPage() {
       <div className="flex items-center gap-3">
         <Link
           href="/"
-          className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+          className="text-sm text-muted hover:text-muted-foreground"
         >
           ← Home
         </Link>
-        <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100 flex-1">
+        <h1 className="text-xl font-bold text-foreground flex-1">
           My Korean
         </h1>
         {shareText && (
@@ -136,7 +136,7 @@ export default function WrappedPage() {
         </div>
 
         {/* Stats grid */}
-        <div className="grid grid-cols-2 divide-x divide-y divide-gray-100 dark:divide-gray-700/60">
+        <div className="grid grid-cols-2 divide-x divide-y divide-border/60">
           <StatCell
             label="Current streak"
             value={`${current} day${current !== 1 ? 's' : ''}`}
@@ -175,18 +175,18 @@ export default function WrappedPage() {
       {/* ── Long-game note ──────────────────────────────────────────────── */}
       {proficiency && (
         <div className="bg-surface-1 rounded-2xl shadow-md px-6 py-5">
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">Next milestone</p>
+          <p className="text-sm text-muted mb-1">Next milestone</p>
           {proficiency.nextBand ? (
-            <p className="text-gray-800 dark:text-gray-100 font-medium">
+            <p className="text-foreground font-medium">
               {proficiency.nextBandMin - (masteredCount ?? 0)} more mastered cards to reach{' '}
               <span className="text-button font-bold">{proficiency.nextBand}</span>
             </p>
           ) : (
-            <p className="text-gray-800 dark:text-gray-100 font-medium">
+            <p className="text-foreground font-medium">
               You&apos;ve reached the top — {proficiency.label}. Remarkable.
             </p>
           )}
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+          <p className="text-xs text-muted mt-2">
             Mastered cards are cards you can recall after 21+ days without review.
           </p>
         </div>
@@ -219,8 +219,8 @@ function StatCell({
   return (
     <div className="px-5 py-4 flex flex-col gap-0.5">
       <span className="text-lg" aria-hidden="true">{emoji}</span>
-      <p className="text-xl font-bold text-gray-800 dark:text-gray-100 leading-tight">{value}</p>
-      <p className="text-xs text-gray-500 dark:text-gray-400">{label}</p>
+      <p className="text-xl font-bold text-foreground leading-tight">{value}</p>
+      <p className="text-xs text-muted">{label}</p>
     </div>
   )
 }
