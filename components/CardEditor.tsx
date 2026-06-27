@@ -85,8 +85,11 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
             .map(({ korean, targetForm, translation }) => ({ korean, targetForm, translation })),
         }),
       })
+      if (!res.ok) throw new Error(`Save failed: ${res.status}`)
       const updated = await res.json()
       onSave(updated)
+    } catch (err) {
+      console.error('CardEditor save failed:', err)
     } finally {
       setSaving(false)
     }
