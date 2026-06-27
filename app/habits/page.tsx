@@ -107,7 +107,7 @@ export default function HabitsPage() {
   if (days === null) {
     return (
       <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="h-40 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
+        <div className="h-40 flex items-center justify-center text-muted text-sm">Loading…</div>
       </main>
     )
   }
@@ -116,8 +116,8 @@ export default function HabitsPage() {
     <main className="max-w-2xl mx-auto px-4 py-8 flex flex-col gap-6">
       {/* Page header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Habits</h1>
-        <Link href="/" className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline underline-offset-2">
+        <h1 className="text-2xl font-bold text-foreground">Habits</h1>
+        <Link href="/" className="text-sm text-muted hover:text-muted-foreground underline underline-offset-2">
           ← Dashboard
         </Link>
       </div>
@@ -126,13 +126,13 @@ export default function HabitsPage() {
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-4">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="text-3xl font-bold text-gray-800 dark:text-gray-100">
+            <p className="text-3xl font-bold text-foreground">
               🔥 {current} day{current !== 1 ? 's' : ''}
             </p>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            <p className="text-sm text-muted mt-0.5">
               Current streak · longest {longest}d
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            <p className="text-xs text-muted mt-1">
               Today: {formatDuration(todaySeconds)} / {formatDuration(goal)}
             </p>
           </div>
@@ -144,53 +144,53 @@ export default function HabitsPage() {
               color="var(--reward)"
               aria-label={`Today's goal: ${todayPct}% complete`}
             />
-            <p className="text-xs text-gray-500 dark:text-gray-400">{Math.round(goal / 60)} min goal</p>
+            <p className="text-xs text-muted">{Math.round(goal / 60)} min goal</p>
           </div>
         </div>
       </section>
 
       {/* All-time totals */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
-        <h2 className="font-semibold text-gray-800 dark:text-gray-100">All-time totals</h2>
+        <h2 className="font-semibold text-foreground">All-time totals</h2>
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-surface-2 rounded-xl p-4">
             <p className="text-2xl font-bold text-cat-vocab">{formatTotalTime(stats.totalSeconds)}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Total study time</p>
+            <p className="text-xs text-muted mt-0.5">Total study time</p>
           </div>
           <div className="bg-surface-2 rounded-xl p-4">
             <p className="text-2xl font-bold text-cat-vocab">{stats.totalReviews.toLocaleString()}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Cards reviewed</p>
+            <p className="text-xs text-muted mt-0.5">Cards reviewed</p>
           </div>
           <div className="bg-surface-2 rounded-xl p-4">
             <p className="text-2xl font-bold text-cat-vocab">{stats.daysStudied}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Days studied</p>
+            <p className="text-xs text-muted mt-0.5">Days studied</p>
           </div>
           <div className="bg-surface-2 rounded-xl p-4">
             <p className="text-2xl font-bold text-cat-vocab">{stats.goalMetDays}</p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Goal-met days</p>
+            <p className="text-xs text-muted mt-0.5">Goal-met days</p>
           </div>
         </div>
       </section>
 
       {/* Averages & consistency */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
-        <h2 className="font-semibold text-gray-800 dark:text-gray-100">Averages &amp; consistency</h2>
+        <h2 className="font-semibold text-foreground">Averages &amp; consistency</h2>
         <div className="flex flex-col gap-3">
-          <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
-            <span className="text-sm text-gray-600 dark:text-gray-300">Avg per active day</span>
-            <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+          <div className="flex justify-between items-center py-2 border-b border-border">
+            <span className="text-sm text-muted-foreground">Avg per active day</span>
+            <span className="text-sm font-semibold text-foreground">
               {formatTotalTime(stats.avgSecondsPerActiveDay)}
             </span>
           </div>
-          <div className="flex justify-between items-center py-2 border-b border-gray-100 dark:border-gray-700">
-            <span className="text-sm text-gray-600 dark:text-gray-300">Goal completion rate</span>
-            <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+          <div className="flex justify-between items-center py-2 border-b border-border">
+            <span className="text-sm text-muted-foreground">Goal completion rate</span>
+            <span className="text-sm font-semibold text-foreground">
               {stats.daysStudied > 0 ? `${Math.round(stats.goalCompletionRate * 100)}%` : '—'}
             </span>
           </div>
           <div className="flex justify-between items-center py-2">
-            <span className="text-sm text-gray-600 dark:text-gray-300">Best day</span>
-            <span className="text-sm font-semibold text-gray-800 dark:text-gray-100 text-right">
+            <span className="text-sm text-muted-foreground">Best day</span>
+            <span className="text-sm font-semibold text-foreground text-right">
               {stats.bestDayDate
                 ? `${formatDate(stats.bestDayDate)} · ${formatTotalTime(stats.bestDaySeconds)}`
                 : '—'}
@@ -201,7 +201,7 @@ export default function HabitsPage() {
 
       {/* 30-day trend chart */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
-        <h2 className="font-semibold text-gray-800 dark:text-gray-100">Last 30 days</h2>
+        <h2 className="font-semibold text-foreground">Last 30 days</h2>
         <div className="relative h-16">
           {/* Goal reference line */}
           <div
@@ -214,7 +214,7 @@ export default function HabitsPage() {
               const heightPct = maxTrendSecs > 0 ? Math.round((secs / maxTrendSecs) * 100) : 0
               // Ensure a tiny visible sliver for any non-zero day
               const displayPct = secs > 0 ? Math.max(heightPct, 3) : 0
-              let barColor = 'bg-gray-100 dark:bg-gray-700'
+              let barColor = 'bg-surface-3'
               if (secs >= goal) barColor = 'bg-reward'
               else if (secs > 0) barColor = 'bg-reward-soft'
               return (
@@ -228,7 +228,7 @@ export default function HabitsPage() {
             })}
           </div>
         </div>
-        <div className="flex justify-between text-xs text-gray-500 dark:text-gray-400">
+        <div className="flex justify-between text-xs text-muted">
           <span>30 days ago</span>
           <span className="text-reward">— goal ({Math.round(goal / 60)}m)</span>
           <span>today</span>
@@ -237,15 +237,15 @@ export default function HabitsPage() {
 
       {/* Full history heatmap */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
-        <h2 className="font-semibold text-gray-800 dark:text-gray-100">History</h2>
+        <h2 className="font-semibold text-foreground">History</h2>
         {days.length === 0 ? (
-          <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-4">
+          <p className="text-sm text-muted text-center py-4">
             Complete your first session to start tracking history.
           </p>
         ) : (
           <HabitHeatmap days={days} today={today} goal={goal} weeks={heatmapWeeks} />
         )}
-        <div className="flex gap-3 text-xs text-gray-500 dark:text-gray-400">
+        <div className="flex gap-3 text-xs text-muted">
           <span className="flex items-center gap-1">
             <span className="inline-block w-3 h-3 rounded-sm" style={{ background: 'var(--reward)' }} /> Goal met
           </span>
@@ -253,11 +253,11 @@ export default function HabitsPage() {
             <span className="inline-block w-3 h-3 rounded-sm bg-reward-soft" /> Partial
           </span>
           <span className="flex items-center gap-1">
-            <span className="inline-block w-3 h-3 rounded-sm bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700" /> No study
+            <span className="inline-block w-3 h-3 rounded-sm bg-surface-3 border border-border" /> No study
           </span>
         </div>
         {insight && (
-          <p className="text-sm text-gray-500 dark:text-gray-400 italic mt-1">{insight}</p>
+          <p className="text-sm text-muted italic mt-1">{insight}</p>
         )}
       </section>
 
@@ -270,14 +270,14 @@ export default function HabitsPage() {
         className="flex items-center justify-between bg-surface-1 rounded-2xl shadow-md px-5 py-4 hover:shadow-lg transition-shadow"
       >
         <div>
-          <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">My Korean summary</p>
-          <p className="text-xs text-gray-500 dark:text-gray-400">All-time stats &amp; shareable progress card</p>
+          <p className="text-sm font-semibold text-foreground">My Korean summary</p>
+          <p className="text-xs text-muted">All-time stats &amp; shareable progress card</p>
         </div>
-        <span className="text-gray-400 dark:text-gray-500 text-lg" aria-hidden="true">→</span>
+        <span className="text-muted text-lg" aria-hidden="true">→</span>
       </Link>
 
-      <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-        <Link href="/settings" className="underline underline-offset-2 hover:text-gray-600 dark:hover:text-gray-300">
+      <p className="text-xs text-muted text-center">
+        <Link href="/settings" className="underline underline-offset-2 hover:text-muted-foreground">
           Change goal or day-start time
         </Link>
       </p>

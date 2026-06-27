@@ -126,7 +126,7 @@ export default function SettingsPage() {
   if (!loaded) {
     return (
       <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="h-40 flex items-center justify-center text-gray-400 text-sm">Loading…</div>
+        <div className="h-40 flex items-center justify-center text-muted text-sm">Loading…</div>
       </main>
     )
   }
@@ -134,7 +134,7 @@ export default function SettingsPage() {
   return (
     <main className="max-w-2xl mx-auto px-4 py-8 flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">Settings</h1>
+        <h1 className="text-2xl font-bold text-foreground">Settings</h1>
         {saved && (
           <span className="text-sm text-green-600 dark:text-green-400 font-medium">Saved ✓</span>
         )}
@@ -143,8 +143,8 @@ export default function SettingsPage() {
       {/* Appearance / theme */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <div>
-          <h2 className="font-semibold text-gray-800 dark:text-gray-100">Appearance</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+          <h2 className="font-semibold text-foreground">Appearance</h2>
+          <p className="text-sm text-muted mt-0.5">
             Choose a theme, or follow your device setting.
           </p>
         </div>
@@ -156,8 +156,8 @@ export default function SettingsPage() {
               aria-pressed={theme === t}
               className={`px-4 py-1.5 min-h-11 text-sm font-medium rounded-md transition-colors capitalize ${
                 theme === t
-                  ? 'bg-surface-1 text-gray-800 dark:text-gray-100 shadow-sm'
-                  : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  ? 'bg-surface-1 text-foreground shadow-sm'
+                  : 'text-muted hover:text-muted-foreground'
               }`}
             >
               {t}
@@ -169,8 +169,8 @@ export default function SettingsPage() {
       {/* Daily study goal */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <div>
-          <h2 className="font-semibold text-gray-800 dark:text-gray-100">Daily study goal</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+          <h2 className="font-semibold text-foreground">Daily study goal</h2>
+          <p className="text-sm text-muted mt-0.5">
             Minimum study time per habit-day to count toward your streak.
           </p>
         </div>
@@ -179,7 +179,7 @@ export default function SettingsPage() {
             value={goal}
             disabled={saving}
             onChange={(e) => save({ dailyGoalSeconds: Number(e.target.value) })}
-            className="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 rounded-md px-3 py-2 text-sm"
+            className="border border-border bg-surface-1 text-foreground rounded-md px-3 py-2 text-sm"
           >
             {(GOAL_OPTIONS_MIN.map((m) => m * 60).includes(goal)
               ? GOAL_OPTIONS_MIN.map((m) => m * 60)
@@ -194,8 +194,8 @@ export default function SettingsPage() {
       {/* Day start hour */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <div>
-          <h2 className="font-semibold text-gray-800 dark:text-gray-100">Habit day starts at</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+          <h2 className="font-semibold text-foreground">Habit day starts at</h2>
+          <p className="text-sm text-muted mt-0.5">
             A new streak day begins at this time. Pick a time after you usually finish studying —
             sessions before this hour count toward the previous day.
           </p>
@@ -205,7 +205,7 @@ export default function SettingsPage() {
             value={dayStartHour}
             disabled={saving}
             onChange={(e) => save({ dayStartHour: Number(e.target.value) })}
-            className="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 rounded-md px-3 py-2 text-sm"
+            className="border border-border bg-surface-1 text-foreground rounded-md px-3 py-2 text-sm"
           >
             {Array.from({ length: 24 }, (_, h) => (
               <option key={h} value={h}>{hourLabel(h)}</option>
@@ -217,8 +217,8 @@ export default function SettingsPage() {
       {/* Session size */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <div>
-          <h2 className="font-semibold text-gray-800 dark:text-gray-100">Study session size</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+          <h2 className="font-semibold text-foreground">Study session size</h2>
+          <p className="text-sm text-muted mt-0.5">
             How many cards to draw per study session. Cards that need review again the same day
             are re-queued automatically, so a session may take longer than this number.
           </p>
@@ -228,7 +228,7 @@ export default function SettingsPage() {
             value={sessionSize}
             disabled={saving}
             onChange={(e) => save({ sessionSize: Number(e.target.value) })}
-            className="border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 rounded-md px-3 py-2 text-sm"
+            className="border border-border bg-surface-1 text-foreground rounded-md px-3 py-2 text-sm"
           >
             {(SESSION_SIZE_OPTIONS.includes(sessionSize)
               ? SESSION_SIZE_OPTIONS
@@ -243,8 +243,8 @@ export default function SettingsPage() {
       {/* Reading text size */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <div>
-          <h2 className="font-semibold text-gray-800 dark:text-gray-100">Korean text size</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+          <h2 className="font-semibold text-foreground">Korean text size</h2>
+          <p className="text-sm text-muted mt-0.5">
             Scale Korean sentence text in study mode. Default is 1×.
           </p>
         </div>
@@ -260,13 +260,13 @@ export default function SettingsPage() {
               className="flex-1"
               aria-label="Korean text size scale"
             />
-            <span className="text-sm font-mono text-gray-600 dark:text-gray-300 w-8 text-right">
+            <span className="text-sm font-mono text-muted-foreground w-8 text-right">
               {readingTextScale.toFixed(1)}×
             </span>
           </div>
           {/* Live preview */}
           <p
-            className="hangul-sentence text-gray-700 dark:text-gray-200 bg-surface-2 rounded-lg px-4 py-3"
+            className="hangul-sentence text-muted-foreground bg-surface-2 rounded-lg px-4 py-3"
             style={{ fontSize: `calc(1rem * ${readingTextScale})` }}
           >
             저는 매일 한국어를 공부해요.
@@ -278,8 +278,8 @@ export default function SettingsPage() {
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="font-semibold text-gray-800 dark:text-gray-100">Reading aid</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            <h2 className="font-semibold text-foreground">Reading aid</h2>
+            <p className="text-sm text-muted mt-0.5">
               Adds a little extra spacing between Korean words to make long sentences
               easier to parse. No romanization.
             </p>
@@ -291,11 +291,11 @@ export default function SettingsPage() {
             aria-label="Reading aid"
             onClick={() => handleReadingAidChange(!readingAid)}
             className={`relative shrink-0 w-12 h-7 rounded-full transition-colors ${
-              readingAid ? 'bg-button' : 'bg-gray-300 dark:bg-gray-600'
+              readingAid ? 'bg-button' : 'bg-surface-3'
             }`}
           >
             <span
-              className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform ${
+              className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-surface-1 shadow transition-transform ${
                 readingAid ? 'translate-x-5' : ''
               }`}
             />
@@ -306,8 +306,8 @@ export default function SettingsPage() {
       {/* App colors */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-4">
         <div>
-          <h2 className="font-semibold text-gray-800 dark:text-gray-100">App colors</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+          <h2 className="font-semibold text-foreground">App colors</h2>
+          <p className="text-sm text-muted mt-0.5">
             Pick a complementary pairing — one tap sets both accents at once.
           </p>
         </div>
@@ -325,8 +325,8 @@ export default function SettingsPage() {
                 onClick={() => selectPalette(p.action, p.reward)}
                 className={`flex flex-col items-center gap-1.5 rounded-xl px-2 py-2.5 border-2 transition-colors ${
                   isActive
-                    ? 'border-gray-800 dark:border-gray-200 bg-surface-2'
-                    : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600 hover:bg-surface-2'
+                    ? 'border-foreground bg-surface-2'
+                    : 'border-transparent hover:border-border hover:bg-surface-2'
                 }`}
               >
                 {/* Two-swatch preview */}
@@ -342,7 +342,7 @@ export default function SettingsPage() {
                     aria-hidden="true"
                   />
                 </div>
-                <span className="text-xs font-medium text-gray-600 dark:text-gray-300 leading-tight text-center">
+                <span className="text-xs font-medium text-muted-foreground leading-tight text-center">
                   {p.name}
                 </span>
               </button>
@@ -351,11 +351,11 @@ export default function SettingsPage() {
         </div>
 
         {/* Customize disclosure */}
-        <div className="border-t border-gray-100 dark:border-gray-700 pt-3">
+        <div className="border-t border-border pt-3">
           <button
             type="button"
             onClick={() => setCustomizeOpen((o) => !o)}
-            className="flex items-center gap-1.5 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 transition-colors"
+            className="flex items-center gap-1.5 text-sm text-muted hover:text-muted-foreground transition-colors"
             aria-expanded={customizeOpen}
           >
             <span
@@ -371,7 +371,7 @@ export default function SettingsPage() {
             <div className="mt-3 flex flex-col gap-3">
               {/* Action color */}
               <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                <span className="text-xs font-medium text-muted uppercase tracking-wide">
                   Action color
                 </span>
                 <div className="flex items-center gap-3">
@@ -379,14 +379,14 @@ export default function SettingsPage() {
                     type="color"
                     value={buttonColor}
                     onChange={(e) => handleActionColorChange(e.target.value)}
-                    className="w-9 h-9 rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer p-0.5 bg-white dark:bg-gray-900"
+                    className="w-9 h-9 rounded-lg border border-border cursor-pointer p-0.5 bg-surface-1"
                     aria-label="Pick action color"
                   />
-                  <span className="text-sm font-mono text-gray-600 dark:text-gray-300">{buttonColor}</span>
+                  <span className="text-sm font-mono text-muted-foreground">{buttonColor}</span>
                   {buttonColor !== DEFAULT_ACTION_COLOR && (
                     <button
                       onClick={() => handleActionColorChange(DEFAULT_ACTION_COLOR)}
-                      className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline underline-offset-2"
+                      className="text-xs text-muted hover:text-muted-foreground underline underline-offset-2"
                     >
                       Reset
                     </button>
@@ -403,7 +403,7 @@ export default function SettingsPage() {
 
               {/* Reward color */}
               <div className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+                <span className="text-xs font-medium text-muted uppercase tracking-wide">
                   Reward color
                 </span>
                 <div className="flex items-center gap-3">
@@ -411,14 +411,14 @@ export default function SettingsPage() {
                     type="color"
                     value={rewardColor}
                     onChange={(e) => handleRewardColorChange(e.target.value)}
-                    className="w-9 h-9 rounded-lg border border-gray-300 dark:border-gray-600 cursor-pointer p-0.5 bg-white dark:bg-gray-900"
+                    className="w-9 h-9 rounded-lg border border-border cursor-pointer p-0.5 bg-surface-1"
                     aria-label="Pick reward color"
                   />
-                  <span className="text-sm font-mono text-gray-600 dark:text-gray-300">{rewardColor}</span>
+                  <span className="text-sm font-mono text-muted-foreground">{rewardColor}</span>
                   {rewardColor !== DEFAULT_REWARD_COLOR && (
                     <button
                       onClick={() => handleRewardColorChange(DEFAULT_REWARD_COLOR)}
-                      className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 underline underline-offset-2"
+                      className="text-xs text-muted hover:text-muted-foreground underline underline-offset-2"
                     >
                       Reset
                     </button>
@@ -439,7 +439,7 @@ export default function SettingsPage() {
 
       {/* Advanced — back-office plumbing kept off the home screen */}
       <details className="group">
-        <summary className="flex items-center gap-2 text-sm font-medium text-gray-500 dark:text-gray-400 cursor-pointer select-none px-1 py-2">
+        <summary className="flex items-center gap-2 text-sm font-medium text-muted cursor-pointer select-none px-1 py-2">
           <span>Advanced</span>
           <span className="text-xs opacity-60 transition-transform group-open:rotate-90">▶</span>
         </summary>
@@ -448,9 +448,9 @@ export default function SettingsPage() {
         </div>
       </details>
 
-      <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
+      <p className="text-xs text-muted text-center">
         Changes are saved immediately.{' '}
-        <Link href="/" className="underline underline-offset-2 hover:text-gray-600 dark:hover:text-gray-300">
+        <Link href="/" className="underline underline-offset-2 hover:text-muted-foreground">
           Back to dashboard
         </Link>
       </p>
