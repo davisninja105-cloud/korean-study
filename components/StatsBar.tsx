@@ -16,11 +16,11 @@ export default function StatsBar({ totalCards, totalLessons, level }: Props) {
     { value: level || '—', label: 'Level' },
   ]
   return (
-    <div className="grid grid-cols-3 bg-surface-2 rounded-2xl divide-x divide-gray-200 dark:divide-gray-700">
+    <div className="grid grid-cols-3 bg-surface-2 rounded-2xl divide-x divide-border">
       {items.map((it) => (
         <div key={it.label} className="px-3 py-3 flex flex-col items-center gap-0.5">
-          <span className="text-base font-semibold text-gray-700 dark:text-gray-200">{it.value}</span>
-          <span className="text-xs text-gray-500 dark:text-gray-400">{it.label}</span>
+          <span className="text-base font-semibold text-muted-foreground">{it.value}</span>
+          <span className="text-xs text-muted">{it.label}</span>
         </div>
       ))}
     </div>

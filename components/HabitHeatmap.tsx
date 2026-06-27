@@ -44,10 +44,10 @@ export default function HabitHeatmap({ days, today, goal, weeks = 13 }: Props) {
     } else if (secs > 0) {
       className += 'bg-reward-soft'
     } else {
-      className += 'bg-gray-100 dark:bg-gray-700'
+      className += 'bg-surface-3'
     }
     if (date === today) {
-      className += ' ring-2 ring-offset-1 ring-offset-white dark:ring-offset-gray-800'
+      className += ' ring-2 ring-offset-1 ring-offset-surface-1'
       style = { ...style, outlineColor: 'var(--reward)', boxShadow: '0 0 0 2px var(--reward)' }
     }
     return { className, style }

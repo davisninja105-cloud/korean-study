@@ -49,14 +49,14 @@ export default function MilestoneCelebration({ milestone, streakDays, onDismiss 
       >
         <span className="text-7xl select-none">{copy.badge}</span>
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">{copy.headline}</h2>
-          <p className="text-gray-500 dark:text-gray-400 mt-2 text-sm leading-relaxed">{copy.body}</p>
+          <h2 className="text-2xl font-bold text-foreground">{copy.headline}</h2>
+          <p className="text-muted mt-2 text-sm leading-relaxed">{copy.body}</p>
         </div>
         <div className="flex flex-col items-center gap-1">
           <p className="text-4xl font-bold" style={{ color: 'var(--reward)' }}>
             {streakDays}
           </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">day streak</p>
+          <p className="text-sm text-muted">day streak</p>
         </div>
         <button
           onClick={onDismiss}

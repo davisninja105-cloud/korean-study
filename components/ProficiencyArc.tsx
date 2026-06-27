@@ -25,8 +25,8 @@ export default function ProficiencyArc({ masteredCount }: Props) {
   const startAngle = 195
 
   return (
-    <div className="bg-white dark:bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-4">
-      <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+    <div className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-4">
+      <h2 className="text-sm font-semibold text-muted uppercase tracking-wide">
         Proficiency
       </h2>
 
@@ -70,8 +70,8 @@ export default function ProficiencyArc({ masteredCount }: Props) {
           </svg>
           {/* Centre label */}
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="text-2xl font-bold text-gray-800 dark:text-gray-100">{band}</span>
-            <span className="text-xs text-gray-500 dark:text-gray-400">{label}</span>
+            <span className="text-2xl font-bold text-foreground">{band}</span>
+            <span className="text-xs text-muted">{label}</span>
           </div>
         </div>
 
@@ -81,14 +81,14 @@ export default function ProficiencyArc({ masteredCount }: Props) {
             <p className="text-2xl font-bold" style={{ color: 'var(--cat-vocab)' }}>
               {masteredCount.toLocaleString()}
             </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400">cards mastered</p>
+            <p className="text-xs text-muted">cards mastered</p>
           </div>
           {nextBand && (
             <div>
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">
+              <p className="text-sm font-medium text-muted-foreground">
                 {(nextBandMin - masteredCount).toLocaleString()} to {nextBand}
               </p>
-              <div className="mt-1 w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+              <div className="mt-1 w-full bg-surface-3 rounded-full h-1.5">
                 <div
                   className="h-1.5 rounded-full transition-all"
                   style={{ width: `${withinBandPct}%`, background: 'var(--cat-vocab)' }}
@@ -96,7 +96,7 @@ export default function ProficiencyArc({ masteredCount }: Props) {
               </div>
             </div>
           )}
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          <p className="text-xs text-muted mt-1">
             C1 target: 4,500 cards
           </p>
         </div>

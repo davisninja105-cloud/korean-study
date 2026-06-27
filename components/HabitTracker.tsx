@@ -94,8 +94,8 @@ export default function HabitTracker() {
     let base = 'w-5 h-5 rounded-full '
     if (secs >= goal) base += 'bg-reward'
     else if (secs > 0) base += 'bg-reward-soft'
-    else base += 'bg-gray-100 dark:bg-gray-800'
-    if (date === today) base += ' ring-2 ring-reward ring-offset-1 ring-offset-white dark:ring-offset-gray-800'
+    else base += 'bg-surface-3'
+    if (date === today) base += ' ring-2 ring-reward ring-offset-1 ring-offset-surface-1'
     return base
   }
 
@@ -113,35 +113,35 @@ export default function HabitTracker() {
 
       <Link
         href="/habits"
-        className="bg-white dark:bg-gray-800 rounded-2xl shadow-md p-6 flex flex-col gap-4 cursor-pointer hover:shadow-lg transition-shadow block"
+        className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-4 cursor-pointer hover:shadow-lg transition-shadow block"
       >
         {/* Header: streak + ring */}
         <div className="flex items-center justify-between gap-3">
           <div>
             {current > 0 ? (
               <>
-                <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+                <p className="text-2xl font-bold text-foreground">
                   🔥 {current} day{current !== 1 ? 's' : ''}
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-xs text-muted">
                   Longest: {longest} day{longest !== 1 ? 's' : ''}
                 </p>
               </>
             ) : longest > 0 ? (
               <>
-                <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+                <p className="text-2xl font-bold text-foreground">
                   🔥 {longest} day{longest !== 1 ? 's' : ''}
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-xs text-muted">
                   Personal best · study today to restart
                 </p>
               </>
             ) : (
               <>
-                <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">
+                <p className="text-2xl font-bold text-foreground">
                   🔥 0 days
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <p className="text-xs text-muted">
                   Start your streak today
                 </p>
               </>
@@ -156,7 +156,7 @@ export default function HabitTracker() {
               color="var(--reward)"
               aria-label={`Today's goal: ${pct}% complete`}
             />
-            <p className="text-xs text-gray-500 dark:text-gray-400">
+            <p className="text-xs text-muted">
               {Math.round(goal / 60)} min goal
             </p>
           </div>
@@ -177,7 +177,7 @@ export default function HabitTracker() {
         )}
 
         {/* Today's time */}
-        <p className="text-xs text-gray-500 dark:text-gray-400">
+        <p className="text-xs text-muted">
           Today: {formatDuration(todaySeconds)} / {formatDuration(goal)}
         </p>
 
@@ -188,7 +188,7 @@ export default function HabitTracker() {
           <div className="flex justify-between">
             {weekDays.map(({ date, letter }) => (
               <div key={date} className="flex flex-col items-center gap-1.5">
-                <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">{letter}</span>
+                <span className="text-xs text-muted font-medium">{letter}</span>
                 <div
                   role="img"
                   aria-label={`${date}: ${formatDuration(secByDate.get(date) ?? 0)}`}
