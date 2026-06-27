@@ -82,6 +82,10 @@ export default function StudyPage() {
         setScope('due')
         setPhase('select-mode')
       })
+      .catch(() => {
+        setStudyCards([])
+        setPhase('select-mode')
+      })
   }, [buildParams])
 
   // Load session size + habit data for complete screen
@@ -183,6 +187,10 @@ export default function StudyPage() {
           setSessionKey((k) => k + 1) // remount StudySession → fresh seed/index
           setPhase('studying')
         }
+      })
+      .catch(() => {
+        setStudyCards([])
+        setPhase('select-mode')
       })
   }, [buildParams, lessonFrom, lessonTo, maxOrder])
 
