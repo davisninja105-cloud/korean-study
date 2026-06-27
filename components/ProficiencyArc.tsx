@@ -44,7 +44,7 @@ export default function ProficiencyArc({ masteredCount }: Props) {
               strokeWidth={strokeWidth}
               strokeLinecap="round"
               strokeDasharray={trackDash}
-              className="text-gray-200 dark:text-gray-700"
+              className="text-border"
               transform={`rotate(${startAngle} ${size / 2} ${size / 2})`}
             />
             {/* Fill arc */}
