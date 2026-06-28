@@ -9,6 +9,7 @@ import { computeProficiency } from '@/lib/proficiency'
 import { haptic } from '@/lib/haptics'
 import { bandUpMessage } from '@/lib/copy'
 import { usePullToRefresh, PULL_THRESHOLD } from '@/lib/usePullToRefresh'
+import { habitDateStr } from '@/lib/habit'
 
 interface Stats {
   totalCards: number
@@ -17,11 +18,21 @@ interface Stats {
   masteredCount: number
 }
 
+interface ActivityData {
+  days: { date: string; seconds: number; reviews: number }[]
+  dailyGoalSeconds: number
+  dayStartHour: number
+}
+
+type HeroState = 'loading' | 'A' | 'B' | 'C'
+
 // The app always syncs the same fixed Google Doc.
 const DOC_ID = process.env.NEXT_PUBLIC_GOOGLE_DOC_ID ?? ''
 
 export default function Home() {
   const [stats, setStats] = useState<Stats | null>(null)
+  const [activityData, setActivityData] = useState<ActivityData | null>(null)
+  const [heroState, setHeroState] = useState<HeroState>('loading')
   const [greeting, setGreeting] = useState('')
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
   const [bandUpMsg, setBandUpMsg] = useState<string | null>(null)
@@ -49,15 +60,41 @@ export default function Home() {
       .catch(() => {})
   }, [])
 
+  const loadActivity = useCallback(() => {
+    fetch('/api/activity')
+      .then((r) => r.json())
+      .then((data: ActivityData) => setActivityData(data))
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     loadStats()
+    loadActivity()
     // Time-aware greeting — read the hour in the effect (never during render,
     // per react-hooks/purity); set state on a microtask to satisfy
     // react-hooks/set-state-in-effect.
     const h = new Date().getHours()
     const g = h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'
     Promise.resolve().then(() => setGreeting(g))
-  }, [loadStats])
+  }, [loadStats, loadActivity])
+
+  // Derive heroState once both fetches resolve.
+  // habitDateStr must be called here (inside useEffect) — it calls new Date()
+  // internally and is therefore impure (react-hooks/purity forbids it in render).
+  useEffect(() => {
+    if (!stats || !activityData) return
+    const todayStr = habitDateStr(activityData.dayStartHour)
+    const todaySeconds = activityData.days.find((d) => d.date === todayStr)?.seconds ?? 0
+    // The dailyGoalSeconds > 0 guard prevents State B on a zero-goal first launch.
+    const goalMet = todaySeconds >= activityData.dailyGoalSeconds && activityData.dailyGoalSeconds > 0
+    if (stats.dueCards > 0) {
+      Promise.resolve().then(() => setHeroState('A'))
+    } else if (goalMet) {
+      Promise.resolve().then(() => setHeroState('B'))
+    } else {
+      Promise.resolve().then(() => setHeroState('C'))
+    }
+  }, [stats, activityData])
 
   // Pull-to-refresh → sync the Google Doc (same call as the Settings Sync panel).
   const handleSync = useCallback(async () => {
