@@ -235,7 +235,7 @@ export default function Home() {
       {/* ── My Korean link ── */}
       <Link
         href="/wrapped"
-        className="flex items-center justify-between bg-surface-1 rounded-2xl shadow-md px-5 py-4 hover:shadow-lg transition-shadow active:shadow-sm active:bg-surface-2 transition-colors"
+        className="flex items-center justify-between bg-surface-1 rounded-2xl shadow-md px-5 py-4 hover:shadow-lg active:shadow-sm active:bg-surface-2 transition-all"
       >
         <div>
           <p className="text-sm font-semibold text-foreground">My Korean</p>
