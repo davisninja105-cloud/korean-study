@@ -205,6 +205,11 @@ body {
   animation: slideIn 0.35s ease-out forwards;
 }
 
+/* Inter-card entrance — fades new card in (reuses fadeIn keyframe; plan 05-02 applies this class) */
+.animate-card-in {
+  animation: fadeIn 0.12s ease-out forwards;
+}
+
 /* Progress ring fill — a class (not inline style) so reduced-motion can gate it */
 .ring-fill {
   animation: ringFill 0.8s ease-out forwards;
@@ -242,9 +247,10 @@ body {
 
 /* Reduced-motion: disable all animations */
 @media (prefers-reduced-motion: reduce) {
-  .animate-reveal { animation: none; opacity: 1; transform: none; }
-  .animate-burst  { animation: none; opacity: 0; }
-  .card-flip-inner { transition: none; }
+  .animate-reveal   { animation: none; opacity: 1; transform: none; }
+  .animate-card-in  { animation: none; opacity: 1; transform: none; }
+  .animate-burst    { animation: none; opacity: 0; }
+  .card-flip-inner  { transition: none; }
   /* Sheet → crossfade instead of slide; list items appear instantly */
   .animate-sheet { animation: fadeBackdrop 0.2s ease forwards; }
   .animate-slide-in { animation: none; opacity: 1; transform: none; }
@@ -255,14 +261,14 @@ body {
 @layer utilities {
   .hangul {
     font-family: var(--font-korean);
-    line-height: 1.65;
+    line-height: 1.7;
     letter-spacing: 0.01em;
     word-break: keep-all;
   }
 
   .hangul-sentence {
     font-family: var(--font-korean);
-    line-height: 1.65;
+    line-height: 1.7;
     letter-spacing: 0.01em;
     word-break: keep-all;
     font-size: calc(1rem * var(--reading-scale, 1));
