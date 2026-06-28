@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import Link from 'next/link'
 import StatsBar from '@/components/StatsBar'
 import HabitTracker from '@/components/HabitTracker'
@@ -31,6 +31,9 @@ type HeroState = 'loading' | 'A' | 'B' | 'C'
 const DOC_ID = process.env.NEXT_PUBLIC_GOOGLE_DOC_ID ?? ''
 
 export default function Home() {
+  const isMountedRef = useRef(true)
+  useEffect(() => { return () => { isMountedRef.current = false } }, [])
+
   const [stats, setStats] = useState<Stats | null>(null)
   const [activityData, setActivityData] = useState<ActivityData | null>(null)
   const [heroState, setHeroState] = useState<HeroState>('loading')
@@ -42,6 +45,7 @@ export default function Home() {
     fetch('/api/stats')
       .then((r) => r.json())
       .then((data: Stats) => {
+        if (!isMountedRef.current) return
         setStats(data)
         // Band-up detection: compare current CEFR band to stored band (client-only).
         const { band, masteredCount } = computeProficiency(data.masteredCount)
@@ -50,6 +54,7 @@ export default function Home() {
           setBandUpMsg(bandUpMessage(band, masteredCount))
           // Confetti on band-up (lazy import, same pattern as MilestoneCelebration)
           import('canvas-confetti').then((m) => {
+            if (!isMountedRef.current) return
             const confetti = m.default
             confetti({ particleCount: 80, spread: 60, origin: { y: 0.4 } })
           }).catch(() => {})
@@ -120,8 +125,7 @@ export default function Home() {
       )
       loadStats()
       loadActivity()   // keep activity in sync so heroState uses the correct habit day
-    } catch (err) {
-      console.error('Home sync failed:', err)
+    } catch {
       setSyncMsg('Sync failed — try again from Settings')
     }
   }, [loadStats, loadActivity])
