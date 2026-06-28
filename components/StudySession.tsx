@@ -560,6 +560,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       </div>
 
       {/* Card — flashcard mode uses 3D flip */}
+      <div key={cursor} className="animate-card-in w-full">
       {mode === 'flashcard' ? (
         <div className="card-flip-container w-full">
           <div className={`card-flip-inner ${revealed ? 'flipped' : ''}`} style={{ height: cardHeight }}>
@@ -796,6 +797,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
         )}
       </div>
       )}
+      </div>
 
       {/* ── Action bar (sticky above bottom nav on mobile) ── */}
       <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] sm:bottom-2 bg-surface-1/95 backdrop-blur-md saturate-150 -mx-4 px-4 pt-2 pb-2 w-[calc(100%+2rem)]">
