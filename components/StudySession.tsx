@@ -152,7 +152,14 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     prevState: object
     prevQueue: StudyItem[]
     prevStats: { reviewed: number; correct: number; incorrect: number }
+    prevSeenCount: number
+    prevSeenCardIds: Set<string>
   } | null>(null)
+
+  // Track unique card IDs seen at least once this session so the "Card N of N"
+  // counter stays honest when cards are requeued and reviewed multiple times.
+  const seenCardIdsRef = useRef(new Set<string>())
+  const [seenCount, setSeenCount] = useState(0)
 
   // Day-start hour for habit attribution (default until settings load).
   const dayStartHourRef = useRef(DEFAULT_DAY_START_HOUR)
@@ -394,6 +401,15 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       incorrect: s.incorrect + (isCorrect ? 0 : 1),
     }))
 
+    // Only count unique first-time reviews so the counter doesn't cap early on requeues.
+    const isFirstSeen = current.kind === 'practice' || !seenCardIdsRef.current.has(current.card.id)
+    const prevSeenCount = seenCount
+    const prevSeenCardIds = new Set(seenCardIdsRef.current)
+    if (isFirstSeen) {
+      if (current.kind === 'real') seenCardIdsRef.current.add(current.card.id)
+      setSeenCount((c) => c + 1)
+    }
+
     let requeue = false
     let updatedItem: StudyItem = current
 
@@ -414,7 +430,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
         // Carry fresh review state into the re-queued card so interval hints stay correct.
         updatedItem = { kind: 'real', card: { ...current.card, review: updatedReview } }
       }
-      undoRef.current = { cardId, prevState, prevQueue: queue, prevStats }
+      undoRef.current = { cardId, prevState, prevQueue: queue, prevStats, prevSeenCount, prevSeenCardIds }
       setCanUndo(true)
     }
 
@@ -450,7 +466,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
   const handleUndo = async () => {
     if (!undoRef.current) return
-    const { cardId, prevState, prevQueue, prevStats } = undoRef.current
+    const { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds } = undoRef.current
     undoRef.current = null
     setCanUndo(false)
     await fetch('/api/review/undo', {
@@ -458,9 +474,11 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ cardId, prevState }),
     })
-    // Restore queue and stats snapshots captured before the last review.
+    // Restore queue, stats, and seen-card tracking snapshots captured before the last review.
     setStats(prevStats)
     setQueue(prevQueue)
+    seenCardIdsRef.current = prevSeenCardIds
+    setSeenCount(prevSeenCount)
     setCursor((c) => c + 1)
     setRevealed(true)
     setIntervalHints(null)
@@ -555,7 +573,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           aria-label={`Session progress: ${Math.round(progressPct)}%`}
         />
         <p className="text-sm text-muted">
-          Card {Math.min(stats.reviewed + 1, initialCount)} of {initialCount}
+          Card {Math.min(seenCount + 1, initialCount)} of {initialCount}
         </p>
       </div>
 
