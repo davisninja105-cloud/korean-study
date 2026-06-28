@@ -116,11 +116,12 @@ export default function Home() {
           : 'Up to date'
       )
       loadStats()
+      loadActivity()   // keep activity in sync so heroState uses the correct habit day
     } catch (err) {
       console.error('Home sync failed:', err)
       setSyncMsg('Sync failed — try again from Settings')
     }
-  }, [loadStats])
+  }, [loadStats, loadActivity])
 
   const { pullDistance, refreshing } = usePullToRefresh(handleSync)
 
