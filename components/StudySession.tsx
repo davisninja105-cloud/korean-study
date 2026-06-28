@@ -383,7 +383,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     const current = queue[0]
     if (!current) return
 
-    haptic('selection')
+    haptic(rating >= 3 ? 'success' : 'selection')
     reviewBuffer.current += 1
     const isCorrect = rating >= 3
     // Capture stats before setStats (async) — used for inline recompute and undo snapshot.
@@ -555,7 +555,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           aria-label={`Session progress: ${Math.round(progressPct)}%`}
         />
         <p className="text-sm text-muted">
-          {stats.reviewed} reviewed · {queue.length} left
+          Card {Math.min(stats.reviewed + 1, initialCount)} of {initialCount}
         </p>
       </div>
 
@@ -837,11 +837,11 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
               <span>Good</span>
               {intervalHints && <span className="text-[10px] font-normal opacity-80 text-center leading-tight">{intervalHints[2].mastery}</span>}
             </button>
-            {/* Easy — teal tertiary */}
+            {/* Easy — warm reward token */}
             <button
               onClick={() => submitReview(4)}
               aria-label={intervalHints ? `Easy, review again in ${intervalHints[3].short}` : 'Easy'}
-              className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-teal-50 text-teal-600 dark:bg-teal-500/10 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-500/20 transition-colors flex flex-col items-center justify-center gap-0.5"
+              className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-reward-soft text-reward hover:opacity-90 transition-colors flex flex-col items-center justify-center gap-0.5"
             >
               <span className="font-semibold">Easy</span>
               {intervalHints && <span className="text-[10px] opacity-60 text-center leading-tight">{intervalHints[3].short}</span>}
