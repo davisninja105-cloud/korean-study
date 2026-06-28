@@ -108,8 +108,11 @@ export default function Home() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ documentId: DOC_ID }),
       })
+      if (!res.ok) {
+        const text = await res.text().catch(() => '')
+        throw new Error(text || `sync failed (${res.status})`)
+      }
       const data = await res.json()
-      if (!res.ok) throw new Error(data?.error ?? 'sync failed')
       setSyncMsg(
         data.newCards > 0
           ? `Synced — ${data.newCards} new card${data.newCards !== 1 ? 's' : ''}`
