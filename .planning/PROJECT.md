@@ -8,6 +8,17 @@ A personal Korean spaced-repetition study app (Next.js + Prisma/Turso, Claude-po
 
 When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context. If everything else fails, this must hold.
 
+## Current Milestone: v1.1 UI/UX Polish
+
+**Goal:** Conduct a full audit of the app's visual design and usability, then systematically fix what the audit surfaces — making the app feel warm, encouraging, and genuinely polished.
+
+**Target features:**
+- Systematic UI audit across all screens (findings with severity)
+- Study session visual polish (core daily loop — top priority)
+- Home dashboard polish (the face of the app — top priority)
+- Cards, Habits, Settings, and navigation refinement
+- Consistent design-system baseline (spacing, typography, color)
+
 ## Requirements
 
 ### Validated
@@ -26,7 +37,11 @@ When you study, what you're meant to learn is always learnable in the moment —
 
 ### Active
 
-(None — ready for next milestone.)
+- UI/UX audit of all screens with severity-classified findings — v1.1
+- Study session visual polish (warm, encouraging feel) — v1.1
+- Home dashboard visual polish — v1.1
+- Cards, Habits, Settings, and navigation refinement — v1.1
+- Consistent design-system baseline (spacing, typography, color tokens) — v1.1
 
 ### Out of Scope
 
@@ -77,4 +92,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-26 after v1.0 milestone (Foundation-First Study)*
+*Last updated: 2026-06-26 after v1.1 milestone start (UI/UX Polish)*
