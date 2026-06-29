@@ -82,6 +82,7 @@ export default function Nav() {
               <Link
                 key={href}
                 href={href}
+                aria-label={label}
                 aria-current={active ? 'page' : undefined}
                 onClick={() => haptic('selection')}
                 className={`flex-1 flex flex-col items-center gap-1 py-2 text-xs font-medium min-h-[44px] active:opacity-70 transition-colors ${

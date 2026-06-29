@@ -276,7 +276,7 @@ export default function StudyPage() {
         )}
 
         {/* Mode selection — bottom sheet (ModeSelector keeps its own heading) */}
-        <Sheet open={showModeSheet} onClose={() => setShowModeSheet(false)}>
+        <Sheet open={showModeSheet} onClose={() => setShowModeSheet(false)} title="Study options">
           <ModeSelector cardCount={studyCards.length} onSelect={handleModeSelect} />
         </Sheet>
 

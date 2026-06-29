@@ -550,7 +550,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
             <button
               onClick={handleUndo}
               className="px-2 py-1 rounded-md hover:text-muted-foreground hover:bg-surface-3 transition-colors"
-              title="Undo last rating"
+              aria-label="Undo last rating"
             >
               ↩
             </button>
