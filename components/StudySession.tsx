@@ -264,6 +264,9 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
   // Ref for the card container so we can return focus after card advance (keyboard shortcuts)
   const containerRef = useRef<HTMLDivElement>(null)
+  // Ref for the "Again" grade button — focus moves here on reveal so screen readers
+  // immediately announce the grade options (WR-02).
+  const againBtnRef = useRef<HTMLButtonElement>(null)
 
   // Refs for flashcard faces — used to measure natural height for dynamic card sizing
   const frontRef = useRef<HTMLDivElement>(null)
@@ -286,6 +289,10 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   const item = queue[0]
   const currentCard = item.card
   const isPractice = item.kind === 'practice'
+
+  // Bounds-check intervalHints before accessing fixed indices 0–3 (CR-03).
+  // previewIntervalLabels() should always return 4 entries, but guard defensively.
+  const hints = intervalHints?.length === 4 ? intervalHints : null
 
   // Progress bar: advances as cards graduate (leave the queue permanently).
   const remainingDistinct =
@@ -492,6 +499,8 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     if (item.kind === 'real' && item.card.review) {
       setIntervalHints(previewIntervalLabels(item.card.review))
     }
+    // Move focus to grade buttons on the next frame so screen readers announce them (WR-02)
+    requestAnimationFrame(() => againBtnRef.current?.focus())
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -557,6 +566,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           )}
           <button
             onClick={() => onComplete(stats)}
+            aria-label="End study session"
             className="min-h-[44px] px-3 rounded-md hover:text-muted-foreground hover:bg-surface-3 active:bg-surface-3 transition-colors"
           >
             End
@@ -832,39 +842,40 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           <div className="flex gap-2 w-full animate-reveal">
             {/* Again — softer warning */}
             <button
+              ref={againBtnRef}
               onClick={() => submitReview(1)}
-              aria-label={intervalHints ? `Again, review again in ${intervalHints[0].short}` : 'Again'}
+              aria-label={hints ? `Again, review again in ${hints[0].short}` : 'Again'}
               className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex flex-col items-center justify-center gap-0.5"
             >
               <span className="font-semibold">Again</span>
-              {intervalHints && <span className="text-[10px] opacity-60 text-center leading-tight">{intervalHints[0].short}</span>}
+              {hints && <span className="text-[10px] opacity-60 text-center leading-tight">{hints[0].short}</span>}
             </button>
             {/* Hard — tertiary */}
             <button
               onClick={() => submitReview(2)}
-              aria-label={intervalHints ? `Hard, review again in ${intervalHints[1].short}` : 'Hard'}
+              aria-label={hints ? `Hard, review again in ${hints[1].short}` : 'Hard'}
               className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-surface-3 text-muted hover:bg-surface-3 transition-colors flex flex-col items-center justify-center gap-0.5"
             >
               <span className="font-semibold">Hard</span>
-              {intervalHints && <span className="text-[10px] opacity-60 text-center leading-tight">{intervalHints[1].short}</span>}
+              {hints && <span className="text-[10px] opacity-60 text-center leading-tight">{hints[1].short}</span>}
             </button>
             {/* Good — primary */}
             <button
               onClick={() => submitReview(3)}
-              aria-label={intervalHints ? `Good, ${intervalHints[2].mastery}` : 'Good'}
+              aria-label={hints ? `Good, ${hints[2].mastery}` : 'Good'}
               className="flex-[1.5] min-h-14 py-2 px-2 rounded-xl font-semibold text-sm bg-green-600 text-white hover:bg-green-700 transition-colors flex flex-col items-center justify-center gap-0.5 shadow-sm"
             >
               <span>Good</span>
-              {intervalHints && <span className="text-[10px] font-normal opacity-80 text-center leading-tight">{intervalHints[2].mastery}</span>}
+              {hints && <span className="text-[10px] font-normal opacity-80 text-center leading-tight">{hints[2].mastery}</span>}
             </button>
             {/* Easy — warm reward token */}
             <button
               onClick={() => submitReview(4)}
-              aria-label={intervalHints ? `Easy, review again in ${intervalHints[3].short}` : 'Easy'}
+              aria-label={hints ? `Easy, review again in ${hints[3].short}` : 'Easy'}
               className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-reward-soft text-reward hover:opacity-90 transition-colors flex flex-col items-center justify-center gap-0.5"
             >
               <span className="font-semibold">Easy</span>
-              {intervalHints && <span className="text-[10px] opacity-60 text-center leading-tight">{intervalHints[3].short}</span>}
+              {hints && <span className="text-[10px] opacity-60 text-center leading-tight">{hints[3].short}</span>}
             </button>
           </div>
         )}
@@ -889,13 +900,13 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
         {mode === 'fill-blank' && revealed && (
           <div className="flex gap-3 w-full animate-reveal">
-            <button onClick={() => submitReview(1)} aria-label={intervalHints ? `Wrong, review again in ${intervalHints[0].short}` : 'Wrong'} className="flex-1 min-h-14 py-2 rounded-xl font-medium text-sm bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex flex-col items-center justify-center gap-0.5">
+            <button onClick={() => submitReview(1)} aria-label={hints ? `Wrong, review again in ${hints[0].short}` : 'Wrong'} className="flex-1 min-h-14 py-2 rounded-xl font-medium text-sm bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex flex-col items-center justify-center gap-0.5">
               <span className="font-semibold">Wrong</span>
-              {intervalHints && <span className="text-[10px] opacity-60">{intervalHints[0].short}</span>}
+              {hints && <span className="text-[10px] opacity-60">{hints[0].short}</span>}
             </button>
-            <button onClick={() => submitReview(3)} aria-label={intervalHints ? `Correct, ${intervalHints[2].mastery}` : 'Correct'} className="flex-[1.5] min-h-14 py-2 rounded-xl font-semibold text-sm bg-green-600 text-white hover:bg-green-700 transition-colors flex flex-col items-center justify-center gap-0.5 shadow-sm">
+            <button onClick={() => submitReview(3)} aria-label={hints ? `Correct, ${hints[2].mastery}` : 'Correct'} className="flex-[1.5] min-h-14 py-2 rounded-xl font-semibold text-sm bg-green-600 text-white hover:bg-green-700 transition-colors flex flex-col items-center justify-center gap-0.5 shadow-sm">
               <span>Correct</span>
-              {intervalHints && <span className="text-[10px] font-normal opacity-80">{intervalHints[2].mastery}</span>}
+              {hints && <span className="text-[10px] font-normal opacity-80">{hints[2].mastery}</span>}
             </button>
           </div>
         )}
