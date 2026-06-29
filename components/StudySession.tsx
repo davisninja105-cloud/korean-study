@@ -547,7 +547,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       ref={containerRef}
       tabIndex={0}
       onKeyDown={handleKeyDown}
-      className="flex flex-col items-center gap-6 px-4 pt-4 pb-[max(1rem,env(safe-area-inset-bottom))] w-full max-w-xl mx-auto outline-none"
+      className="flex flex-col items-center gap-6 px-4 pt-4 pb-[max(1rem,var(--sab,0px))] w-full max-w-xl mx-auto outline-none"
     >
       {/* Header: mode label + controls */}
       <div className="flex justify-between items-center w-full text-sm text-muted">

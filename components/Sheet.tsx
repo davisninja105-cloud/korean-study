@@ -78,7 +78,7 @@ export default function Sheet({ open, onClose, title, children }: Props) {
       <div
         ref={panelRef}
         tabIndex={-1}
-        className="relative w-full max-w-xl bg-surface-1 rounded-t-3xl shadow-2xl outline-none max-h-[85vh] overflow-y-auto pb-[max(1rem,env(safe-area-inset-bottom))] animate-sheet"
+        className="relative w-full max-w-xl bg-surface-1 rounded-t-3xl shadow-2xl outline-none max-h-[85vh] overflow-y-auto pb-[max(1rem,var(--sab,0px))] animate-sheet"
       >
         {/* Drag handle + optional title (sticky so it stays while content scrolls) */}
         <div className="sticky top-0 bg-surface-1 pt-3 pb-2 flex flex-col items-center rounded-t-3xl z-10">
