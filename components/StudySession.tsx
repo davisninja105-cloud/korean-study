@@ -818,7 +818,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       </div>
 
       {/* ── Action bar (sticky above bottom nav on mobile) ── */}
-      <div className="sticky bottom-[calc(4.5rem+env(safe-area-inset-bottom))] sm:bottom-2 bg-surface-1/95 backdrop-blur-md saturate-150 -mx-4 px-4 pt-2 pb-2 w-[calc(100%+2rem)]">
+      <div className="sticky bottom-[calc(4.5rem+var(--sab,0px))] sm:bottom-2 bg-surface-1/95 backdrop-blur-md saturate-150 -mx-4 px-4 pt-2 pb-2 w-[calc(100%+2rem)]">
         {mode === 'flashcard' && !revealed && (
           <button
             onClick={handleReveal}
