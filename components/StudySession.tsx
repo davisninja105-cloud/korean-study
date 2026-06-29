@@ -549,7 +549,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           {canUndo && (
             <button
               onClick={handleUndo}
-              className="px-2 py-1 rounded-md hover:text-muted-foreground hover:bg-surface-3 transition-colors"
+              className="min-h-[44px] px-3 rounded-md hover:text-muted-foreground hover:bg-surface-3 active:bg-surface-3 transition-colors"
               aria-label="Undo last rating"
             >
               ↩
@@ -557,7 +557,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           )}
           <button
             onClick={() => onComplete(stats)}
-            className="px-2 py-1 rounded-md hover:text-muted-foreground hover:bg-surface-3 transition-colors"
+            className="min-h-[44px] px-3 rounded-md hover:text-muted-foreground hover:bg-surface-3 active:bg-surface-3 transition-colors"
           >
             End
           </button>

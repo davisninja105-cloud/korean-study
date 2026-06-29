@@ -159,7 +159,7 @@ export default function Home() {
           <button
             onClick={() => setBandUpMsg(null)}
             aria-label="Dismiss"
-            className="text-muted hover:text-muted-foreground text-lg leading-none shrink-0 min-h-11 min-w-11 flex items-center justify-center rounded-lg hover:bg-surface-3 active:bg-surface-3"
+            className="text-muted hover:text-muted-foreground text-lg leading-none shrink-0 min-h-11 min-w-11 flex items-center justify-center rounded-lg hover:bg-surface-3 active:bg-surface-3 active:opacity-80"
           >
             ✕
           </button>

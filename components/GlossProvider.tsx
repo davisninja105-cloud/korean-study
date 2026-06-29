@@ -129,7 +129,7 @@ function GlossPopoverUI({ state, onClose, onAddCard }: PopoverProps) {
         <button
           onClick={onClose}
           aria-label="Close gloss"
-          className="absolute top-2 right-2 w-6 h-6 flex items-center justify-center text-muted hover:text-muted-foreground rounded-full hover:bg-surface-3 text-xs"
+          className="absolute top-2 right-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted hover:text-muted-foreground rounded-full hover:bg-surface-3 active:bg-surface-3 text-xs"
         >
           ✕
         </button>
@@ -175,7 +175,8 @@ function GlossPopoverUI({ state, onClose, onAddCard }: PopoverProps) {
                 ) : (
                   <button
                     onClick={onAddCard}
-                    className="text-xs text-button hover:text-button-hover hover:underline"
+                    aria-label={`Add ${word} as a card`}
+                    className="flex items-center text-xs text-button hover:text-button-hover hover:underline min-h-[44px] active:opacity-70"
                   >
                     + Add as card
                   </button>

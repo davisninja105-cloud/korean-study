@@ -115,7 +115,7 @@ export default function AudioButton({
           setState('idle')
         }}
         aria-label="Stop audio"
-        className={`${btnBase} text-button hover:bg-button-soft`}
+        className={`${btnBase} text-button hover:bg-button-soft active:opacity-80`}
       >
         {/* Stop icon */}
         <svg viewBox="0 0 16 16" fill="currentColor" className={iconSize} aria-hidden="true">
@@ -129,7 +129,7 @@ export default function AudioButton({
     <button
       onClick={play}
       aria-label={ariaLabel}
-      className={`${btnBase} text-muted hover:text-muted-foreground hover:bg-surface-3`}
+      className={`${btnBase} text-muted hover:text-muted-foreground hover:bg-surface-3 active:bg-button-soft`}
     >
       {/* Speaker icon */}
       <svg viewBox="0 0 16 16" fill="currentColor" className={iconSize} aria-hidden="true">
