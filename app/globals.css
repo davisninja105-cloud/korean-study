@@ -106,6 +106,7 @@
 
 html {
   color-scheme: light dark;
+  -webkit-tap-highlight-color: transparent;
 }
 
 @theme inline {
@@ -251,8 +252,9 @@ body {
   .animate-card-in  { animation: none; opacity: 1; transform: none; }
   .animate-burst    { animation: none; opacity: 0; }
   .card-flip-inner  { transition: none; }
-  /* Sheet → crossfade instead of slide; list items appear instantly */
-  .animate-sheet { animation: fadeBackdrop 0.2s ease forwards; }
+  /* Sheet → crossfade instead of slide; backdrop appears instantly; list items appear instantly */
+  .animate-sheet    { animation: fadeBackdrop 0.2s ease forwards; }
+  .animate-backdrop { animation: none; opacity: 1; }
   .animate-slide-in { animation: none; opacity: 1; transform: none; }
   .ring-fill { animation: none; transition: none; }
 }
