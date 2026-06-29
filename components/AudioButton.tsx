@@ -82,10 +82,18 @@ export default function AudioButton({
       audioRef.current = audio
       setState('playing')
       audio.onended = () => setState('idle')
-      audio.onerror = () => setState('idle')
-      await audio.play()
+      audio.onerror = () => setState('idle') // media decode error after play() resolves
+
+      try {
+        await audio.play()
+      } catch {
+        // play() rejected (autoplay policy / network error) — onerror won't fire in this path
+        audio.onerror = null // prevent double setState if a media error fires later
+        setState('idle')
+        await speakFallback(text)
+      }
     } catch {
-      // Network/API error — fall back to browser speech
+      // Network/API error fetching TTS URL — fall back to browser speech
       setState('idle')
       await speakFallback(text)
     }
