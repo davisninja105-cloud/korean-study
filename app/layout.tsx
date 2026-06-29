@@ -68,6 +68,15 @@ export default async function RootLayout({
             __html: `(function(){try{var t=localStorage.getItem('theme');var d=t==='dark'||(t!=='light'&&window.matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.setAttribute('data-theme',d?'dark':'light');}catch(e){}})();`,
           }}
         />
+        {/* Pre-paint safe-area-inset-bottom freeze — sets --sab before first paint so
+            the main content bottom padding and nav bar are correct on iPhones with a
+            home indicator even before React hydration fires. The Nav useEffect guard
+            (if !existing) becomes a no-op in the common case. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var tmp=document.createElement('div');tmp.style.paddingBottom='env(safe-area-inset-bottom)';document.body.appendChild(tmp);var sab=getComputedStyle(tmp).paddingBottom;document.body.removeChild(tmp);document.documentElement.style.setProperty('--sab',sab||'0px');}catch(e){}})();`,
+          }}
+        />
         <ThemeWatcher />
         <GlossProvider>
           <Nav />
