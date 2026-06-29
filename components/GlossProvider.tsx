@@ -100,12 +100,36 @@ function GlossPopoverUI({ state, onClose, onAddCard }: PopoverProps) {
     return () => document.removeEventListener('pointerdown', handler, true)
   }, [onClose])
 
-  // Dismiss on Escape
+  // Dismiss on Escape; focus trap for Tab/Shift+Tab within the panel
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { onClose(); return }
+      if (e.key !== 'Tab' || !panelRef.current) return
+      const focusable = Array.from(
+        panelRef.current.querySelectorAll<HTMLElement>(
+          'button:not(:disabled), [href], input:not(:disabled), [tabindex]:not([tabindex="-1"])'
+        )
+      )
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
+    }
     document.addEventListener('keydown', handler)
     return () => document.removeEventListener('keydown', handler)
   }, [onClose])
+
+  // Move focus to close button on mount (CR-01: dialog focus management)
+  const closeBtnRef = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    closeBtnRef.current?.focus()
+  }, [])
 
   const badgeType = entry
     ? ((['vocabulary', 'grammar', 'phrase'].includes(entry.partOfSpeech)
@@ -117,16 +141,17 @@ function GlossPopoverUI({ state, onClose, onAddCard }: PopoverProps) {
     <div
       role="dialog"
       aria-label={`Gloss for ${word}`}
-      aria-live="polite"
+      aria-modal="true"
       style={{ position: 'fixed', width: `${POPOVER_WIDTH}px`, zIndex: 60, ...posStyle }}
       className="animate-reveal"
     >
       <div
         ref={panelRef}
-        className="bg-surface-1 rounded-2xl shadow-xl border border-border/60 p-4 flex flex-col gap-2"
+        className="relative bg-surface-1 rounded-2xl shadow-xl border border-border/60 p-4 flex flex-col gap-2"
       >
         {/* Close button */}
         <button
+          ref={closeBtnRef}
           onClick={onClose}
           aria-label="Close gloss"
           className="absolute top-2 right-2 min-h-[44px] min-w-[44px] flex items-center justify-center text-muted hover:text-muted-foreground rounded-full hover:bg-surface-3 active:bg-surface-3 text-xs"
