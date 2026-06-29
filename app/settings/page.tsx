@@ -32,6 +32,7 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [customizeOpen, setCustomizeOpen] = useState(false)
   const colorSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pendingColorPatch = useRef<{ buttonColor?: string; rewardColor?: string }>({})
   const scaleSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -85,22 +86,35 @@ export default function SettingsPage() {
     scaleSaveTimer.current = setTimeout(() => save({ readingTextScale: val }), 400)
   }
 
+  // Shared debounce flush for color saves — accumulates both action and reward into one
+  // request so rapid interleaved drags on the two pickers never drop either value.
+  const flushColorSave = () => {
+    if (colorSaveTimer.current) clearTimeout(colorSaveTimer.current)
+    colorSaveTimer.current = setTimeout(() => {
+      const patch = pendingColorPatch.current
+      if (Object.keys(patch).length > 0) {
+        pendingColorPatch.current = {}
+        save(patch)
+      }
+    }, 400)
+  }
+
   const handleActionColorChange = (hex: string) => {
     setButtonColor(hex)
     // Instant live preview — update CSS variables on the root element immediately
     document.documentElement.style.setProperty('--button', hex)
     document.documentElement.style.setProperty('--button-foreground', readableForeground(hex))
-    // Debounce the actual API save (color input fires continuously while dragging)
-    if (colorSaveTimer.current) clearTimeout(colorSaveTimer.current)
-    colorSaveTimer.current = setTimeout(() => save({ buttonColor: hex }), 400)
+    // Accumulate into pending patch, then debounce the actual API save
+    pendingColorPatch.current.buttonColor = hex
+    flushColorSave()
   }
 
   const handleRewardColorChange = (hex: string) => {
     setRewardColor(hex)
     document.documentElement.style.setProperty('--reward', hex)
     document.documentElement.style.setProperty('--reward-foreground', readableForeground(hex))
-    if (colorSaveTimer.current) clearTimeout(colorSaveTimer.current)
-    colorSaveTimer.current = setTimeout(() => save({ rewardColor: hex }), 400)
+    pendingColorPatch.current.rewardColor = hex
+    flushColorSave()
   }
 
   const selectPalette = (action: string, reward: string) => {
@@ -111,8 +125,9 @@ export default function SettingsPage() {
     document.documentElement.style.setProperty('--button-foreground', readableForeground(action))
     document.documentElement.style.setProperty('--reward', reward)
     document.documentElement.style.setProperty('--reward-foreground', readableForeground(reward))
-    if (colorSaveTimer.current) clearTimeout(colorSaveTimer.current)
-    colorSaveTimer.current = setTimeout(() => save({ buttonColor: action, rewardColor: reward }), 400)
+    pendingColorPatch.current.buttonColor = action
+    pendingColorPatch.current.rewardColor = reward
+    flushColorSave()
   }
 
   const handleThemeChange = (t: Theme) => {
