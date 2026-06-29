@@ -302,24 +302,22 @@ export default function SettingsPage() {
               easier to parse. No romanization.
             </p>
           </div>
-          <div className="flex items-center min-h-[44px]">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={readingAid}
-              aria-label="Reading aid"
-              onClick={() => handleReadingAidChange(!readingAid)}
-              className={`relative shrink-0 w-12 h-7 rounded-full transition-colors ${
-                readingAid ? 'bg-button' : 'bg-surface-3'
+          <button
+            type="button"
+            role="switch"
+            aria-checked={readingAid}
+            aria-label="Reading aid"
+            onClick={() => handleReadingAidChange(!readingAid)}
+            className={`relative shrink-0 flex items-center justify-center w-12 min-h-[44px] rounded-full transition-colors ${
+              readingAid ? 'bg-button' : 'bg-surface-3'
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-surface-1 shadow transition-transform ${
+                readingAid ? 'translate-x-5' : ''
               }`}
-            >
-              <span
-                className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-surface-1 shadow transition-transform ${
-                  readingAid ? 'translate-x-5' : ''
-                }`}
-              />
-            </button>
-          </div>
+            />
+          </button>
         </div>
       </section>
 
