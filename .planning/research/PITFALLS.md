@@ -1,288 +1,386 @@
-# Pitfalls Research: UI/UX Polish
+# Pitfalls Research: RSC Conversion & Performance Hydration
 
-**Domain:** Visual polish pass on existing Next.js 16 / React 19 / Tailwind CSS v4 Korean SRS app
-**Researched:** 2026-06-27
-**Overall confidence:** MEDIUM (cross-checked across official docs + community sources)
-
----
-
-## Design Token Pitfalls
-
-### Pitfall 1: Silently ignored CSS custom property names in Tailwind v4
-
-**What goes wrong:** Tailwind v4's `@theme inline` enforces strict namespace rules. A misnamed token (e.g., `--colour-reward` instead of `--reward`) is silently dropped — the compiler generates no error, the utility class just doesn't apply. This is especially insidious in dark mode where you might rename a token and not notice the dark variant is now receiving its value from the wrong place.
-
-**Why it happens:** Tailwind v4 is CSS-first; the build step has no schema validation for your `@theme` block.
-
-**Prevention:** After any token rename, search the codebase for the old name and verify no dangling references remain. Add a visual regression check by loading both light and dark modes in the browser before committing.
-
-**Detection:** A utility class that renders nothing (instead of an error) when applied to an element.
+**Domain:** Converting Next.js 16 / React 19 'use client' pages to RSC + client-shell pattern; adding loading.tsx skeletons; parallelizing Prisma/Turso queries
+**Researched:** 2026-06-29
+**Confidence:** MEDIUM (cross-checked against official Next.js docs + community verified issues)
 
 ---
 
-### Pitfall 2: Hardcoded color classes bypass the token system
+## Critical Pitfalls
 
-**What goes wrong:** The existing codebase deliberately avoids `bg-orange-500` or `bg-blue-400` in favor of semantic tokens. A polish pass that adds "just a quick background tint" using a Tailwind palette color directly creates a token system exception that makes the next polish pass harder. Dark mode and configurable `buttonColor`/`rewardColor` won't apply to hardcoded classes.
+### Pitfall 1: Prisma Date objects passed to client components trigger a serialization warning — and silently corrupt the value
 
-**Prevention:** CLAUDE.md already bans this. Reinforce: any new color value must go through a token. If a token doesn't exist, add it to `app/globals.css` `@theme inline` first.
+**What goes wrong:**
+When a Server Component passes a Prisma query result that contains `Date` fields to a `'use client'` component as a prop, Next.js emits:
+> `Warning: Only plain objects can be passed to Client Components from Server Components. Date objects are not supported.`
 
----
+In development the warning fires but the prop still arrives as a string (because JSON serialization converts `Date` → ISO string). In production the behavior is the same but the warning may be suppressed — so the client component receives a `string` where TypeScript expects a `Date`. Any code that calls `.getTime()`, `.toLocaleDateString()`, or date-math on the prop will throw at runtime.
 
-### Pitfall 3: Token rename cascade — semantic tokens reference each other via `color-mix`
+**Why it happens:**
+JSON serialization destroys type information: `JSON.parse(JSON.stringify(new Date()))` returns a `string`, not a `Date`. The RSC wire protocol uses JSON for the server→client boundary. Prisma model fields typed as `DateTime` (e.g., `nextReview: Date`, `createdAt: Date`) cross this boundary as plain strings — TypeScript doesn't catch this because both sides are typed identically.
 
-**What goes wrong:** `--reward-soft` is derived via `color-mix` from `--reward`. If you rename `--reward` without updating the `color-mix` expression, `--reward-soft` silently resolves to the default (transparent or initial). The heatmap, streak dots, and partial-progress bars all disappear or turn black.
+**How to avoid:**
+Define a plain DTO interface for each data shape that crosses the boundary and serialize explicitly before passing as props:
+```typescript
+// In the RSC (server side), before passing to client shell:
+type CardDto = {
+  id: string
+  front: string
+  nextReviewMs: number  // number, not Date
+  createdAt: string     // ISO string, not Date
+}
 
-**Prevention:** When renaming a token, grep for `var(--old-name)` in `globals.css` before committing. Treat derived tokens as dependents.
+function toCardDto(card: Card & { review: CardReview | null }): CardDto {
+  return {
+    id: card.id,
+    front: card.front,
+    nextReviewMs: card.review?.nextReview?.getTime() ?? 0,
+    createdAt: card.createdAt.toISOString(),
+  }
+}
+```
+Never pass a raw Prisma result object as a client component prop. Always map to a DTO first.
 
----
+**Warning signs:**
+- TypeScript errors like `Argument of type 'string' is not assignable to parameter of type 'Date'` in client components that receive server-fetched data
+- `new Date(props.someDate).getTime()` returns `NaN` in the browser (the value was already a string)
+- Console warning about "Date objects are not supported" during dev
 
-### Pitfall 4: `@apply` in shared components breaks with `@theme inline`
-
-**What goes wrong:** Tailwind v4 dropped `@apply` support in component libraries that inject styles via Node.js plugin APIs. Any `@apply` in a non-`globals.css` location may silently no-op.
-
-**Prevention:** This codebase uses Tailwind utilities in JSX (not `@apply`), so risk is low. But if a polish pass adds a `.css` file with `@apply` for a shared animation class, test immediately.
-
----
-
-## Dark Mode Parity Pitfalls
-
-### Pitfall 1: The dual-block maintenance trap (CRITICAL for this app)
-
-**What goes wrong:** This app maintains dark mode values in TWO places: the `@media (prefers-color-scheme: dark)` `:root` block AND the `:root[data-theme="dark"]` block in `globals.css`. CLAUDE.md warns: "When adding a dark value, mirror it in BOTH." A polish pass that adds a new semantic token with a light value but forgets to add dark values in both blocks will render correctly in System mode only when the OS is in light mode — the bug is invisible during development on most machines.
-
-**Why it happens:** Engineers test in whatever mode their OS is currently in. The other mode only breaks in production.
-
-**Prevention:** For every new token with a dark value, verify all three locations exist: the base `:root` block (light), the `@media` dark block, and the `[data-theme="dark"]` block. A simple grep: `grep -n "your-new-token" app/globals.css` should return exactly 3 hits.
-
-**Detection:** Load the app in System mode, then toggle OS to dark mode. Then manually switch to Dark in settings. All three should look identical.
-
----
-
-### Pitfall 2: `dark:` utility classes are not automatically covered
-
-**What goes wrong:** Tailwind's `dark:` variant does not auto-invert or auto-adapt colors. Every element that needs a different appearance in dark mode needs an explicit `dark:` class. A polish pass that adds a new background to a component without adding a `dark:` equivalent creates a permanently broken dark mode for that element.
-
-**Prevention:** For every new `bg-*`, `text-*`, `border-*`, or `shadow-*` class added during polish, ask: does this need a dark variant? If yes, add it immediately in the same commit.
+**Phase to address:** Every phase that introduces a new RSC → client component data flow. Establish the DTO pattern in the first RSC conversion phase (PERF-01/02) and enforce it throughout.
 
 ---
 
-### Pitfall 3: Third-party component specificity overrides dark variants
+### Pitfall 2: loading.tsx does NOT show on initial page load — only on client-side navigation
 
-**What goes wrong:** `canvas-confetti`, browser defaults for `<input>`, `<select>`, and any future component library may have higher CSS specificity than `[data-theme="dark"] .dark:bg-surface-1`. The dark mode styles lose the specificity war silently.
+**What goes wrong:**
+Developers add `loading.tsx` expecting it to eliminate the blank-screen flash on first page load. It does not. On the initial server render, Next.js streams the full HTML (including the awaited data). `loading.tsx` only triggers as a Suspense fallback during *client-side navigation* between routes, when prefetching is active. In `next dev`, prefetching is disabled, so `loading.tsx` appears to do nothing at all during development testing.
 
-**Prevention:** Scope theme styles at the `:root` level via CSS custom properties (the existing pattern). Avoid putting dark-mode values directly on component selectors — keep them as token values so components inherit automatically.
+**Why it happens:**
+`loading.tsx` is syntactic sugar that wraps `page.tsx` in a `<Suspense>` boundary with the loading component as the fallback. On SSR, React renders right through the Suspense boundary — the fallback is only used when the boundary suspends during a client-side re-render. First load = SSR = no suspension = no fallback.
 
----
+**How to avoid:**
+- Understand the two separate problems: (1) first-load slowness and (2) navigation transition jank. `loading.tsx` solves (2). Solving (1) requires RSC data fetching so the data arrives with the HTML, or Suspense with streaming on the server side.
+- Test loading states in production (`next build && next start`), not `next dev`. In dev, prefetching is off and the loading state may not appear during navigation either.
+- For first-load skeleton coverage, use inline `<Suspense>` boundaries in the RSC with skeleton fallbacks: individual slow components suspend while the page shell renders immediately.
 
-### Pitfall 4: Flash of wrong theme on first paint
+**Warning signs:**
+- `loading.tsx` appears to do nothing when tested locally
+- The skeleton flashes briefly but the "blank before content" problem persists on first load
+- Confusion between "why is my skeleton not showing on first load?" — because it was never supposed to
 
-**What goes wrong:** The app already has an inline pre-paint `<script>` in `layout.tsx` to set `data-theme` before first paint. If a polish pass moves this script lower in the document, or wraps it in an async component, the user sees a flash of the wrong theme.
-
-**Prevention:** Never move or conditionally render the inline theme-detection script in `layout.tsx`. It must stay as a raw `<script>` tag, synchronous, before any CSS loads.
-
----
-
-## Animation & Motion Pitfalls
-
-### Pitfall 1: Animating `height` causes layout thrash (HIGH RISK for StudySession.tsx)
-
-**What goes wrong:** `StudySession.tsx` uses `useLayoutEffect` to measure card face height and applies a CSS transition simultaneously on both height and rotation. Animating `height` forces the browser to recalculate layout on every frame — this is the definition of layout thrash. On low-end Android or iOS in low-power mode, this drops to ~20fps and feels janky.
-
-**Why it happens:** Height is a layout property; `transform: rotateY()` is a composited property. Mixing them forces both the layout engine and the compositor to work every frame.
-
-**Prevention:** Where possible, replace `height` animation with `max-height` animation (less accurate but avoids reflow) or better: use `transform: scaleY()` with `transform-origin: top`. If height must be animated, accept the performance hit but ensure `will-change: height, transform` is set on the element during animation and removed after.
-
-**Detection:** Chrome DevTools Performance tab → "Layout" (purple) events happening on every animation frame.
+**Phase to address:** PERF-01 (Cards skeleton) and PERF-02 (Study skeleton). Document in phase plan that `loading.tsx` covers navigation; RSC streaming covers first-load.
 
 ---
 
-### Pitfall 2: iOS Safari 3D flip flickering from `backface-visibility`
+### Pitfall 3: Fetching data inside layout.tsx blocks the loading.tsx fallback for all children
 
-**What goes wrong:** The 3D card flip in `StudySession.tsx` uses `backface-visibility: hidden`. On iOS Safari this causes flickering. The fix (`-webkit-backface-visibility: hidden`) reduces flicker but is itself buggy — it can cause the scroll bar handle to disappear and historically caused crashes on older Chrome.
+**What goes wrong:**
+If `app/layout.tsx` or any segment layout contains an `await` for runtime data (e.g., `await prisma.setting.findMany()` for the button color), `loading.tsx` does NOT show a fallback for that layout-level fetch. The entire navigation is blocked until the layout resolves, and the "instant loading state" benefit of `loading.tsx` is lost. The user sees no feedback for the duration of that layout await.
 
-**Prevention:** Scope `backface-visibility: hidden` and `-webkit-backface-visibility: hidden` tightly to only the `.card-face` elements (not the parent wrapper). Test on an actual iOS device after any change to the 3D flip CSS, not just in desktop Safari DevTools mobile emulation.
+From the official Next.js docs:
+> "If the layout accesses uncached or runtime data (e.g. cookies(), headers(), or uncached fetches), loading.js will not show a fallback for it. Without Cache Components: Navigation blocks until the layout finishes rendering."
 
-**Detection:** Visible flickering during the flip transition when tested on a real iPhone.
+**Why it happens:**
+`loading.tsx` wraps `page.tsx` in a Suspense boundary, but it does NOT wrap `layout.tsx` in the same segment. The layout renders first, blocking rendering of the Suspense shell. This is by design — layouts are supposed to be structural scaffolding, not data loaders.
 
----
+**How to avoid:**
+Keep `app/layout.tsx` structural-only. The current app already fetches `buttonColor` and `rewardColor` from the DB in layout to inject CSS variables — this is safe because those values are unlikely to be slow, but be aware the pattern exists. For any new per-request data need in a layout, either:
+1. Move the fetch into `page.tsx` instead
+2. Wrap the data-dependent section in its own `<Suspense>` with a fallback
 
-### Pitfall 3: `useLayoutEffect` blocking renders during polish
+**Warning signs:**
+- Navigation feels slow even after adding `loading.tsx`
+- The skeleton appears but only after a delay (the delay is the layout await)
+- Profiling shows the TTFB includes a full DB round-trip before any content streams
 
-**What goes wrong:** `useLayoutEffect` is synchronous and blocks the browser from painting until it completes. If a polish pass adds a measurement in `useLayoutEffect` that involves a slow DOM query or triggers a forced reflow before the measurement, the entire frame is blocked. Users see stuttering.
-
-**Prevention:** Keep `useLayoutEffect` bodies lean — only `getBoundingClientRect()` and `setState()` calls. No loops, no fetch, no complex computation. If you add a new measurement, benchmark it in the Performance profiler.
-
----
-
-### Pitfall 4: Missing `prefers-reduced-motion` on new animations
-
-**What goes wrong:** Any new entrance animation (fade-in, slide-up, scale-up) added during the polish pass that ignores `prefers-reduced-motion: reduce` fails accessibility. Users with vestibular disorders can experience nausea from motion.
-
-**Prevention:** Every new `@keyframes` animation or CSS `transition` must be paired with a `@media (prefers-reduced-motion: reduce)` block in `globals.css` that reduces or eliminates the motion. This already exists for `ProgressRing` — extend the same pattern.
-
----
-
-### Pitfall 5: Over-animating creates perceived slowness
-
-**What goes wrong:** Adding entrance animations to every element makes the app feel sluggish. If the grade bar, the card, the session stats, and the bottom nav all animate on mount, the user perceives the app as slow even if it is technically fast.
-
-**Prevention:** Animate exactly one element per interaction — the element being acted upon. Everything else should be static. For this app: the card flip and the grade confirmation are the only interactions that warrant animation.
+**Phase to address:** PERF-05 (navigation instant feedback). Audit `app/layout.tsx` for any async data access before implementing `loading.tsx`.
 
 ---
 
-## Korean Text & Typography Pitfalls
+### Pitfall 4: Promise.all fails atomically — one Turso query failure crashes the entire parallel fetch
 
-### Pitfall 1: Line-height too tight for Hangul
+**What goes wrong:**
+Converting three serial Prisma calls to `Promise.all([q1, q2, q3])` (PERF-06) means a transient Turso network hiccup on any one query rejects the entire `Promise.all`. The route returns a 500 and the client sees an error screen instead of partial data.
 
-**What goes wrong:** The default Tailwind `leading-normal` (1.5) is adequate for Latin text but feels cramped for Hangul. Korean characters have a higher visual density — lines feel packed. The W3C Korean Layout Requirements document specifies ~1.7 for body Korean text.
+The current serial implementation has an implicit benefit: query 2 only runs if query 1 succeeds. With `Promise.all`, all three run simultaneously but all three must succeed.
 
-**Prevention:** Set `line-height: 1.7` (or `leading-[1.7]`) on elements that render Korean sentence text (`HighlightedSentence.tsx`, card fronts in Korean). Do not apply this to UI chrome — only content text.
+**Why it happens:**
+`Promise.all` rejects with the first rejection. Unlike `Promise.allSettled`, it does not wait for remaining promises.
 
----
+**How to avoid:**
+Use `Promise.allSettled` when partial success is acceptable, or wrap the `Promise.all` in try/catch and return a degraded response:
+```typescript
+// Preferred for /api/cards/due where all queries are required:
+try {
+  const [cards, edges, knownLemmas] = await Promise.all([
+    prisma.card.findMany(/* ... */),
+    prisma.cardDependency.findMany(/* ... */),
+    prisma.cardReview.findMany(/* ... */),
+  ])
+  // proceed
+} catch (e) {
+  return NextResponse.json({ error: 'Query failed' }, { status: 500 })
+}
 
-### Pitfall 2: `word-break: normal` splits Hangul at syllable boundaries
+// For independent queries where partial results are useful, use allSettled:
+const results = await Promise.allSettled([statsQuery, activityQuery])
+const stats = results[0].status === 'fulfilled' ? results[0].value : null
+const activity = results[1].status === 'fulfilled' ? results[1].value : null
+```
 
-**What goes wrong:** Korean words are sequences of syllable blocks. `word-break: normal` allows the browser to break at any syllable boundary when wrapping, which produces unnatural mid-word breaks that look wrong to Korean readers. Example: `공부하다` split as `공부하` / `다`.
+For Turso specifically: libSQL over HTTP does not use a traditional connection pool — each query is a separate HTTP/2 request. Concurrent queries are safe and will not exhaust connections. The risk is Turso's rate limit on the free plan, not a pool ceiling.
 
-**Prevention:** Use `word-break: keep-all` on all Korean text containers. This tells the browser to wrap only at spaces (actual word boundaries in Korean). This is already correct behavior for the sentence display — verify it's in place on all new text elements added during polish.
+**Warning signs:**
+- Sporadic 500 errors on the cards/due endpoint after parallelizing
+- Errors that reproduce in production but are hard to reproduce locally (Turso latency variance)
+- "PrismaClientKnownRequestError" propagating up from a parallel fetch
 
----
-
-### Pitfall 3: Pretendard weight range missing on Safari
-
-**What goes wrong:** The self-hosted Pretendard variable font requires the weight range `'45 920'` in the `next/font/local` config. If this range is omitted or incorrect, WebKit/Safari renders at the default weight instead of the requested weight — a `font-weight: 700` heading renders as regular weight on iPhone.
-
-**Prevention:** Check `app/layout.tsx` (or wherever Pretendard is declared via `localFont`) to confirm `weight: '45 920'` is present. Do not change this value during polish.
-
----
-
-### Pitfall 4: FOUT (flash of unstyled text) during polish changes
-
-**What goes wrong:** If a polish pass changes how Pretendard is referenced — for example adding a `<link rel="preload">` in the wrong place, or switching from `display: 'swap'` to `display: 'block'` — the font loading behavior changes. `display: 'swap'` shows a fallback font until Pretendard loads (FOUT, visible flash); `display: 'block'` shows invisible text (FOIT, less jarring but delays readability). A change that accidentally switches from one to the other changes the perceived performance of every page.
-
-**Prevention:** Leave the Pretendard font declaration untouched during polish unless specifically investigating a font loading issue. The existing `adjustFontFallback` on `next/font` already minimizes CLS.
-
----
-
-### Pitfall 5: Hangul and Latin character spacing inconsistency
-
-**What goes wrong:** Mixing Korean and English in the same text run (common in card fronts like `~(으)로 (direction particle)`) can look awkward — the spacing between Hangul and the parenthesized English gloss varies by browser. CSS `text-autospace` (CSS Text Level 4) is the correct fix but has limited support (~60% in 2026).
-
-**Prevention:** Add a thin space (`&thinsp;` or 0.1em `letter-spacing` on the gloss span) between Hangul and the Latin parenthetical. Do not rely on `text-autospace` without a fallback.
-
----
-
-## Mobile / PWA Pitfalls
-
-### Pitfall 1: Safe area inset resets to 0px after Next.js `<Link>` navigation (CRITICAL)
-
-**What goes wrong:** This is a documented Next.js bug: after navigating via `<Link>` from `next/link`, `env(safe-area-inset-bottom)` resets to `0px`. The bottom navigation bar (`Nav.tsx`) uses `pb-safe` or similar safe-area padding. After the first `<Link>` click, the nav bar visually shifts upward and content may be obscured by the Home indicator on iPhone.
-
-**Why it happens:** Next.js client-side navigation triggers a viewport resize event that causes Safari to recalculate safe-area values, and a bug in the calculation resets them.
-
-**Prevention:** Do not rely on `env(safe-area-inset-bottom)` as a live CSS value in `Nav.tsx`. Instead, read it once on mount via JavaScript and set it as a CSS custom property that doesn't reset. Alternatively, set a fixed `padding-bottom` that is conservative enough to clear the Home indicator on all devices (34px for notched iPhones, 20px for older models).
-
-**Detection:** Open the app as a PWA on iPhone. Navigate between tabs. Check if the nav bar bottom padding changes between page loads.
+**Phase to address:** PERF-06 (`/api/cards/due` parallelization). Wrap the `Promise.all` in try/catch; consider `Promise.allSettled` for the home page stats + activity fetch pair.
 
 ---
 
-### Pitfall 2: Pull-to-refresh conflict with custom `usePullToRefresh`
+### Pitfall 5: 'use client' boundary placement too high — entire page tree loses RSC benefits
 
-**What goes wrong:** `lib/usePullToRefresh.ts` implements a custom pull-to-refresh on the Home page. If `overscroll-behavior-y` is not set correctly, both the native iOS rubber-band overscroll AND the custom handler fire. The result is a double-trigger: the custom sync fires AND the native overscroll animation runs, creating a jumpy, confused UX.
+**What goes wrong:**
+When converting a page from `'use client'` to RSC, the temptation is to extract the data-fetching into the RSC wrapper and keep the existing `'use client'` page component as the "client shell." If the client shell's `'use client'` directive is placed too high (e.g., at the top of a file that imports and renders many sub-components), all of those sub-components are pulled into the client bundle, even static ones.
 
-**Prevention:** Set `overscroll-behavior-y: contain` on the scrollable container (not `body`) to suppress the native overscroll bounce without disabling scroll entirely. Verify the custom pull-to-refresh still triggers reliably after this change.
+For this app: `StudySession.tsx` is genuinely interactive (state, effects, event handlers) and must stay `'use client'`. But the surrounding shell (the route wrapper that fetches initial cards and passes them as `initialCards` prop) should be an RSC. The mistake is making the entire `app/study/page.tsx` a client component just because `StudySession` is.
 
----
+**Why it happens:**
+`'use client'` is contagious upward — any module that imports a `'use client'` component must itself either be a client component or explicitly import the client component through a client boundary. But it is NOT contagious downward through props. An RSC can import and render a client component; the client component's subtree becomes client-rendered, but the RSC remains server-rendered.
 
-### Pitfall 3: Touch targets below 44x44px
+**How to avoid:**
+The RSC + client shell pattern:
+```typescript
+// app/study/page.tsx — RSC (no 'use client')
+import StudySession from '@/components/StudySession'  // This is 'use client'
 
-**What goes wrong:** The grade bar buttons in `StudySession.tsx`, the "Add as card?" affordance in `GlossProvider.tsx`, and card-action buttons in `SwipeRow.tsx` are all at risk of being too small. On mobile with small fingers, sub-44px targets cause misclicks and user frustration — the exact opposite of the "warm, encouraging" vibe goal.
+export default async function StudyPage() {
+  const initialCards = await fetchDueCards()  // runs on server
+  return <StudySession initialCards={toCardDtos(initialCards)} />
+}
+```
+`StudySession` stays `'use client'`. The page is RSC. Data fetching happens server-side. No hydration of the data-fetching logic.
 
-**Prevention:** During the polish audit, measure every interactive element's touch target. Use `min-h-[44px] min-w-[44px]` for all tappable elements. Visual size and touch target size can differ — use transparent padding to extend the tap area without changing visual appearance.
+**Warning signs:**
+- Bundle size increases after the "RSC conversion" (should decrease or stay flat)
+- The Network tab shows the page fetching data client-side after load (defeats the purpose)
+- TypeScript complaining that a server-only import (Prisma, `lib/settings.ts`) is being used in a client component
 
----
-
-### Pitfall 4: Sheet / modal body scroll-through on iOS
-
-**What goes wrong:** `Sheet.tsx` already implements body-scroll-lock. If a polish pass adds a new Sheet variant or inline modal without the same lock, background content scrolls behind the sheet on iOS. This is an iOS-specific bug where `overflow: hidden` on `body` is insufficient; scroll events still pass through to the background.
-
-**Prevention:** Any new Sheet-like overlay must use the same body-scroll-lock pattern as the existing `Sheet.tsx`. Do not use `overflow: hidden` on body as the sole scroll prevention.
-
----
-
-### Pitfall 5: `position: fixed` elements and the iOS virtual keyboard
-
-**What goes wrong:** When the virtual keyboard opens on iOS, `position: fixed` elements jump to unexpected positions. The grade bar in `StudySession.tsx` and any modal with text input (like the gloss popover's "Add as card?" form) may be obscured by the keyboard or jump to an incorrect Y position.
-
-**Prevention:** Avoid `position: fixed` for elements that appear when a text input is active. Use `position: sticky` within the scroll container instead, or test keyboard-open behavior explicitly on a real device. The `visualViewport` API can be used to reposition fixed elements in response to keyboard resize.
-
----
-
-## Scope Creep Pitfalls
-
-### Pitfall 1: The "while I'm here" expansion pattern
-
-**What goes wrong:** You audit the study session card and find the grade bar needs more padding. While fixing padding, you notice the grade labels are inconsistent with the Habits page. While fixing labels, you realize the Habits page uses a slightly different font size. Each fix is individually reasonable but together they create a multi-week audit trail that blocks shipping.
-
-**Prevention:** The audit phase produces a severity-classified list. Only HIGH and MEDIUM severity items get fixed in this milestone. LOW severity items go on a backlog. "While I'm here" additions must be logged as new items and assigned a severity before acting on them — not fixed immediately.
+**Phase to address:** All RSC conversion phases (PERF-01, PERF-02, PERF-03, PERF-04).
 
 ---
 
-### Pitfall 2: Token changes requiring component-wide visual regression
+### Pitfall 6: Missing error boundary causes RSC fetch errors to crash the whole page in production
 
-**What goes wrong:** Changing a semantic token like `--surface-1` or `--reward` affects every component that uses it. This is the right design, but it means a token change that looks right on the Home page may create an unexpected visual on the Habits page or inside the Sheet. A polish pass that changes tokens without checking every usage is high-risk.
+**What goes wrong:**
+When a Server Component awaits a Prisma query and the query throws (Turso connection issue, timeout), Next.js propagates the error to the nearest `error.tsx` boundary. If there is no `error.tsx` in the route segment, the error propagates to the root layout's error handler — or worse, it results in an unhandled error that sends a blank 500 response.
 
-**Prevention:** After any token value change, load every page of the app in both light and dark mode before committing. The pages are: Home, Study (active session), Cards, Habits, Settings, Login, Wrapped. This is a 14-screen checklist (7 pages × 2 modes).
+In development you see the full error stack. In production you see a generic "An error occurred in the Server Components render" message, stripping sensitive details. Users see a full-page crash from what might be a transient network issue.
+
+**Why it happens:**
+RSC errors do not have a React equivalent of try/catch at the component level (you can't catch inside an async RSC and return a fallback from the same component). Error recovery requires `error.tsx` boundaries.
+
+**How to avoid:**
+- Add `app/study/error.tsx` and `app/cards/error.tsx` alongside each new RSC page
+- For non-critical data (e.g., habit stats on the home page), use a try/catch inside the RSC and return null/empty-state instead of crashing:
+```typescript
+// Graceful degradation for non-critical data
+let stats = null
+try {
+  stats = await prisma.studyDay.aggregate(/* ... */)
+} catch {
+  // stats stays null; render empty state
+}
+```
+- For critical data (study session cards), let it throw and rely on `error.tsx` to show a retry UI
+
+**Warning signs:**
+- Blank white page in production when Turso has latency spikes
+- Console showing "Error: An error occurred in the Server Components render. The specific message is omitted in production builds to avoid leaking sensitive details"
+- No `error.tsx` files alongside new RSC page files
+
+**Phase to address:** PERF-01 and PERF-02 (first RSC conversions). Establish the error boundary pattern early.
 
 ---
 
-### Pitfall 3: "Polish" vs "refactor" confusion
+### Pitfall 7: React 19 hydration mismatch from time/random values in RSC-to-client data flow
 
-**What goes wrong:** A polish pass stays at the surface level: spacing, color, type size, animation. A refactor changes component structure, state management, or API shape. These are different tasks with different risk profiles. Polish is low-risk; refactor can break functionality. The scope creep pattern is: polish surfaces a structural issue, the team decides to "fix it properly," and the polish phase becomes a refactor phase.
+**What goes wrong:**
+A hydration mismatch occurs when the server-rendered HTML does not match the client's first render output. In React 19 this produces an error like "Hydration failed because the initial UI does not match what was rendered on the server." React 19 improved the error message to show a diff, but the crash is real.
 
-**Prevention:** If a polish audit finding requires a structural change (e.g., "the grade bar state management should be in a separate hook"), log it as a separate technical debt item for a future phase. Do not mix structural refactors into the polish phase. Treat any change that touches state management, API routes, or the Prisma schema as out of scope.
+Common causes in this app's RSC conversion:
+1. Rendering `new Date().toLocaleDateString()` in a server component — the server locale may differ from the client locale
+2. Using `Date.now()` or `Math.random()` at module scope (banned by `react-hooks/purity` but possible in RSC files outside of hooks)
+3. Passing a `Date` from server and re-constructing it client-side with `new Date(props.dateStr)` — if the formatting differs between SSR and client hydration
+
+**Why it happens:**
+RSCs render on the server; the HTML is sent to the browser. React then "hydrates" by re-running component rendering on the client and matching the output to the existing DOM. Any difference between server output and client re-render causes a mismatch crash.
+
+**How to avoid:**
+- Never render locale-formatted dates in RSCs. Pass the raw ISO string and format client-side inside a `useEffect` or with `suppressHydrationWarning`
+- The existing `react-hooks/purity` ESLint rule already catches `Date.now()` in render; verify this rule also applies to RSC files (it should — ESLint applies file-wide)
+- For timestamps that are display-only, render them client-side by deferring to a `'use client'` component that formats on mount
+
+**Warning signs:**
+- "Hydration failed" errors in the browser console after RSC conversion
+- Components that display dates show the wrong date or a brief flicker on first load
+- `suppressHydrationWarning` appearing as a "fix" without understanding the root cause
+
+**Phase to address:** PERF-03 (Home RSC) and PERF-04 (Habits RSC), which both display dates and streak counts.
 
 ---
 
-### Pitfall 4: Importing a motion library "just for one animation"
+### Pitfall 8: Prisma singleton safety with concurrent RSC renders
 
-**What goes wrong:** Framer Motion or React Spring are powerful but add significant bundle weight (Framer Motion is ~80KB gzipped). Adding a motion library "just for the card entrance animation" often expands — once the dependency is in, it gets used everywhere, and the bundle bloat becomes permanent.
+**What goes wrong:**
+Multiple RSC renders can execute simultaneously in a single Node.js process (during SSR of different user requests). If the Prisma singleton is initialized in a way that is not safe for concurrent use, or if a Prisma query is accidentally awaited inside a module-level singleton initializer (blocking the event loop), concurrent requests can queue up.
 
-**Prevention:** Use CSS transitions and `@keyframes` for all animations in this polish pass. The existing `ringFill` keyframe pattern in `globals.css` is the right model. Only evaluate a motion library if CSS proves genuinely insufficient for a specific animation requirement. This is unlikely for the scope described.
+**Why it happens:**
+The existing `lib/prisma.ts` singleton pattern is correct for the libSQL adapter (one `PrismaClient` instance, reused). The libSQL adapter uses HTTP transport (one request per query), so there is no shared connection that could deadlock. However, Prisma's Query Engine (used with traditional SQL databases) is not HTTP-based — it can have connection pool limits. Since this app uses libSQL via `@prisma/adapter-libsql`, concurrent queries are safe.
+
+**How to avoid:**
+- Leave `lib/prisma.ts` unchanged. The existing pattern (lazy singleton via `global.__prisma`) is correct and safe for RSC concurrent renders with libSQL.
+- Do not initialize a new `PrismaClient` inside individual RSC files. Import from `lib/prisma.ts`.
+- Avoid any module-level `await` statements outside of route handlers and RSC `export default` functions.
+
+**Warning signs:**
+- "Too many connections" errors (not expected with libSQL/Turso — would indicate wrong adapter)
+- Queries completing out of order in ways that corrupt data (not possible with the libSQL HTTP adapter)
+- Memory leak from multiple `PrismaClient` instances (caught by the global singleton pattern)
+
+**Phase to address:** All RSC phases. Establish the rule "always import prisma from `@/lib/prisma`" as a convention check in code review.
 
 ---
 
-## Phase-Specific Warnings
+### Pitfall 9: Suspense waterfall — sequential async components inside a single Suspense boundary
 
-| Phase Topic | Likely Pitfall | Mitigation |
-|-------------|---------------|------------|
-| UI audit classification | Finding count balloons to 50+ items | Classify during audit phase, commit to fixing only HIGH/MEDIUM in this milestone |
-| Study session card polish | Height animation causing layout thrash | Profile before and after; consider `max-height` or `scale` instead of `height` |
-| Design token refinement | Token rename not mirrored in both dark mode blocks | Grep for the old name after every rename |
-| Typography pass | `word-break` or `line-height` change breaking card layout at narrow widths | Test on 375px (iPhone SE) viewport after any typography change |
-| Nav / safe area fixes | Next.js `<Link>` resetting `env(safe-area-inset-bottom)` | Use JS-set CSS variable instead of live `env()` in the nav padding |
-| Any new Sheet/overlay | Missing body-scroll-lock on iOS | Copy exact pattern from existing `Sheet.tsx` |
-| Grade bar button sizing | Touch targets too small | Verify 44x44px minimum on every interactive element |
-| Dark mode token additions | New token added to light mode only | Three-hit grep check in `globals.css` after each token addition |
+**What goes wrong:**
+Wrapping an entire page in one `<Suspense>` boundary, where the page component awaits query A, then passes results to a child that awaits query B, creates a waterfall. The Suspense fallback shows until query A AND query B both complete, sequentially. The user waits the sum of both query times, not the maximum.
+
+**Why it happens:**
+Sequential `await` calls are sequential. Even inside a Suspense boundary, the async operations resolve in series.
+
+**How to avoid:**
+Kick off all queries simultaneously before the first `await`:
+```typescript
+// WRONG — sequential (waterfall)
+export default async function CardsPage() {
+  const cards = await prisma.card.findMany(...)
+  const lessons = await prisma.lesson.findMany(...)
+  return <CardList cards={cards} lessons={lessons} />
+}
+
+// CORRECT — parallel
+export default async function CardsPage() {
+  const [cards, lessons] = await Promise.all([
+    prisma.card.findMany(...),
+    prisma.lesson.findMany(...),
+  ])
+  return <CardList cards={cards} lessons={lessons} />
+}
+```
+
+For independent sections of a page, split into separate async RSC components each wrapped in their own `<Suspense>`:
+```typescript
+export default function Page() {
+  return (
+    <>
+      <Suspense fallback={<StatsSkeleton />}>
+        <StatsSection />  {/* async RSC — fetches stats */}
+      </Suspense>
+      <Suspense fallback={<ActivitySkeleton />}>
+        <ActivitySection />  {/* async RSC — fetches activity */}
+      </Suspense>
+    </>
+  )
+}
+```
+
+**Warning signs:**
+- Network waterfall in the browser's Timing tab (queries starting one after another instead of simultaneously)
+- Page takes sum(all_query_times) instead of max(all_query_times) to load
+- A single Suspense fallback that stays visible for the full duration of all data loading
+
+**Phase to address:** PERF-03 (Home), PERF-04 (Habits), PERF-06 (cards/due parallelization).
+
+---
+
+## Technical Debt Patterns
+
+| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
+|----------|-------------------|----------------|-----------------|
+| Pass raw Prisma result to client component (no DTO) | No mapping code to write | Runtime type mismatch when Prisma adds a `Date` or `Decimal` field; serialization warning in console; silent bugs | Never — always map to plain DTO |
+| `suppressHydrationWarning` without fixing root cause | Silences hydration error | Masks real date/time/locale mismatches; error reappears if the component changes | Only for genuinely unavoidable server/client differences (e.g., user agent display) |
+| Skip `error.tsx` alongside new RSC pages | Faster to ship | Transient Turso network errors produce blank white screens in production | Never for pages that await Prisma queries |
+| Single `<Suspense>` around entire page | Simple to implement | Blocks all content until all data resolves; no streaming benefit | Only if all data is fast (sub-50ms total) |
+| Fetch all data in `layout.tsx` | Centralizes data access | Blocks `loading.tsx` fallback; navigation feels slow; layout re-fetches on every navigation | Never for slow/uncached data |
+
+---
+
+## Integration Gotchas
+
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| Prisma + RSC | Passing `card.createdAt` (a `Date`) directly as a prop to a `'use client'` component | Convert to `card.createdAt.toISOString()` before passing; define a DTO type with `string` for all date fields |
+| Turso + Promise.all | Assuming connection pool limits constrain concurrency | libSQL uses HTTP transport — each query is a separate HTTP/2 request; no pool ceiling. Worry about Turso free-tier rate limits instead |
+| `loading.tsx` + `layout.tsx` | Assuming `loading.tsx` covers layout-level data fetches | It does not. Only `page.tsx` content is wrapped. Move runtime data fetches out of layouts |
+| RSC + `'use client'` types | Importing a Prisma model type into a `'use client'` file for prop typing | Define a plain DTO interface in a shared file (no Prisma import); use that for both the RSC and the client component |
+| Next.js dev + `loading.tsx` | Testing navigation loading states in `next dev` | Prefetching is disabled in dev; run `next build && next start` to see actual loading behavior |
+
+---
+
+## Performance Traps
+
+| Trap | Symptoms | Prevention | When It Breaks |
+|------|----------|------------|----------------|
+| Sequential awaits in RSC | Slow page load; sum of all query times | Use `Promise.all` for independent queries; split into Suspense-wrapped async child components | Immediately, at any scale |
+| Overfetching in RSC (selecting all columns) | Large HTML payloads; slow hydration | Select only columns the client component uses in the Prisma `select` clause | At scale; noticeable with Sentence[] arrays |
+| Passing large arrays from RSC to client | JS bundle-like overhead in the RSC payload | Pre-filter and shape data server-side; pass only what renders above the fold | When card/sentence arrays exceed ~100 items |
+| Stale RSC cache after card review | User reviews a card; navigates back; sees old due count | Call `router.refresh()` after a successful review POST; or use `revalidatePath('/study')` in a server action | Immediately in production where RSC payloads may be cached |
+
+---
+
+## "Looks Done But Isn't" Checklist
+
+- [ ] **RSC conversion**: Verify the Network tab shows no client-side data fetch for initial load — the data should arrive with the HTML (look for no `fetch()` calls for cards/stats in the console after the page loads)
+- [ ] **loading.tsx**: Verify it appears on navigation (test with `next build && next start`, not `next dev`); confirm it does NOT show on hard reload (first load)
+- [ ] **Date serialization**: Grep the codebase for any prop that types a `Date` flowing from RSC to client component — all should be `string` or `number` on the client side
+- [ ] **Error boundaries**: Confirm `error.tsx` exists alongside each new RSC `page.tsx` in `app/study/`, `app/cards/`, `app/` (home), and `app/habits/`
+- [ ] **Promise.all error handling**: Confirm each `Promise.all` is wrapped in try/catch; confirm the fallback behavior matches requirements (full-page error vs. empty state)
+- [ ] **Stale data after review**: Navigate to study page → review a card → navigate to home → confirm due count updated (RSC payload may be stale without a `router.refresh()` call)
+
+---
+
+## Pitfall-to-Phase Mapping
+
+| Pitfall | Prevention Phase | Verification |
+|---------|------------------|--------------|
+| Prisma Date serialization | PERF-01 (first RSC conversion — establishes DTO pattern) | TypeScript compiles without `Date` in client prop types; no console warnings in dev |
+| loading.tsx triggers only on navigation | PERF-05 (navigation feedback) | Test in `next start`; loading state visible during tab switches; NOT visible on hard reload |
+| Layout data blocks loading.tsx | PERF-05 | Navigation instant feedback confirmed; no layout awaits for runtime data |
+| Promise.all atomic failure | PERF-06 (parallel DB queries) | Simulate Turso timeout; route returns 500 cleanly, not a crash |
+| 'use client' boundary too high | PERF-01/02/03/04 (all RSC conversions) | Bundle analysis before/after; no increase in client bundle size |
+| Missing error boundary | PERF-01/02 (first two RSC pages) | Confirm `error.tsx` created alongside each new RSC page |
+| React 19 hydration mismatch | PERF-03/04 (Home + Habits with dates) | No "Hydration failed" errors; date display consistent between SSR and client |
+| Prisma singleton concurrency | All RSC phases | All RSC files import from `@/lib/prisma`; no local `new PrismaClient()` instantiation |
+| Suspense waterfall | PERF-03/04/06 | Network timeline shows queries firing in parallel; page load time ≤ max(query_times) |
 
 ---
 
 ## Sources
 
-- [Tailwind CSS v4 Migration Best Practices](https://www.digitalapplied.com/blog/tailwind-css-v4-2026-migration-best-practices) (MEDIUM confidence)
-- [Design Tokens That Scale in 2026 — Mavik Labs](https://www.maviklabs.com/blog/design-tokens-tailwind-v4-2026/) (MEDIUM confidence)
-- [Tailwind CSS v4 Dark Mode — Nerd Level Tech](https://nerdleveltech.com/tailwind-v4-dark-mode) (MEDIUM confidence)
-- [Tailwind v4 Dark Mode CSS Variable Discussion #15083](https://github.com/tailwindlabs/tailwindcss/discussions/15083) (MEDIUM confidence)
-- [Josh Collinsworth — Ten tips for better CSS transitions](https://joshcollinsworth.com/blog/great-transitions) (MEDIUM confidence)
-- [CSS Animations Performance — CSS-Zone](https://css-zone.com/blog/css-animations-performance) (MEDIUM confidence)
-- [backface-visibility — CSS-Tricks](https://css-tricks.com/almanac/properties/b/backface-visibility/) (MEDIUM confidence)
-- [pixeldock — Fix flickering with CSS transitions on iOS](https://www.pixeldock.com/blog/how-to-avoid-the-ugly-flickering-effect-when-using-css-transitions-in-ios/) (MEDIUM confidence)
-- [W3C Requirements for Hangul Text Layout](https://www.w3.org/TR/klreq/) (HIGH confidence — W3C standard)
-- [CSS Text word-break for Korean — w3c/csswg-drafts #4285](https://github.com/w3c/csswg-drafts/issues/4285) (MEDIUM confidence)
-- [Pretendard — orioncactus GitHub](https://github.com/orioncactus/pretendard) (HIGH confidence — official)
-- [Next.js Font Loading LCP Regressions — 72Technologies](https://www.72technologies.com/blog/font-loading-nextjs-lcp-debugging) (MEDIUM confidence)
-- [PWA iOS Limitations — MagicBell](https://www.magicbell.com/blog/pwa-ios-limitations-safari-support-complete-guide) (MEDIUM confidence)
-- [Next.js safe-area-inset issue #81264](https://github.com/vercel/next.js/discussions/81264) (MEDIUM confidence — community verified)
-- [PWA Design Tips — firt.dev](https://firt.dev/pwa-design-tips/) (MEDIUM confidence)
-- [Scope Creep in Design Projects — DAR Design](https://dardesign.io/blog/scope-creep-design-projects-2026) (MEDIUM confidence)
-- [FLIP Animation in React — CSS-Tricks](https://css-tricks.com/everything-you-need-to-know-about-flip-animations-in-react/) (MEDIUM confidence)
+- [Next.js loading.js API Reference](https://nextjs.org/docs/app/api-reference/file-conventions/loading) (HIGH confidence — official docs)
+- [Warning: Only plain objects can be passed to Client Components — vercel/next.js Discussion #46137](https://github.com/vercel/next.js/discussions/46137) (MEDIUM confidence — community verified)
+- [Client extensions, decimal, serialization and RSC — prisma/prisma Discussion #19983](https://github.com/prisma/prisma/discussions/19983) (MEDIUM confidence — community + Prisma team)
+- [6 React Server Component performance pitfalls in Next.js — LogRocket](https://blog.logrocket.com/react-server-components-performance-mistakes) (MEDIUM confidence — community verified)
+- [Next.js App Router waits for server response before showing loading.tsx — vercel/next.js Discussion #68763](https://github.com/vercel/next.js/discussions/68763) (MEDIUM confidence — community + maintainer response)
+- [React v19 blog post — hydration improvements](https://react.dev/blog/2024/12/05/react-19) (HIGH confidence — official React blog)
+- [Next.js hydration error docs](https://nextjs.org/docs/messages/react-hydration-error) (HIGH confidence — official docs)
+- [Prisma Date type serialization issue — prisma/prisma Discussion #4428](https://github.com/prisma/prisma/discussions/4428) (MEDIUM confidence — community)
+- [Common Next.js App Router mistakes — upsun.com](https://upsun.com/blog/avoid-common-mistakes-with-next-js-app-router/) (MEDIUM confidence — community)
+- [Prisma + Turso documentation](https://www.prisma.io/docs/orm/overview/databases/turso) (HIGH confidence — official Prisma docs)
+
+---
+*Pitfalls research for: RSC conversion, loading.tsx, Suspense streaming, Prisma/Turso parallelization — Korean Study app v1.2*
+*Researched: 2026-06-29*

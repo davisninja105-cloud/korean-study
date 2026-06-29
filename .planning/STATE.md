@@ -1,30 +1,30 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.1
-milestone_name: UI/UX Polish
-current_phase: 08.1
-status: Complete
-stopped_at: "Phase 08.1 complete — --sab extended to Sheet.tsx and StudySession.tsx"
-last_updated: "2026-06-29T08:33:20.114Z"
+milestone: v1.2
+milestone_name: TBD
+current_phase: none
+status: Milestone v1.1 complete — planning next milestone
+stopped_at: "v1.1 archived 2026-06-29 — run /gsd-new-milestone to start v1.2"
+last_updated: "2026-06-29"
 last_activity: 2026-06-29
-last_activity_desc: Phase 08.1 complete — NAV-01 gap closed
+last_activity_desc: v1.1 milestone archived
 progress:
-  total_phases: 7
-  completed_phases: 6
-  total_plans: 11
-  completed_plans: 11
-  percent: 86
-current_phase_name: close-gap-nav-01-sab-extension
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
+current_phase_name: none
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-06-28)
+See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 08 — accessibility-pwa-baseline
+**Current focus:** Planning v1.2 — run `/gsd-new-milestone` to begin
 
 ## Current Position
 
@@ -105,9 +105,15 @@ None yet.
 
 ## Deferred Items
 
-| Category | Item | Status | Deferred At |
-|----------|------|--------|-------------|
-| *(none)* | | | |
+Items acknowledged and deferred at milestone close on 2026-06-29:
+
+| Category | Item | Status |
+|----------|------|--------|
+| verification | Phase 3 (ui-ux-audit) — no VERIFICATION.md | Low risk — doc-only phase; self-check passed |
+| verification | Phase 4 (design-system-tokens-sweep) — no VERIFICATION.md | Low risk — grep evidence in 3 SUMMARY files |
+| tech_debt | WR-01: --sab useEffect runs post-hydration (brief layout shift on first iPhone hard-load) | Inherent to approach |
+| tech_debt | IN-01: Cards view-toggle missing role="group" aria-label="View" | Minor a11y gap |
+| tech_debt | NAV-01: iOS safe-area runtime behavior unverified on physical device | Code wiring correct; requires physical iPhone to confirm |
 
 ## Session Continuity
 

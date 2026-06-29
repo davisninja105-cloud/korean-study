@@ -2,27 +2,32 @@
 
 ## What This Is
 
-A personal Korean spaced-repetition study app (Next.js + Prisma/Turso, Claude-powered card extraction from a tutor's Google Doc, FSRS scheduling, sentence-centric study, TTS, tap-to-gloss, habit tracking). The app's "foundation-first" promise is now real: a learner is never quizzed on a word before its building blocks, and a brand-new word is introduced on its own before being wrapped in a sentence.
+A personal Korean spaced-repetition study app (Next.js + Prisma/Turso, Claude-powered card extraction from a tutor's Google Doc, FSRS scheduling, sentence-centric study, TTS, tap-to-gloss, habit tracking). The app's "foundation-first" promise is real — a learner is never quizzed on a word before its building blocks, and new words are introduced bare before sentence context. The UI has been systematically audited and polished: a warm, encouraging study loop, a three-state home hero, a complete semantic design-system token layer, and full accessibility baseline.
 
 ## Core Value
 
 When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context. If everything else fails, this must hold.
 
-## Current Milestone: v1.1 UI/UX Polish
+## Current State
 
-**Goal:** Conduct a full audit of the app's visual design and usability, then systematically fix what the audit surfaces — making the app feel warm, encouraging, and genuinely polished.
+**Shipped:** v1.1 UI/UX Polish (2026-06-29)
 
-**Target features:**
-- Systematic UI audit across all screens (findings with severity)
-- Study session visual polish (core daily loop — top priority)
-- Home dashboard polish (the face of the app — top priority)
-- Cards, Habits, Settings, and navigation refinement
-- Consistent design-system baseline (spacing, typography, color)
+The app is deployed and fully functional. v1.1 completed a systematic UI audit and polish pass across all screens. The design-system token layer is now complete. The study session, home dashboard, and secondary screens have received targeted polish. Accessibility baseline (aria-labels, reduced-motion, active states) is in place.
+
+**Next milestone:** v1.2 — to be scoped via `/gsd-new-milestone`
 
 ## Requirements
 
 ### Validated
 
+- ✓ Full UI/UX audit: 27 findings across 7 screens × 6 dimensions, P0/P1/P2 classified — v1.1
+- ✓ Complete design-system token sweep: `--muted`, `--border`, fixed dark highlight; zero gray-* utilities — v1.1
+- ✓ Study session polish: "Card N of Total" counter, warm haptic grade differentiation, Korean line-height 1.7, smooth inter-card fade — v1.1
+- ✓ Home dashboard three-state hero (due / goal-met / caught-up), elevated greeting — v1.1
+- ✓ iOS safe-area fix via frozen `--sab` variable + 44px touch targets across nav and secondary screens — v1.1
+- ✓ Full accessibility baseline: aria-labels, reduced-motion gates, global tap-highlight suppression — v1.1
+- ✓ Cards, Habits, Settings, and navigation refinement — Phase 07 (safe-area fix, 44px touch targets, typography hierarchy, active press states)
+- ✓ Home dashboard visual polish — Phase 06 (three-state hero, elevated greeting, F-07 active states)
 - ✓ Claude-powered exhaustive card extraction from the tutor's Google Doc, deduped by `normalizedFront` — existing
 - ✓ FSRS spaced-repetition scheduling with three study modes (flashcard, multiple-choice, fill-blank) — existing
 - ✓ Knowledge graph: `Card.components` resolved to `CardDependency` edges at sync time — existing
@@ -37,11 +42,7 @@ When you study, what you're meant to learn is always learnable in the moment —
 
 ### Active
 
-- UI/UX audit of all screens with severity-classified findings — v1.1
-- Study session visual polish (warm, encouraging feel) — v1.1
-- Home dashboard visual polish — v1.1
-- Cards, Habits, Settings, and navigation refinement — v1.1
-- Consistent design-system baseline (spacing, typography, color tokens) — v1.1
+*(To be defined for v1.2 via `/gsd-new-milestone`)*
 
 ### Out of Scope
 
@@ -54,8 +55,10 @@ When you study, what you're meant to learn is always learnable in the moment —
 
 - Deployed at https://korean-study-five.vercel.app. Codebase map in `.planning/codebase/`; conventions in `CLAUDE.md`.
 - v1.0 shipped 2026-06-26: ~431 lines added across `lib/sequence.ts`, `lib/known-words.ts`, `tests/sequence.test.ts`, `tests/known-words.test.ts`, `app/api/cards/due/route.ts`, `components/StudySession.tsx`, `CLAUDE.md`.
-- Key fix discovered during Phase 1: `card.nextReview` was `undefined` for real cards because the route uses `include: { review: true }` — due-date lived at `card.review.nextReview`. Added `nextReviewMs()` helper; tests now use the real Prisma shape.
+- v1.1 shipped 2026-06-29: 20 commits across 7 phases. Major files touched: `app/globals.css`, `components/StudySession.tsx`, `components/Nav.tsx`, `app/layout.tsx`, `app/page.tsx`, `components/Sheet.tsx`, `components/GlossProvider.tsx`, `components/AudioButton.tsx`, `app/cards/page.tsx`, `app/habits/page.tsx`, `app/settings/page.tsx`.
+- Key fix discovered during Phase 1 (v1.0): `card.nextReview` was `undefined` for real cards because the route uses `include: { review: true }` — due-date lived at `card.review.nextReview`. Added `nextReviewMs()` helper.
 - Known-word threshold is state ≥ 1 (seen at least once), not ≥ 2. One prior review unlocks in-context presentation.
+- Design-system token pattern established in v1.1: every new token must appear in 3 globals.css blocks; validate with grep == 3 hits.
 
 ## Constraints
 
@@ -73,6 +76,14 @@ When you study, what you're meant to learn is always learnable in the moment —
 | showBareFront requires unknownCount > 0 on the chosen sentence | If context is already readable, show the sentence immediately even for a new card | ✓ Shipped in Phase 2 (post-checkpoint revision) |
 | Selection and ordering stay as two separate pure functions | `selectSessionCards` chooses; `sequenceCards` orders. Composed in the route. Independently testable. | ✓ Pattern established in Phase 1 |
 | take: 1000 safety bound on the pool query | Widening from `take: sessionSize` needed a DoS bound; 1000 covers realistic decks | ✓ Shipped in Phase 1 |
+| Hero state derived from parallel activity + stats fetch | heroState = derived state (not fetched state); avoids double-render jitter; `Promise.resolve().then()` satisfies react-hooks/set-state-in-effect | ✓ Shipped in Phase 06 |
+| loadActivity is mount-only (not called after sync) | Activity data doesn't change during sync; calling it was a RESEARCH-identified pitfall | ✓ Confirmed in Phase 06 code review |
+| iOS safe-area: freeze `env()` into `--sab` CSS variable at mount, consume everywhere via `var(--sab,0px)` | `env(safe-area-inset-bottom)` resets to 0px after Next.js `<Link>` navigation; a JS-written CSS variable on `<html>` survives route transitions | ✓ Phase 07 — Nav.tsx useEffect + pre-paint `<script>` in layout.tsx |
+| 44px touch target rule does not apply to compact toggle switches | Forcing min-h-[44px] on `<button role="switch">` elongated the toggle visually; the natural h-7 proportion is correct; rule applied to nav tabs, view toggles, swipe-delete only | ✓ Phase 07 UAT finding — reverted and excluded from docs |
+| No new npm packages for entire v1.1 milestone | Tailwind v4 CSS keyframes + existing tokens covered all polish needs; zero bundle cost | ✓ Delivered — entire v1.1 done with CSS only |
+| `aria-label` preferred over `title` on icon buttons | `title` attribute not reliably read by screen readers (WCAG F-12) | ✓ Phase 08 — Undo and all icon buttons use aria-label |
+| Every new CSS animation must have a `prefers-reduced-motion` counterpart in the same commit | Motion should never surprise users who have opted out; caught at audit (A11Y-02) | ✓ Phase 08 — established as invariant for future work |
+| Strict severity discipline: only P0/P1 fixed in v1.1; P2 and structural findings deferred | Prevents scope creep; keeps milestone focused on what users feel | ✓ Shipped — P2/structural items in backlog |
 
 ## Evolution
 
@@ -92,4 +103,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-26 after v1.1 milestone start (UI/UX Polish)*
+*Last updated: 2026-06-29 after v1.1 milestone (UI/UX Polish)*

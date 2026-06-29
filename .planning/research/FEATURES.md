@@ -1,185 +1,212 @@
-# Features Research: UI/UX Polish
+# Feature Research
 
-**Project:** Korean Study — v1.1 UI/UX Polish
-**Domain:** Mobile-first PWA habit/study app (SRS flashcards, streak tracking, language learning)
-**Researched:** 2026-06-26
-**Confidence:** MEDIUM (web research cross-checked across multiple sources)
+**Domain:** Next.js App Router performance UX — PWA spaced-repetition study app
+**Researched:** 2026-06-29
+**Confidence:** MEDIUM (Next.js docs are authoritative; skeleton UX claims are community-sourced)
+
+## Feature Landscape
+
+### Table Stakes (Users Expect These)
+
+Features that define "the app feels fast." Missing any of these = the current 2-3s blank-screen experience.
+
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| **Route-level skeleton via `loading.tsx`** | Navigation should show instant visual feedback; blank white = broken | LOW | One file per route in `app/{route}/loading.tsx`; Next.js auto-wraps `page.tsx` in `<Suspense>`. Prefetched so navigation appears instant. No logic — pure static JSX. |
+| **Cards page skeleton** | 400+ card list fetches from `/api/cards`; currently shows "no cards" flash while loading | LOW | Static skeleton: search bar placeholder + filter icon + N card row stubs (type-badge rectangle + two text lines). Must match SwipeRow height so no layout shift. |
+| **Study page skeleton** | `phase='loading'` gap before due cards arrive; user sees blank then the mode selector | LOW | Static skeleton: progress ring placeholder + "N cards due" number stub + mode selector placeholder. The mode selector itself is interactive pre-data — it can render immediately. |
+| **Home page RSC data hydration** | Stats (due count, mastered, lessons) and activity data should arrive with the HTML; currently both fetch via `useEffect` causing empty hero flash | MEDIUM | Convert `app/page.tsx` from `'use client'` to RSC. The hero's `dueCards` count, `masteredCount`, and `activityData` come from Prisma directly; no `/api/stats` or `/api/activity` round-trip. Pull-to-refresh requires client island — extract `<PullToRefreshWrapper>` as a client component receiving data as props. |
+| **Habits page RSC data hydration** | Activity + mastered count fetch via `useEffect`; all data is static per-render and available server-side | MEDIUM | Convert `app/habits/page.tsx` to RSC. `prisma.studyDay.findMany()` + `prisma.card.count()` + `getHabitSettings()` called directly. All pure computation helpers (`computeStreaks`, `computeHabitStats`) run on server before render. |
+| **Parallel DB queries in `/api/cards/due`** | 3 serial awaits (card pool, edges, knownLemmas) where pool and knownLemmas have no dependency on each other | LOW | Wrap `getSessionSize()`, the card pool query, and knownLemmas query in `Promise.all()`. Edges query runs after pool resolves (needs card IDs). Expected: shaves 200-400ms on a Turso round-trip. |
+| **No empty-state flash on navigation** | Users navigating to Cards while cards load should never see "No cards yet" text momentarily | LOW | Achieved automatically once `loading.tsx` skeleton is in place — Suspense boundary prevents the empty branch from rendering until data arrives. |
+
+### Differentiators (Competitive Advantage)
+
+Features that make "fast" feel polished rather than merely adequate.
+
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| **Shimmer animation on skeletons** | Wave animation (left-to-right shimmer) makes wait feel shorter than pulse/fade; matches iOS native feel | LOW | Pure CSS `@keyframes shimmer` + `background: linear-gradient(90deg, ...)` — no new packages. Project already has `ringFill` keyframe in `globals.css` as a model. Must add `prefers-reduced-motion` counterpart in same commit (established project invariant). |
+| **Cards page RSC+Client split** | Cards list arrives with the HTML; client state hydrated from props; eliminates the initial fetch round-trip entirely | HIGH | Tricky: cards page has heavy client interactivity (search, filter, swipe-delete, edit sheet). Pattern: RSC `app/cards/page.tsx` fetches `cards` + `lessons`, passes as props to `'use client'` `<CardsClient>` component. Client handles all mutations against local state. |
+| **Study page progressive reveal** | Show mode selector immediately (it is interactive and needs no data), stream in the "N due" count and progress ring separately | MEDIUM | Page chrome (mode selector, filter button) renders instantly. Due-count section wrapped in `<Suspense>` streams from server. Requires splitting study page into RSC shell + client islands. |
+| **`useLinkStatus` nav indicator** | Show subtle loading pulse on the Nav tab being navigated to while the route skeleton renders | LOW | Next.js 16 ships `useLinkStatus` hook — returns `pending` during navigation. Wire into `Nav.tsx` to show a `bg-button/20` pulse on the active tab. Zero data dependency. Nav is already a client component. |
+
+### Anti-Features (Commonly Requested, Often Problematic)
+
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|-------------|
+| **Granular per-card Suspense boundaries** | "Stream each card as it loads" | Each card resolves at the same time (one query); individual boundaries create visual pop-in of 400+ elements simultaneously with no benefit | One `<Suspense>` around the whole cards list — show full skeleton until all cards arrive |
+| **SWR / React Query for initial data** | Cache invalidation, background refresh | Adds ~18KB bundle; RSC + server data already handles initial load; mutations are too infrequent to need polling | RSC for initial load; client `fetch` for mutations (add/delete/edit) using the existing pattern |
+| **`loading.tsx` on the layout level** | "Cover everything including the Nav during navigation" | Next.js `loading.tsx` does NOT wrap `layout.js` in the same segment — the Nav stays visible during transitions (correct behavior). Attempting to create a layout-level skeleton would break the Nav UX. | Keep Nav in layout, let `loading.tsx` cover only the page content area below the Nav |
+| **Optimistic UI for card deletion** | "Remove card immediately on swipe" | If DELETE fails, card silently disappears; confusing for the user | Keep the existing confirm-then-delete pattern; perceived delay is in the initial list fetch, not the delete interaction |
+| **Skeleton for sub-300ms pages** | "Show skeleton on every route" | At sub-300ms, a skeleton flash is worse than a brief blank — the flicker is jarring | Only add `loading.tsx` to routes with measured latency: Cards, Study, Home, Habits. Skip `/settings` and `/wrapped` if their loads are already fast |
+
+## Feature Dependencies
+
+```
+loading.tsx (any route)
+    └──requires──> page.tsx fetches its own data (not layout.tsx)
+                   (layout.tsx uncached data access blocks loading.tsx from firing)
+
+RSC Home Page
+    └──requires──> PullToRefreshWrapper extracted as client island
+                       └──uses──> usePullToRefresh hook (already client-side)
+                   └──requires──> Band-up detection moved to client island
+                                      (reads localStorage — client only)
+                   └──requires──> Greeting moved to client island
+                                      (uses Date.now() — impure, client only)
+
+RSC Habits Page
+    └──requires──> No client hooks remaining in habits/page.tsx
+                   (useMemo, useState must move to child client components)
+
+Cards Page RSC+Client Split
+    └──requires──> CardsClient component receives initialCards + initialLessons as props
+                       └──requires──> Props interface typed for server-to-client boundary
+
+Parallel DB queries (/api/cards/due)
+    └──requires──> knownLemmas query separated from edges query
+                   (knownLemmas is independent of pool; edges needs pool IDs first)
+
+Shimmer animation
+    └──requires──> prefers-reduced-motion counterpart in same commit (project invariant)
+
+useLinkStatus nav indicator
+    └──requires──> Nav.tsx as client component (already is — uses haptic())
+```
+
+### Dependency Notes
+
+- **RSC Home requires client islands:** Three behaviors are client-only and must be extracted: (1) `usePullToRefresh` touch hook, (2) `localStorage` band-up detection + confetti, (3) greeting string from `Date.now()`. The RSC page fetches data; a `<HomeClient stats={...} activityData={...}>` component handles all three.
+- **layout.tsx constraint check:** The app's `layout.tsx` injects CSS variables from DB settings. This runs server-side at render time. As long as it does not call `cookies()`, `headers()`, or make uncached `fetch()` calls, `loading.tsx` will fire correctly. Confirm before adding any `loading.tsx` file.
+- **Parallel DB queries are safe:** `getSessionSize()`, the card pool query (`prisma.card.findMany`), and the knownLemmas query (`prisma.card.findMany({ where: { review: { state: { gte: 1 } } } })`) all have zero inter-dependency. The edges query depends on pool card IDs, so it runs after `Promise.all` resolves.
+
+## MVP Definition
+
+### Ship in v1.2 (current milestone — the performance milestone)
+
+- [ ] `loading.tsx` for `/cards` — Eliminates empty-state flash; highest user-facing impact; lowest complexity
+- [ ] `loading.tsx` for `/study` — Eliminates blank loading phase before mode selector
+- [ ] `loading.tsx` for `/` (home) — Covers the hero empty state while stats load
+- [ ] `loading.tsx` for `/habits` — Consistent navigation feel across all 4 main routes
+- [ ] Parallel DB queries in `/api/cards/due` — Server-side speed; single-file change; no user-facing complexity
+- [ ] RSC home page — Eliminates 2-pass render (mount → fetch → render data); highest perceived impact
+- [ ] RSC habits page — Same pattern as home; habits data is fully server-renderable
+
+### Add After v1.2 (v1.3 or opportunistic)
+
+- [ ] Cards page RSC+Client split — Higher complexity; requires `<CardsClient>` extraction; do after simpler RSC conversions are proven
+- [ ] Shimmer animation on skeletons — Pure CSS polish; add once skeletons ship and UX is validated
+- [ ] `useLinkStatus` nav indicator — Low complexity but lowest priority; navigation already feels instant with skeletons
+
+### Future Consideration (v2+)
+
+- [ ] Study page progressive reveal — Streaming mode selector + due count separately; only worthwhile if simple `loading.tsx` approach does not feel fast enough
+- [ ] Service worker caching for static assets — PWA offline support; separate milestone concern
+
+## Feature Prioritization Matrix
+
+| Feature | User Value | Implementation Cost | Priority |
+|---------|------------|---------------------|----------|
+| `loading.tsx` for all 4 routes | HIGH | LOW | P1 |
+| Parallel DB queries in `/api/cards/due` | HIGH | LOW | P1 |
+| RSC home page | HIGH | MEDIUM | P1 |
+| RSC habits page | HIGH | MEDIUM | P1 |
+| Cards page RSC+Client split | MEDIUM | HIGH | P2 |
+| Shimmer animation | MEDIUM | LOW | P2 |
+| `useLinkStatus` nav indicator | LOW | LOW | P3 |
+| Study page progressive reveal | MEDIUM | HIGH | P3 |
+
+**Priority key:**
+- P1: Ships in v1.2 — directly eliminates the blank-state problem described in PROJECT.md
+- P2: Ships when P1 is stable — UX polish on top of working skeleton layer
+- P3: Nice to have; revisit in v1.3
+
+## Implementation Notes by Route
+
+### /cards (Cards page)
+
+**Current:** `'use client'`, `useEffect -> fetch('/api/cards')`, renders empty list on mount.
+
+**Skeleton shape for `app/cards/loading.tsx`:**
+- Search bar: `h-10 w-full rounded-xl bg-surface-2 animate-pulse`
+- Filter row: `h-8 w-24 rounded-full bg-surface-2 animate-pulse`
+- Card rows (8-10 items): `h-16 w-full rounded-lg bg-surface-2 animate-pulse` — height must match SwipeRow to avoid layout shift on reveal
+
+**v1.2 approach:** Page stays `'use client'`. `loading.tsx` alone eliminates the empty-state flash — skeleton shows until client component hydrates and `useEffect` data arrives. Simplest migration path that satisfies PERF-01.
+
+**v1.3 approach (RSC split):** RSC `app/cards/page.tsx` fetches `cards` + `lessons` server-side, passes to `'use client'` `<CardsClient initialCards={cards} initialLessons={lessons}>`. Client handles search/filter/delete/edit against local state seeded from props.
+
+### /study (Study page)
+
+**Current:** `'use client'`, `phase='loading'` blank state, then mode selector appears.
+
+**Skeleton shape for `app/study/loading.tsx`:**
+- Progress ring placeholder: `h-16 w-16 rounded-full bg-surface-2 animate-pulse`
+- "N cards due" stub: `h-8 w-20 rounded bg-surface-2 animate-pulse`
+- Mode selector placeholder: 3 pill buttons in muted/disabled appearance
+
+**v1.2 approach:** `loading.tsx` only — page stays `'use client'`. The session itself (card flip, grading) is already instant client-side; PERF-07 is about confirming the grade buttons do not wait for API response before updating queue (they should not). Study page RSC conversion is deferred — the interactivity surface is too large.
+
+### / (Home page)
+
+**Current:** `'use client'`, two separate `useEffect` fetches for `/api/stats` and `/api/activity`.
+
+**RSC conversion pattern:**
+```tsx
+// app/page.tsx — becomes async RSC
+export default async function Home() {
+  const [statsResult, activityResult] = await Promise.all([
+    prisma.card.aggregate({ ... }),     // replaces GET /api/stats
+    prisma.studyDay.findMany({ ... })   // replaces GET /api/activity
+  ])
+  return <HomeClient stats={statsResult} activityData={activityResult} />
+}
+```
+
+**Client islands required:**
+- `<HomeClient>` — owns usePullToRefresh, band-up detection (localStorage), confetti, greeting (Date.now())
+- Greeting string: compute in `useEffect` on mount (already done this way to satisfy react-hooks/purity)
+
+### /habits (Habits page)
+
+**Current:** `'use client'`, `useEffect` fetches `/api/activity` and a mastered count.
+
+**RSC conversion:** Simpler than Home — fewer client interactions. Page becomes async RSC. All computation (`computeStreaks`, `computeHabitStats`, `computeHabitInsight`) runs on server before render. Pass computed values as props to any thin client component needed for interactivity (none identified beyond links and the ProficiencyArc, which is a pure render component).
+
+### /api/cards/due (DB query parallelization — PERF-06)
+
+**Current serial execution:**
+1. `await getSessionSize()` — DB
+2. `await prisma.card.findMany(...)` — card pool
+3. `await prisma.cardDependency.findMany(...)` — edges (depends on pool IDs)
+4. `await prisma.card.findMany(...)` — knownLemmas (independent)
+
+**Parallelized restructure:**
+```ts
+// Step 1: run all independent queries concurrently
+const [sessionSize, cards, knownRows] = await Promise.all([
+  getSessionSize(),
+  prisma.card.findMany({ where: { ...lessonClause, review: ... }, include: { ... }, take: 1000 }),
+  prisma.card.findMany({ where: { review: { state: { gte: 1 } } }, select: { normalizedFront: true } })
+])
+
+// Step 2: edges depend on card IDs (must run after pool)
+const ids = cards.map((c) => c.id)
+const edges = await prisma.cardDependency.findMany({ where: { cardId: { in: ids }, prerequisiteId: { in: ids } }, select: { cardId: true, prerequisiteId: true } })
+```
+
+This eliminates one full DB round-trip from the study session startup path.
+
+## Sources
+
+- [Next.js loading.js API reference](https://nextjs.org/docs/app/api-reference/file-conventions/loading) — MEDIUM confidence (official docs, version 16.2.9, fetched 2026-06-29)
+- [Next.js Fetching Data guide](https://nextjs.org/docs/app/getting-started/fetching-data) — MEDIUM confidence (official docs, fetched 2026-06-29)
+- [NN/G Skeleton Screens 101](https://www.nngroup.com/articles/skeleton-screens/) — MEDIUM confidence (authoritative UX research)
+- [React Suspense documentation](https://react.dev/reference/react/Suspense) — MEDIUM confidence (official)
+- [DEV.to: Complete Next.js Streaming Guide](https://dev.to/boopykiki/a-complete-nextjs-streaming-guide-loadingtsx-suspense-and-performance-9g9) — LOW confidence (community)
+- [LogRocket: Skeleton loading screen design](https://blog.logrocket.com/ux-design/skeleton-loading-screen-design/) — LOW confidence (community)
 
 ---
-
-## Table Stakes (must-have for a polished feel)
-
-Features users expect from any polished mobile habit/study app. Missing = app feels unfinished or amateur.
-
-| Feature | Impact | Notes |
-|---------|--------|-------|
-| Safe area insets | HIGH | `viewport-fit=cover` + `env(safe-area-inset-*)` — without this, content clips under iPhone notch/home indicator. Affects Nav bar and bottom-anchored CTAs. |
-| 44px minimum touch targets | HIGH | Apple HIG requirement. Every button, pill, and interactive element needs 44×44px tap zone (use padding, not inflate visual size). 8px gap between adjacent targets. |
-| `:active` state feedback | HIGH | Every tappable element needs an immediate visual response on press — background shift, scale, or opacity. Without it the app feels dead and unresponsive. |
-| Remove `-webkit-tap-highlight-color` | HIGH | The blue flash on tap that browsers show by default is an instant "this is a website, not an app" signal. Set to `transparent` globally. |
-| `prefers-reduced-motion` gating | HIGH | All non-essential animations must be wrapped with `motion-safe:` Tailwind variant or CSS media query. Required for accessibility and Play Store / App Store review compliance. |
-| Progress feedback during session | HIGH | Users need to know how far through the session they are. A simple count ("Card 4 of 20") or progress bar is required — Anki's absence of this is a top complaint. |
-| Answer reveal state clarity | HIGH | The "front of card → reveal → grade" flow needs unambiguous visual states. Users must never be confused about whether they've revealed the answer yet. |
-| Session completion screen | HIGH | Study session must have a distinct end state — not just abruptly stopping. Shows stats (correct/reviewed), positive message, next action. Already partially built (`sessionCompleteMessage`). |
-| Encouraging error/wrong-answer state | HIGH | Wrong answers must feel safe, not punishing. Duolingo's principle: no red error screens, only gentle feedback. This is core to the "warm" goal. |
-| Readable Korean sentence typography | HIGH | Korean glyphs need `line-height: 1.6+` (vs 1.5 for Latin). The sentence-centric learning model means Korean sentences are front-and-center — they must be beautiful and readable. |
-| 8px spacing grid | MEDIUM | All spacing in multiples of 4/8 (4, 8, 12, 16, 24, 32, 48px). Creates instant visual consistency without effort. Currently missing in some sections. |
-| 16px page edge padding | MEDIUM | Mobile content should never touch screen edges. 16px minimum horizontal padding throughout. |
-| Scroll momentum on iOS | MEDIUM | Any scrollable list needs `-webkit-overflow-scrolling: touch` on iOS. Without it, scroll feels sticky and non-native. |
-| Loading states (not spinner) | MEDIUM | When cards are loading, show a skeleton that matches the card layout — perceived 2× faster than a spinner. Critical for first-load UX on slow connections. |
-| Empty state when 0 cards due | MEDIUM | Home and study pages need a purposeful "nothing due" state — not a blank screen. Should feel celebratory (all done for today!), not broken. |
-| Dark mode completeness | MEDIUM | App already has dark mode toggle. Table stakes is that it works correctly — no light-mode colors leaking through, no flash on load. Already implemented but needs audit pass. |
-
----
-
-## Differentiators (would meaningfully elevate the app)
-
-Features that are not expected but would create genuine delight and the "warm app" feeling the user described.
-
-| Feature | Impact | Notes |
-|---------|--------|-------|
-| Time-of-day greeting | HIGH | "Good morning" / "Good evening" on the home hero makes the app feel alive and personal. Already partially implemented (`comebackMessage` exists) but could be extended. Critical for "morning ritual" feel. |
-| Answer grade haptic distinction | HIGH | Different haptic patterns for correct vs. needs-review answers. Vibrate API already used (`lib/haptics.ts`). Adding a second pattern (e.g. double-pulse for wrong) makes grading tactile and satisfying. |
-| "Day complete" hero state | HIGH | When 0 cards due AND today's goal is met, the home hero should show a celebration state — different color, icon, message. Currently shows the same due-count hero but with 0. The delta between "nothing due" and "goal met" should be visible. |
-| Smooth card flip animation | HIGH | 3D flip already exists in StudySession. Making it feel premium: 300ms duration, `ease-out` (fast start, slow land), no layout shift during flip. Currently confirmed to exist — audit for jank. |
-| Progress ring fill animation | MEDIUM | `ProgressRing` already uses `ringFill` keyframe. The delight comes from the ring animating from previous value to new value on session complete — not just appearing. |
-| Correct-answer micro-celebration | MEDIUM | After a "Good" or "Easy" grade, a small burst of color or subtle particles. Does not need to be as loud as confetti — just enough to register "that felt good". Canvas-confetti already in the project. |
-| Streak-protection anxiety relief | MEDIUM | When a user opens the app and their streak is at risk (haven't studied today), the home should surface a gentle nudge. `atRiskMessage` already exists in `lib/copy.ts` — needs a visual treatment to match. |
-| Card type color in study session | MEDIUM | Currently vocabulary/grammar/phrase color badges exist on the cards browse page (`typeBadgeClass`). In the study session itself, the card type could be subtly visible — gives learner context ("this is a grammar pattern, not a vocab word"). |
-| Transition between cards | MEDIUM | Smooth slide or fade when moving from one card to the next. Currently the next card appears abruptly. A 150ms slide-left on advance feels native-quality. |
-| Session summary with breakdown | MEDIUM | Session complete screen could show "12 vocabulary, 5 grammar, 3 phrases" instead of just total count. Learner understands what they studied. |
-| Pull-to-refresh visual indicator | LOW | Already implemented (`usePullToRefresh`). Polish: a custom spinner or Korean character spinning instead of browser default. |
-| Warm copy throughout | LOW | `lib/copy.ts` has helper functions. Needs audit to ensure they're used consistently — grade bar labels already use mastery language ("Memory strengthening", "Mastered"). Extend to more surfaces. |
-
----
-
-## Anti-Features (tempting but wrong for this app)
-
-| Anti-Feature | Why to Avoid |
-|--------------|--------------|
-| RPG gamification (Habitica-style XP, coins, quests) | This is a personal tool for a serious language learner with a real tutor. RPG elements would undermine the app's identity — it's a study tool, not a game. The existing CEFR band system is the right level of gamification. |
-| Leaderboards / social comparison | Single-user personal app. Social features would add auth complexity with zero benefit. |
-| Streak-freeze purchase mechanics | The app already has freeze tokens. Making them purchasable (like Duolingo) is wrong for a personal tool where the user can just edit the DB. |
-| Push notifications | PWA push requires service worker + permission flow + backend scheduling. Complexity vastly outweighs benefit for a personal single-user app. |
-| Sound effects on answer | Would require careful implementation to not be annoying. Haptics already cover this. Sound effects add `<audio>` complexity, autoplay policy headaches, and are off by default on most devices. Not worth it. |
-| Custom mascot / character | Adding a Duo-style character requires ongoing illustration work and doesn't fit the app's aesthetic. The warm copy in `lib/copy.ts` achieves the same emotional effect in text. |
-| Animated onboarding / tutorial | Single-user app — the user built it and knows how it works. |
-| Deck browsing / organization UI | Already have the Cards page with filter. Adding Anki-style deck nesting would be huge scope creep for one user. |
-| Review heatmap on study page | Already on Habits page. Duplicating it elsewhere adds visual noise. |
-| Multiple user profiles | Single-user tool. |
-
----
-
-## Study Session Specific
-
-UX patterns for the core daily loop — the highest-priority surface.
-
-### Card Flip & State Machine
-
-The flashcard session has three visible states: **Exposure front** (question), **Exposure back / Recall sentence** (after tap to reveal), **Grade buttons** (after reveal). Each state transition must be visually unambiguous:
-
-- Exposure → Reveal: card flip animation (already implemented). Audit: is the flip direction consistent? Does it feel 300ms + ease-out? Any layout shift on flip?
-- Reveal → Next card: lateral slide (new). Card exits left, next enters from right. 150ms, transform only (no layout).
-- Grade button visual: the 4 buttons (Again/Hard/Good/Easy) need distinct color weight. "Good" and "Easy" should feel warm/positive; "Again" should be neutral, not red/alarming.
-
-### Progress Indicator
-
-A progress bar or "N / Total" counter at the top of the session. Critical because:
-- Users feel anxiety without knowing where they are in the session
-- Seeing "16 / 20" creates motivated "almost done" push
-- Implementation: a thin stripe (`h-1`) at top of session area, animated width change.
-
-### Answer Feedback
-
-Wrong answer (grade "Again" or "Hard"):
-- No red flash, no alarm.
-- A brief shake or bounce on the card, a neutral/muted color on the grade button.
-- Copy: already uses "mastery language" — keep that.
-
-Correct answer (grade "Good" or "Easy"):
-- Subtle warm pulse or brief color wash on the card (100ms, opacity only — stays under performance budget).
-- Grade button activates with its positive color.
-
-### Bare-Word vs. Sentence Front
-
-The existing bare-word-first gate is a UX differentiator. The visual treatment should reinforce what's happening:
-- Bare word front: larger type size (the word is the whole card), centered vertically.
-- Sentence front: sentence rendered with `HighlightedSentence` (already exists), slightly smaller type, more breathing room.
-- The transition between bare-word and sentence (as learner progresses) should feel like a natural upgrade, not an unexplained change.
-
-### Session Size & Cognitive Load
-
-FSRS sessions default to `sessionSize` (20 cards). Research confirms 5–10 min sessions work best for retention. The session indicator helps users self-regulate. Do not show "500 cards due" as a scary number — show only the session batch.
-
-### Mode Selector (Flashcard / Multiple Choice / Fill Blank)
-
-Already implemented in `ModeSelector.tsx`. Polish: the mode selector should not take up visual space during the study session itself — it belongs in the pre-session setup. Consider hiding it after session starts (except in a subtle accessible location).
-
----
-
-## Home Dashboard Specific
-
-The home screen is the "morning ritual" surface. What the user sees first determines whether they feel motivated or pressured.
-
-### Hero Section (above the fold)
-
-The due-count hero is the single most important element. Research pattern from Streaks + Duolingo:
-- **One big number** — the due card count, large type, `--reward` color when > 0.
-- **One CTA** — "Study" button, full-width or near-full-width, below the number.
-- **No competition** — nothing else above the fold should pull attention.
-
-Current state: the home has "effect-only time greeting, large `--reward` due count, primary Study CTA" — this is the right skeleton. Polish = make the number truly heroic (e.g. 72px+ on mobile, reward color, slight weight difference), and ensure the CTA is immediately tappable (full-width, tall enough — 56px+).
-
-### Three Hero States
-
-The hero should have three distinct visual modes:
-1. **Cards due** (N > 0): warm accent number + "Study now" CTA in button color. This is the call to action.
-2. **Goal met, nothing due**: celebration state — e.g. green check, "All done today!" message, "Study ahead →" as secondary link. `sessionCompleteMessage` from `lib/copy.ts` can source copy.
-3. **New user / no cards**: onboarding nudge — but for this single-user app, this state shouldn't occur after setup.
-
-### Streak Display
-
-Streak is the habit-forming core metric. Research: users treat streak as identity ("I'm a 47-day streak person"). The streak display needs:
-- Prominent placement (second element after the hero CTA, or woven into it).
-- A visual that communicates continuity (the existing `HabitTracker` ring).
-- Warm color (`--reward`) for the streak number, not the primary action color.
-- On freeze-bridged days: `comebackMessage` with green pill (already implemented in `HabitTracker.tsx`).
-
-### Cognitive Load Hierarchy
-
-The home has: hero (due count + CTA) → HabitTracker → StatsBar → ProficiencyArc. This is good hierarchy. The risk is visual clutter if each section has equal visual weight. Recommendations:
-- `StatsBar` should be genuinely quiet — `text-xs`, `surface-2` background, no shadow.
-- `ProficiencyArc` is motivating secondary content — keep it below HabitTracker, let it breathe with padding.
-- If the home page has more than 3 visible sections before scrolling, it's too much.
-
-### Time-of-Day Personalization
-
-The "effect-only time greeting" note in CLAUDE.md suggests this exists but may be plain text. Elevate it:
-- "Good morning" 5am–12pm / "Good afternoon" 12pm–5pm / "Good evening" 5pm–10pm / "Night owl 🌙" 10pm+.
-- Display name or just warm address ("Let's study" works).
-- This is client-only logic (`Date` in effect), already pattern-established.
-
----
-
-## Technology Implications
-
-### Animation Strategy: CSS-first, no new deps
-
-**Recommendation:** Do not add Framer Motion. Reasons:
-- Next.js 15+ App Router has known lifecycle issues with `AnimatePresence` — components unmount/remount abruptly during navigation, breaking Framer's exit animations.
-- CSS `transform`/`opacity` transitions at `duration-150` to `duration-300` are compositor-thread operations — 60fps on all devices, zero JS overhead.
-- Tailwind v4 `@theme` `@keyframes` + `--animate-*` variables handle custom keyframes natively.
-- `tailwindcss-animate` (already used via shadcn/ui patterns) adds `animate-in`, `fade-in`, `slide-in-from-*` classes — covers all needed enter/exit patterns.
-
-**What to use:**
-- `transition` + `duration-200` + `ease-out` for button hovers, mode switches, state changes.
-- `@keyframes` in `globals.css` for custom sequences (card pulse, celebration flash).
-- The existing `ringFill` keyframe pattern is the right template.
-- Canvas-confetti (already installed) for milestone moments.
-
-### Korean Typography
-
-Pretendard Variable (already in use as `--font-korean`) is the right font — handles both scripts. Specific additions needed:
-- `word-break: keep-all` on Korean text containers — prevents mid-syllable line breaks.
-- `line-height: 1.65` on sentence display elements (current may be too tight).
-- `font-feature-settings: "kern" 1` for tighter kerning at display sizes.
+*Feature research for: Next.js App Router performance UX (Korean SRS app)*
+*Researched: 2026-06-29*
