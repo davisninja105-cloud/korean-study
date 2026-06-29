@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Home, BookOpen, Layers, Flame, Settings } from 'lucide-react'
@@ -16,6 +17,18 @@ const links: { href: string; label: string; Icon: LucideIcon }[] = [
 export default function Nav() {
   const pathname = usePathname()
   const settingsActive = pathname === '/settings'
+
+  useEffect(() => {
+    const existing = getComputedStyle(document.documentElement).getPropertyValue('--sab').trim()
+    if (!existing) {
+      const tmp = document.createElement('div')
+      tmp.style.paddingBottom = 'env(safe-area-inset-bottom)'
+      document.body.appendChild(tmp)
+      const value = getComputedStyle(tmp).paddingBottom
+      document.body.removeChild(tmp)
+      document.documentElement.style.setProperty('--sab', value || '0px')
+    }
+  }, [])
 
   return (
     <>
@@ -48,7 +61,7 @@ export default function Nav() {
               href="/settings"
               aria-label="Settings"
               aria-current={settingsActive ? 'page' : undefined}
-              className={`flex items-center justify-center min-h-11 min-w-11 rounded-lg transition-colors ${
+              className={`flex items-center justify-center min-h-11 min-w-11 rounded-lg active:opacity-70 transition-colors ${
                 settingsActive
                   ? 'bg-button-soft text-button'
                   : 'text-muted hover:bg-surface-3'
@@ -61,7 +74,7 @@ export default function Nav() {
       </header>
 
       {/* ── Bottom tab bar: mobile only ── */}
-      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-10 bg-surface-1/95 backdrop-blur-md saturate-150 border-t border-border pb-[env(safe-area-inset-bottom)]">
+      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-10 bg-surface-1/95 backdrop-blur-md saturate-150 border-t border-border pb-[var(--sab,0px)]">
         <div className="max-w-2xl mx-auto flex">
           {links.map(({ href, label, Icon }) => {
             const active = pathname === href
@@ -71,7 +84,7 @@ export default function Nav() {
                 href={href}
                 aria-current={active ? 'page' : undefined}
                 onClick={() => haptic('selection')}
-                className={`flex-1 flex flex-col items-center gap-1 py-2 text-xs font-medium transition-colors ${
+                className={`flex-1 flex flex-col items-center gap-1 py-2 text-xs font-medium min-h-[44px] active:opacity-70 transition-colors ${
                   active
                     ? 'text-button'
                     : 'text-muted hover:text-muted-foreground'

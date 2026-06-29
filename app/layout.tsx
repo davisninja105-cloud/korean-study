@@ -71,7 +71,7 @@ export default async function RootLayout({
         <ThemeWatcher />
         <GlossProvider>
           <Nav />
-          <main className="flex-1 max-w-2xl mx-auto w-full px-4 pt-8 pb-[calc(4.5rem+env(safe-area-inset-bottom))] sm:pb-8">
+          <main className="flex-1 max-w-2xl mx-auto w-full px-4 pt-8 pb-[calc(4.5rem+var(--sab,0px))] sm:pb-8">
             {children}
           </main>
         </GlossProvider>
