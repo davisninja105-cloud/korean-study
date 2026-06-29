@@ -106,7 +106,11 @@ export default function CardsPage() {
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this card?')) return
-    await fetch(`/api/cards/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/cards/${id}`, { method: 'DELETE' })
+    if (!res.ok) {
+      console.error('Delete failed:', res.status)
+      return
+    }
     setCards((prev) => prev.filter((c) => c.id !== id))
     if (editingId === id) setEditingId(null)
   }
