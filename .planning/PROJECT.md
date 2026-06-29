@@ -8,13 +8,24 @@ A personal Korean spaced-repetition study app (Next.js + Prisma/Turso, Claude-po
 
 When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context. If everything else fails, this must hold.
 
+## Current Milestone: v1.2 Performance & Snappiness
+
+**Goal:** Eliminate the 2–3s blank wait on cards/study pages and make the entire app feel instant — sub-1-second first content, no empty-state flash.
+
+**Target features:**
+- Skeleton loading screens for all 4 main routes (instant visual feedback on navigation)
+- Server-side data hydration: cards and study pages receive data with the HTML (no useEffect round-trip for initial load)
+- Home and habits pages: same RSC pattern (stats/activity arrive with the page)
+- `/api/cards/due` query optimization: 3 serial Prisma calls → parallel execution
+- Study session interaction polish: card flip, grading, and audio feel immediate during an active session
+
 ## Current State
 
 **Shipped:** v1.1 UI/UX Polish (2026-06-29)
 
 The app is deployed and fully functional. v1.1 completed a systematic UI audit and polish pass across all screens. The design-system token layer is now complete. The study session, home dashboard, and secondary screens have received targeted polish. Accessibility baseline (aria-labels, reduced-motion, active states) is in place.
 
-**Next milestone:** v1.2 — to be scoped via `/gsd-new-milestone`
+**Active:** v1.2 Performance & Snappiness (in progress)
 
 ## Requirements
 
@@ -42,7 +53,13 @@ The app is deployed and fully functional. v1.1 completed a systematic UI audit a
 
 ### Active
 
-*(To be defined for v1.2 via `/gsd-new-milestone`)*
+- [ ] **PERF-01**: Cards page shows skeleton immediately on load (no "no cards yet" flash)
+- [ ] **PERF-02**: Study page shows skeleton immediately on load (no blank loading phase)
+- [ ] **PERF-03**: Home page stats and activity data arrive with the server render (no empty hero flash)
+- [ ] **PERF-04**: Habits page data arrives with the server render
+- [ ] **PERF-05**: Navigation between all main routes gives instant visual feedback via `loading.tsx`
+- [ ] **PERF-06**: `/api/cards/due` parallel DB queries (3 serial → concurrent via Promise.all)
+- [ ] **PERF-07**: Study session card flip, grading, and audio interactions feel immediate during an active session
 
 ### Out of Scope
 
@@ -103,4 +120,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-06-29 after v1.1 milestone (UI/UX Polish)*
+*Last updated: 2026-06-29 — v1.2 Performance & Snappiness milestone started*
