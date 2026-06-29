@@ -113,7 +113,7 @@ export default function SwipeRow({
           onClick={handleDelete}
           tabIndex={isOpen ? 0 : -1}
           aria-label={deleteLabel}
-          className="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold min-w-[72px] px-5 rounded-xl transition-colors"
+          className="bg-red-500 hover:bg-red-600 text-white text-sm font-semibold min-w-[72px] min-h-[44px] px-5 rounded-xl transition-colors"
         >
           {deleteLabel}
         </button>

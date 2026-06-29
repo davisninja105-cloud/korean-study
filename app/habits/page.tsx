@@ -151,7 +151,7 @@ export default function HabitsPage() {
 
       {/* All-time totals */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
-        <h2 className="font-semibold text-foreground">All-time totals</h2>
+        <h2 className="text-lg font-semibold text-foreground">All-time totals</h2>
         <div className="grid grid-cols-2 gap-3">
           <div className="bg-surface-2 rounded-xl p-4">
             <p className="text-2xl font-bold text-cat-vocab">{formatTotalTime(stats.totalSeconds)}</p>
@@ -174,7 +174,7 @@ export default function HabitsPage() {
 
       {/* Averages & consistency */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
-        <h2 className="font-semibold text-foreground">Averages &amp; consistency</h2>
+        <h2 className="text-lg font-semibold text-foreground">Averages &amp; consistency</h2>
         <div className="flex flex-col gap-3">
           <div className="flex justify-between items-center py-2 border-b border-border">
             <span className="text-sm text-muted-foreground">Avg per active day</span>
@@ -201,7 +201,7 @@ export default function HabitsPage() {
 
       {/* 30-day trend chart */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
-        <h2 className="font-semibold text-foreground">Last 30 days</h2>
+        <h2 className="text-lg font-semibold text-foreground">Last 30 days</h2>
         <div className="relative h-16">
           {/* Goal reference line */}
           <div
@@ -237,7 +237,7 @@ export default function HabitsPage() {
 
       {/* Full history heatmap */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
-        <h2 className="font-semibold text-foreground">History</h2>
+        <h2 className="text-lg font-semibold text-foreground">History</h2>
         {days.length === 0 ? (
           <p className="text-sm text-muted text-center py-4">
             Complete your first session to start tracking history.
@@ -267,7 +267,7 @@ export default function HabitsPage() {
       {/* My Korean summary link */}
       <Link
         href="/wrapped"
-        className="flex items-center justify-between bg-surface-1 rounded-2xl shadow-md px-5 py-4 hover:shadow-lg transition-shadow"
+        className="flex items-center justify-between bg-surface-1 rounded-2xl shadow-md px-5 py-4 hover:shadow-lg active:shadow-sm active:bg-surface-2 transition-colors"
       >
         <div>
           <p className="text-sm font-semibold text-foreground">My Korean summary</p>

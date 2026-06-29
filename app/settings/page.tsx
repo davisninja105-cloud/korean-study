@@ -143,7 +143,7 @@ export default function SettingsPage() {
       {/* Appearance / theme */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <div>
-          <h2 className="font-semibold text-foreground">Appearance</h2>
+          <h2 className="text-lg font-semibold text-foreground">Appearance</h2>
           <p className="text-sm text-muted mt-0.5">
             Choose a theme, or follow your device setting.
           </p>
@@ -169,7 +169,7 @@ export default function SettingsPage() {
       {/* Daily study goal */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <div>
-          <h2 className="font-semibold text-foreground">Daily study goal</h2>
+          <h2 className="text-lg font-semibold text-foreground">Daily study goal</h2>
           <p className="text-sm text-muted mt-0.5">
             Minimum study time per habit-day to count toward your streak.
           </p>
@@ -194,7 +194,7 @@ export default function SettingsPage() {
       {/* Day start hour */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <div>
-          <h2 className="font-semibold text-foreground">Habit day starts at</h2>
+          <h2 className="text-lg font-semibold text-foreground">Habit day starts at</h2>
           <p className="text-sm text-muted mt-0.5">
             A new streak day begins at this time. Pick a time after you usually finish studying —
             sessions before this hour count toward the previous day.
@@ -217,7 +217,7 @@ export default function SettingsPage() {
       {/* Session size */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <div>
-          <h2 className="font-semibold text-foreground">Study session size</h2>
+          <h2 className="text-lg font-semibold text-foreground">Study session size</h2>
           <p className="text-sm text-muted mt-0.5">
             How many cards to draw per study session. Cards that need review again the same day
             are re-queued automatically, so a session may take longer than this number.
@@ -243,7 +243,7 @@ export default function SettingsPage() {
       {/* Reading text size */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <div>
-          <h2 className="font-semibold text-foreground">Korean text size</h2>
+          <h2 className="text-lg font-semibold text-foreground">Korean text size</h2>
           <p className="text-sm text-muted mt-0.5">
             Scale Korean sentence text in study mode. Default is 1×.
           </p>
@@ -278,35 +278,37 @@ export default function SettingsPage() {
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h2 className="font-semibold text-foreground">Reading aid</h2>
+            <h2 className="text-lg font-semibold text-foreground">Reading aid</h2>
             <p className="text-sm text-muted mt-0.5">
               Adds a little extra spacing between Korean words to make long sentences
               easier to parse. No romanization.
             </p>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={readingAid}
-            aria-label="Reading aid"
-            onClick={() => handleReadingAidChange(!readingAid)}
-            className={`relative shrink-0 w-12 h-7 rounded-full transition-colors ${
-              readingAid ? 'bg-button' : 'bg-surface-3'
-            }`}
-          >
-            <span
-              className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-surface-1 shadow transition-transform ${
-                readingAid ? 'translate-x-5' : ''
+          <div className="flex items-center min-h-[44px]">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={readingAid}
+              aria-label="Reading aid"
+              onClick={() => handleReadingAidChange(!readingAid)}
+              className={`relative shrink-0 w-12 h-7 rounded-full transition-colors ${
+                readingAid ? 'bg-button' : 'bg-surface-3'
               }`}
-            />
-          </button>
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-6 h-6 rounded-full bg-surface-1 shadow transition-transform ${
+                  readingAid ? 'translate-x-5' : ''
+                }`}
+              />
+            </button>
+          </div>
         </div>
       </section>
 
       {/* App colors */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-4">
         <div>
-          <h2 className="font-semibold text-foreground">App colors</h2>
+          <h2 className="text-lg font-semibold text-foreground">App colors</h2>
           <p className="text-sm text-muted mt-0.5">
             Pick a complementary pairing — one tap sets both accents at once.
           </p>

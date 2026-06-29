@@ -217,7 +217,8 @@ export default function CardsPage() {
           <button
             key={v}
             onClick={() => setActiveView(v)}
-            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+            aria-pressed={activeView === v}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md min-h-[44px] flex items-center transition-colors ${
               activeView === v
                 ? 'bg-surface-1 text-foreground shadow-sm'
                 : 'text-muted hover:text-muted-foreground'
