@@ -1,12 +1,12 @@
 export default function StudyLoading() {
   return (
-    <div className="w-full max-w-xl mx-auto flex flex-col gap-4 pt-4">
-      {/* Thin progress bar */}
-      <div className="h-3 w-full rounded bg-surface-2 animate-pulse" />
-      {/* Large flashcard placeholder */}
-      <div className="h-[220px] w-full rounded-2xl bg-surface-2 animate-pulse" />
+    <div className="flex flex-col items-center gap-4 pt-8 max-w-xl mx-auto w-full px-4">
+      {/* Mode selector placeholder */}
+      <div className="h-12 w-full rounded-xl bg-surface-3 animate-pulse" />
+      {/* Lesson range placeholder */}
+      <div className="h-10 w-64 rounded-lg bg-surface-3 animate-pulse" />
       {/* Start button placeholder */}
-      <div className="h-12 w-full rounded-xl bg-surface-2 animate-pulse" />
+      <div className="h-12 w-full rounded-xl bg-surface-3 animate-pulse" />
     </div>
   )
 }
