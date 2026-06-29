@@ -60,6 +60,7 @@ export default function SettingsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
       })
+      if (!res.ok) throw new Error(`Settings save failed: ${res.status}`)
       const d = await res.json()
       if (typeof d.dailyGoalSeconds === 'number') setGoal(d.dailyGoalSeconds)
       if (typeof d.dayStartHour === 'number') setDayStartHour(d.dayStartHour)
@@ -70,6 +71,8 @@ export default function SettingsPage() {
       if (typeof d.readingAid === 'boolean') setReadingAid(d.readingAid)
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
+    } catch (err) {
+      console.error('Failed to save settings:', err)
     } finally {
       setSaving(false)
     }
