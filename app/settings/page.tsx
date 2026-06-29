@@ -308,7 +308,7 @@ export default function SettingsPage() {
             aria-checked={readingAid}
             aria-label="Reading aid"
             onClick={() => handleReadingAidChange(!readingAid)}
-            className={`relative shrink-0 flex items-center justify-center w-12 min-h-[44px] rounded-full transition-colors ${
+            className={`relative shrink-0 w-12 h-7 rounded-full transition-colors ${
               readingAid ? 'bg-button' : 'bg-surface-3'
             }`}
           >
