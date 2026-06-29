@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import Link from 'next/link'
+import HabitsLoading from './loading'
 import HabitHeatmap from '@/components/HabitHeatmap'
 import ProgressRing from '@/components/ProgressRing'
 import ProficiencyArc from '@/components/ProficiencyArc'
@@ -104,13 +105,7 @@ export default function HabitsPage() {
     [days, today, goal]
   )
 
-  if (days === null) {
-    return (
-      <main className="max-w-2xl mx-auto px-4 py-8">
-        <div className="h-40 flex items-center justify-center text-muted text-sm">Loading…</div>
-      </main>
-    )
-  }
+  if (days === null) return <HabitsLoading />
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-8 flex flex-col gap-6">
