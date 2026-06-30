@@ -5,6 +5,7 @@ import { sequenceCards, selectSessionCards } from '@/lib/sequence'
 import { countUnknownWords } from '@/lib/known-words'
 
 export async function GET(req: NextRequest) {
+  try {
   const { searchParams } = req.nextUrl
   const now = new Date()
 
@@ -37,29 +38,49 @@ export async function GET(req: NextRequest) {
 
   const sessionSize = await getSessionSize()
 
-  // Fetch the whole eligible pool (generous safety cap of 1000).
-  // Selection and sessionSize capping now happen in selectSessionCards below;
-  // orderBy: nextReview asc pre-sorts so the most-due cards are available first.
-  const cards = await prisma.card.findMany({
-    where: {
-      ...lessonClause,
-      review: scope === 'due'
-        ? { nextReview: { lte: now } }
-        : { nextReview: { gt: now } },
-    },
-    include: {
-      review:   true,
-      lesson:   { select: { id: true, orderIndex: true, title: true } },
-      sentences: { orderBy: { orderIndex: 'asc' } },
-    },
-    orderBy: { review: { nextReview: 'asc' } },
-    take: 1000,
-  })
+  // Run the pool fetch and known-lemmas fetch concurrently — they are independent
+  // of each other. The edge fetch depends on pool IDs and stays sequential.
+  // Promise.allSettled gives graceful degradation:
+  //   - pool failure → 500 (critical; can't build a session without it)
+  //   - knownLemmas failure → empty Set (non-critical; unknownCount degrades to max but no crash)
+  const [poolResult, knownRowsResult] = await Promise.allSettled([
+    // Query 1 (CRITICAL): Whole eligible pool, generous safety cap of 1000.
+    // Selection and sessionSize capping happen in selectSessionCards below;
+    // orderBy: nextReview asc pre-sorts so the most-due cards are available first.
+    prisma.card.findMany({
+      where: {
+        ...lessonClause,
+        review: scope === 'due'
+          ? { nextReview: { lte: now } }
+          : { nextReview: { gt: now } },
+      },
+      include: {
+        review:   true,
+        lesson:   { select: { id: true, orderIndex: true, title: true } },
+        sentences: { orderBy: { orderIndex: 'asc' } },
+      },
+      orderBy: { review: { nextReview: 'asc' } },
+      take: 1000,
+    }),
+    // Query 3 (NON-CRITICAL): Cards the learner has seen at least once (FSRS state ≥ 1).
+    // "Seen once" is the threshold for counting a word as known context.
+    // Selecting only normalizedFront keeps this fast and allocation-light.
+    prisma.card.findMany({
+      where: { review: { state: { gte: 1 } } },
+      select: { normalizedFront: true },
+    }),
+  ])
+
+  if (poolResult.status === 'rejected') {
+    return NextResponse.json({ error: 'Database error' }, { status: 500 })
+  }
+  const cards = poolResult.value
 
   if (cards.length === 0) {
     return NextResponse.json([])
   }
 
+  // Query 2 (sequential — depends on pool IDs resolved above):
   // Fetch prerequisite edges across the whole pool.
   // sequenceCards ignores out-of-session edges, so passing the full pool edge
   // list to both selectSessionCards and sequenceCards is safe.
@@ -75,14 +96,12 @@ export async function GET(req: NextRequest) {
   const chosen  = selectSessionCards(cards, edges, sessionSize, now)
   const ordered = sequenceCards(chosen, edges, now)
 
-  // Query cards the learner has seen at least once (FSRS state ≥ 1) ONCE per request.
-  // "Seen once" is the threshold for counting a word as known context.
-  // Selecting only normalizedFront keeps this fast and allocation-light.
-  const knownRows = await prisma.card.findMany({
-    where: { review: { state: { gte: 1 } } },
-    select: { normalizedFront: true },
-  })
-  const knownLemmas = new Set(knownRows.map((r) => r.normalizedFront))
+  // Build knownLemmas Set from the concurrent result — degrade to empty Set on failure.
+  const knownLemmas = new Set(
+    knownRowsResult.status === 'fulfilled'
+      ? knownRowsResult.value.map((r) => r.normalizedFront)
+      : []
+  )
 
   // Annotate each sentence with a unknownCount (pure ranking signal for the client).
   // Cost: ≤ sessionSize × 3 sentence scans — well under the Vercel 60s limit.
@@ -94,4 +113,7 @@ export async function GET(req: NextRequest) {
   }
 
   return NextResponse.json(ordered)
+  } catch {
+    return NextResponse.json({ error: 'Database error' }, { status: 500 })
+  }
 }
