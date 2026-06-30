@@ -77,12 +77,17 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
     fetch(`/api/cards/due${buildParams(from, to, 'due', maxOrder)}`)
       .then((r) => r.json())
       .then((cards: CardDTO[]) => {
-        setStudyCards(cards)
-        setScope('due')
-        setIsFilterLoading(false)
+        // Guard: only update study cards when we're still in select-mode.
+        // If the user is mid-session, the fetch result is stale and must be discarded.
+        setPhase((currentPhase) => {
+          if (currentPhase !== 'select-mode') return currentPhase
+          setStudyCards(cards)
+          setScope('due')
+          setIsFilterLoading(false)
+          return currentPhase
+        })
       })
       .catch(() => {
-        setStudyCards([])
         setIsFilterLoading(false)
       })
   }, [buildParams])
