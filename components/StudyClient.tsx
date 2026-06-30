@@ -319,8 +319,8 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
   const streakInfo = habitData
     ? computeStreaks(habitData.days, habitData.today, habitData.goal)
     : null
-  const todayPct = habitData && habitData.goal > 0
-    ? Math.min(100, Math.round((streakInfo!.todaySeconds / habitData.goal) * 100))
+  const todayPct = habitData && habitData.goal > 0 && streakInfo
+    ? Math.min(100, Math.round((streakInfo.todaySeconds / habitData.goal) * 100))
     : 0
 
   return (
