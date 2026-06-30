@@ -36,7 +36,7 @@ See `.planning/milestones/v1.1-ROADMAP.md` for full phase details.
 ### 🚧 v1.2 Performance & Snappiness (Phases 9–12)
 
 - [x] **Phase 9: Skeleton Loading Screens** - Instant skeleton feedback on every main-route navigation (pure additive, zero risk) (completed 2026-06-29)
-- [ ] **Phase 10: Cards Hydration + API Parallelization** - Cards page hydrated from the server (establishes the RSC + DTO pattern) and `/api/cards/due` queries run concurrently
+- [x] **Phase 10: Cards Hydration + API Parallelization** - Cards page hydrated from the server (establishes the RSC + DTO pattern) and `/api/cards/due` queries run concurrently (completed 2026-06-30)
 - [ ] **Phase 11: Study Page Hydration & Interaction Polish** - Study page arrives at mode-select instantly; in-session flip/grade/audio feel immediate with no jitter
 - [ ] **Phase 12: Home & Habits Hydration** - Dashboard stats, activity, and heatmap arrive with the server render — no empty-state flash
 
@@ -75,7 +75,13 @@ See `.planning/milestones/v1.1-ROADMAP.md` for full phase details.
   4. Starting a study session is measurably faster: the three independent Prisma queries in `/api/cards/due` run concurrently instead of one-after-another
   5. A transient database failure during the parallel fetch returns a graceful error response rather than crashing the request
 
-**Plans**: TBD
+**Plans**: 2/2 plans complete
+
+Plans:
+
+- [x] 10-01-PLAN.md — Convert cards page to RSC + CardsClient shell with DTO serialization (RSC-01, RSC-05)
+- [x] 10-02-PLAN.md — Parallelize /api/cards/due pool + known-lemmas queries via Promise.allSettled (DB-01)
+
 **UI hint**: yes
 
 ### Phase 11: Study Page Hydration & Interaction Polish
@@ -123,6 +129,6 @@ See `.planning/milestones/v1.1-ROADMAP.md` for full phase details.
 | 8. Accessibility & PWA Baseline | v1.1 | 2/2 | Complete | 2026-06-29 |
 | 8.1. Close gap: NAV-01 --sab extension | v1.1 | 1/1 | Complete | 2026-06-29 |
 | 9. Skeleton Loading Screens | v1.2 | 1/1 | Complete   | 2026-06-29 |
-| 10. Cards Hydration + API Parallelization | v1.2 | 0/? | Not started | - |
+| 10. Cards Hydration + API Parallelization | v1.2 | 2/2 | Complete   | 2026-06-30 |
 | 11. Study Page Hydration & Interaction Polish | v1.2 | 0/? | Not started | - |
 | 12. Home & Habits Hydration | v1.2 | 0/? | Not started | - |

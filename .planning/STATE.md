@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Performance & Snappiness
-current_phase: 09
+current_phase: 10
+current_phase_name: cards-hydration-api-parallelization
 status: completed
-stopped_at: "v1.2 roadmap created — Phases 9–12 drafted, requirements traceability aligned"
-last_updated: "2026-06-29T16:30:10.530Z"
-last_activity: 2026-06-29
-last_activity_desc: Phase 09 marked complete
+stopped_at: Phase 10 UI-SPEC approved
+last_updated: "2026-06-30T01:19:21.698Z"
+last_activity: 2026-06-30
+last_activity_desc: Phase 10 execution started
 progress:
   total_phases: 4
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
-  percent: 25
-current_phase_name: skeleton-loading-screens
+  completed_phases: 2
+  total_plans: 3
+  completed_plans: 3
+  percent: 50
 ---
 
 # Project State
@@ -24,14 +24,14 @@ current_phase_name: skeleton-loading-screens
 See: .planning/PROJECT.md (updated 2026-06-29)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 09 — skeleton-loading-screens
+**Current focus:** Phase 10 complete — RSC hydration and query parallelization shipped
 
 ## Current Position
 
-Phase: 09 — COMPLETE
-Plan: 1 of 1
-Status: Phase 09 complete
-Last activity: 2026-06-29 — Phase 09 marked complete
+Phase: 10 (cards-hydration-api-parallelization) — EXECUTING
+Plan: 2 of 2
+Status: complete
+Last activity: 2026-06-30 — Phase 10 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -58,6 +58,8 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: -
 
 *Updated after each plan completion*
+| Phase 10 P01 | 45min | 3 tasks | 2 files |
+| Phase 10 P02 | 3min | - tasks | - files |
 
 ## Accumulated Context
 
@@ -70,6 +72,8 @@ Recent decisions affecting current work:
 - DTO pattern (RSC-05) is the first code-review gate in Phase 10 and enforced in every later RSC conversion — no raw Prisma Date crosses the server→client boundary (ISO string or epoch ms only)
 - DB-01 (Promise.all in /api/cards/due) is independent of RSC conversion; grouped with Cards in Phase 10 for focus; wrap in try/catch for graceful degradation
 - No new npm packages — every v1.2 pattern (RSC, loading.tsx, Promise.all, Suspense) is built into Next.js 16 + React 19
+- [Phase ?]: Promise.allSettled parallelizes pool + known-lemmas queries in /api/cards/due; edge query stays sequential (depends on pool IDs)
+- [Phase ?]: Pool failure returns 500; known-lemmas failure degrades to empty Set — non-critical ranking signal never crashes the request
 
 ### Pending Todos
 
@@ -101,9 +105,9 @@ Items acknowledged and deferred at v1.1 milestone close on 2026-06-29:
 
 ## Session Continuity
 
-Last session: 2026-06-29T09:10:00.000Z
-Stopped at: "v1.2 roadmap created — Phases 9–12 drafted, requirements traceability aligned"
-Resume file: None
+Last session: 2026-06-30T01:04:58.242Z
+Stopped at: Phase 10 UI-SPEC approved
+Resume file: .planning/phases/10-cards-hydration-api-parallelization/10-UI-SPEC.md
 
 ## Operator Next Steps
 
