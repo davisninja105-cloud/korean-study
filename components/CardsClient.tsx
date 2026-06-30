@@ -56,14 +56,6 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
     initialLessons.length > 0 ? initialLessons[initialLessons.length - 1].orderIndex : 1
   )
 
-  // Post-mutation refresh — cards state is initialized from props; this path
-  // fires only after add/edit/delete mutations (not on initial load).
-  const loadCards = () => {
-    fetch('/api/cards')
-      .then((r) => r.json())
-      .then(setCards)
-  }
-
   const maxOrder = lessons.length > 0 ? lessons[lessons.length - 1].orderIndex : 1
   const fullSpan = isFullSpan(lessonFrom, lessonTo, maxOrder)
 
