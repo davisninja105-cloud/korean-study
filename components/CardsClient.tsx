@@ -246,7 +246,7 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
           )}
 
           {groupedCards.map(({ label, key, cards: groupCards }) => (
-            <div key={key} className="flex flex-col gap-2">
+            <div key={key} className="flex flex-col gap-2 animate-slide-in">
               {/* Group header */}
               <button
                 onClick={() => toggleCollapse(key)}
@@ -261,15 +261,14 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
                 <span className="ml-auto text-xs opacity-50">{collapsed[key] ? '▶' : '▼'}</span>
               </button>
 
-              {!collapsed[key] && groupCards.map((card, i) => (
+              {!collapsed[key] && groupCards.map((card) => (
                 <SwipeRow
                   key={card.id}
                   onDelete={() => handleDelete(card.id)}
                   deleteLabel="Delete"
                 >
                   <div
-                    className="bg-surface-1 rounded-xl shadow-sm p-4 flex flex-col gap-2 animate-slide-in"
-                    style={{ animationDelay: `${Math.min(i * 25, 250)}ms` }}
+                    className="bg-surface-1 rounded-xl shadow-sm p-4 flex flex-col gap-2"
                   >
                     {/* Card header */}
                     <div className="flex items-center justify-between">
@@ -348,12 +347,11 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
             </p>
           )}
 
-          <div className="flex flex-col gap-3">
-            {allSentences.map(({ sentence, card }, i) => (
+          <div className="flex flex-col gap-3 animate-slide-in">
+            {allSentences.map(({ sentence, card }) => (
               <div
                 key={sentence.id}
-                className="bg-surface-1 rounded-xl shadow-sm p-4 flex flex-col gap-1 cursor-pointer hover:ring-1 hover:ring-button/40 transition-all animate-slide-in"
-                style={{ animationDelay: `${Math.min(i * 25, 250)}ms` }}
+                className="bg-surface-1 rounded-xl shadow-sm p-4 flex flex-col gap-1 cursor-pointer hover:ring-1 hover:ring-button/40 transition-all"
                 onClick={() => { setEditingId(card.id); setActiveView('cards') }}
                 role="button"
                 tabIndex={0}
