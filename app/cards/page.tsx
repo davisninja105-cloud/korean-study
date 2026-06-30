@@ -1,63 +1,9 @@
 import { prisma } from '@/lib/prisma'
 import CardsClient from '@/components/CardsClient'
+import type { CardDTO } from '@/lib/dto'
 
-// ── DTO types (server→client boundary) ─────────────────────────────────────
-// All Prisma DateTime fields are serialized to ISO strings before crossing
-// the RSC → client component boundary (Next.js serialization constraint).
-
-export interface ReviewDTO {
-  id: string
-  cardId: string
-  state: number
-  stability: number
-  difficulty: number
-  elapsedDays: number
-  scheduledDays: number
-  reps: number
-  lapses: number
-  nextReview: string      // ISO string, was Date
-  lastReview: string | null // ISO string or null, was Date | null
-}
-
-export interface SentenceDTO {
-  id: string
-  cardId: string
-  korean: string
-  targetForm: string
-  translation: string
-  orderIndex: number
-  createdAt: string       // ISO string
-  updatedAt: string       // ISO string
-}
-
-export interface LessonRefDTO {
-  title: string
-  orderIndex: number
-  createdAt: string       // ISO string
-}
-
-export interface CardDTO {
-  id: string
-  createdAt: string       // ISO string
-  updatedAt: string       // ISO string
-  type: string
-  front: string
-  back: string
-  notes: string | null
-  normalizedFront: string
-  components: string | null
-  distractors: string | null
-  lessonId: string | null
-  lesson: LessonRefDTO | null
-  review: ReviewDTO | null
-  sentences: SentenceDTO[]
-}
-
-export interface LessonRefItem {
-  id: string
-  orderIndex: number
-  title: string
-}
+// Re-export DTO types from the shared lib for any consumers that import from this page.
+export type { CardDTO, SentenceDTO, ReviewDTO, LessonRefDTO, LessonRefItem, LessonDTO } from '@/lib/dto'
 
 export default async function CardsPage() {
   const [cards, lessons] = await Promise.all([

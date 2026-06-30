@@ -9,7 +9,7 @@ import Sheet from '@/components/Sheet'
 import SwipeRow from '@/components/SwipeRow'
 import { useWordTap } from '@/components/GlossProvider'
 import { typeBadgeClass } from '@/lib/card-style'
-import type { CardDTO, LessonRefItem } from '@/app/cards/page'
+import type { CardDTO, LessonRefItem } from '@/lib/dto'
 
 type ActiveView = 'cards' | 'reading-practice'
 
