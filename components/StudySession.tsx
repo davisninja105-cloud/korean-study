@@ -7,7 +7,7 @@ import HighlightedSentence from './HighlightedSentence'
 import { useWordTap } from './GlossProvider'
 import AudioButton from './AudioButton'
 import { sentenceMatch, blankSentence } from '@/lib/sentence-match'
-import { previewIntervalLabels } from '@/lib/fsrs'
+import { previewIntervalLabels, reviewCard, type Grade } from '@/lib/fsrs'
 import { haptic } from '@/lib/haptics'
 import { typeBadgeClass } from '@/lib/card-style'
 import ProgressRing from './ProgressRing'
@@ -393,7 +393,8 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
   // ── FSRS review submission ────────────────────────────────────────────────
   // FSRS ratings: 1=Again, 2=Hard, 3=Good, 4=Easy
-  const submitReview = async (rating: number) => {
+  // Optimistic: computes FSRS locally, advances queue immediately, persists in background (D-08/D-09).
+  const submitReview = (rating: number) => {
     const current = queue[0]
     if (!current) return
 
@@ -423,22 +424,58 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     if (current.kind === 'real') {
       const cardId = current.card.id
       const prevState = current.card.review ?? {}
-      const res = await fetch('/api/review', {
+
+      // 1. Compute FSRS result locally — instant, no network (D-08).
+      // Guard: brand-new cards without a prior review (no lastReview) skip local recompute;
+      // requeue stays false (safe — new cards are handled by REQUEUE_GAP anyway).
+      const reviewData = current.card.review
+      if (reviewData && reviewData.nextReview && reviewData.lastReview) {
+        // Convert ISO strings to Date objects — CardReviewFields requires Date, not string (Pitfall 1).
+        const cardReviewFields = {
+          state: reviewData.state ?? 0,
+          stability: reviewData.stability ?? 0,
+          difficulty: reviewData.difficulty ?? 0,
+          elapsedDays: reviewData.elapsedDays ?? 0,
+          scheduledDays: reviewData.scheduledDays ?? 0,
+          reps: reviewData.reps ?? 0,
+          lapses: reviewData.lapses ?? 0,
+          nextReview: new Date(reviewData.nextReview),
+          lastReview: new Date(reviewData.lastReview),
+        }
+        const localResult = reviewCard(cardReviewFields, rating as Grade)
+        // 2. Decide requeue from local result — instant, no network.
+        requeue = localResult.nextReview < nextHabitDayStart(dayStartHourRef.current, new Date())
+        // 3. Carry updated state into the re-queued card; serialize Dates back to ISO strings.
+        updatedItem = {
+          kind: 'real',
+          card: {
+            ...current.card,
+            review: {
+              ...reviewData,
+              state: localResult.state,
+              stability: localResult.stability,
+              difficulty: localResult.difficulty,
+              elapsedDays: localResult.elapsedDays,
+              scheduledDays: localResult.scheduledDays,
+              reps: localResult.reps,
+              lapses: localResult.lapses,
+              nextReview: localResult.nextReview.toISOString(),
+              lastReview: localResult.lastReview?.toISOString() ?? null,
+            },
+          },
+        }
+      }
+
+      // Capture undo snapshot BEFORE queue advance (Pitfall 4 — critical ordering).
+      undoRef.current = { cardId, prevState, prevQueue: queue, prevStats, prevSeenCount, prevSeenCardIds }
+      setCanUndo(true)
+
+      // 4. Fire background save — NOT awaited; silent failure is accepted (D-09).
+      fetch('/api/review', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cardId, rating }),
-      })
-      // Parse the updated CardReview row to decide whether to re-queue.
-      const updatedReview = await res.json().catch(() => null) as Card['review']
-      if (updatedReview?.nextReview) {
-        const nextReviewDate = new Date(updatedReview.nextReview)
-        // Re-queue if the card is due again before the end of the current habit day.
-        requeue = nextReviewDate < nextHabitDayStart(dayStartHourRef.current, new Date())
-        // Carry fresh review state into the re-queued card so interval hints stay correct.
-        updatedItem = { kind: 'real', card: { ...current.card, review: updatedReview } }
-      }
-      undoRef.current = { cardId, prevState, prevQueue: queue, prevStats, prevSeenCount, prevSeenCardIds }
-      setCanUndo(true)
+      }).catch(() => {})
     }
 
     const rest = queue.slice(1)
@@ -526,14 +563,14 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       }
     } else {
       if (mode === 'flashcard') {
-        if (e.key === '1') { e.preventDefault(); void submitReview(1) }
-        else if (e.key === '2') { e.preventDefault(); void submitReview(2) }
-        else if (e.key === '3') { e.preventDefault(); void submitReview(3) }
-        else if (e.key === '4') { e.preventDefault(); void submitReview(4) }
+        if (e.key === '1') { e.preventDefault(); submitReview(1) }
+        else if (e.key === '2') { e.preventDefault(); submitReview(2) }
+        else if (e.key === '3') { e.preventDefault(); submitReview(3) }
+        else if (e.key === '4') { e.preventDefault(); submitReview(4) }
       }
       if (mode === 'fill-blank') {
-        if (e.key === '1') { e.preventDefault(); void submitReview(1) }
-        else if (e.key === '3') { e.preventDefault(); void submitReview(3) }
+        if (e.key === '1') { e.preventDefault(); submitReview(1) }
+        else if (e.key === '3') { e.preventDefault(); submitReview(3) }
       }
       if (mode === 'multiple-choice' && mcSelected !== null) {
         const isCorrect = mcSelected === currentCard.back
