@@ -41,6 +41,7 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
   const [showAdd, setShowAdd] = useState(false)
   const [newCard, setNewCard] = useState({ type: 'vocabulary', front: '', back: '', notes: '' })
   const [adding, setAdding] = useState(false)
+  const [addError, setAddError] = useState<string | null>(null)
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
   const [activeView, setActiveView] = useState<ActiveView>('cards')
 
@@ -122,6 +123,7 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
   const handleAdd = async () => {
     if (!newCard.front || !newCard.back) return
     setAdding(true)
+    setAddError(null)
     try {
       const res = await fetch('/api/cards', {
         method: 'POST',
@@ -135,6 +137,7 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
       setShowAdd(false)
     } catch (err) {
       console.error('Add card failed:', err)
+      setAddError('Could not save card. Please try again.')
     } finally {
       setAdding(false)
     }
@@ -453,7 +456,7 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
       </Sheet>
 
       {/* ── ADD CARD SHEET ──────────────────────────────────────────────────── */}
-      <Sheet open={showAdd} onClose={() => setShowAdd(false)} title="Add Card">
+      <Sheet open={showAdd} onClose={() => { setShowAdd(false); setAddError(null) }} title="Add Card">
         <div className="px-4 pb-6 flex flex-col gap-3">
           <select
             value={newCard.type}
@@ -482,6 +485,9 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
             placeholder="Notes (optional)"
             className={inputCls}
           />
+          {addError && (
+            <p className="text-sm text-red-500 dark:text-red-400">{addError}</p>
+          )}
           <button
             onClick={handleAdd}
             disabled={adding || !newCard.front || !newCard.back}
