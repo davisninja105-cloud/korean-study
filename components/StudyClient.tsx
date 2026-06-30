@@ -214,7 +214,11 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
           </div>
         )}
 
-        {noDue ? (
+        {isFilterLoading ? (
+          <div className="h-16 flex items-center justify-center" role="status" aria-label="Loading cards">
+            <Loader2 className="w-5 h-5 animate-spin text-muted" />
+          </div>
+        ) : noDue ? (
           <div className="text-center py-10 flex flex-col items-center gap-4">
             {noDueAndNoAhead ? (
               <>
@@ -242,21 +246,15 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
           </div>
         ) : (
           <div className="flex flex-col items-center gap-6 py-6">
-            {/* Fixed-height slot: spinner during filter re-fetch, count otherwise — no layout shift */}
-            {isFilterLoading ? (
-              <div className="h-16 flex items-center justify-center" role="status" aria-label="Loading cards">
-                <Loader2 className="w-5 h-5 animate-spin text-muted" />
-              </div>
-            ) : (
-              <div className="h-16 flex flex-col items-center justify-center">
-                <p className="text-5xl font-bold animate-reveal" style={{ color: 'var(--reward)' }}>
-                  {studyCards.length}
-                </p>
-                <p className="text-muted mt-1">
-                  card{studyCards.length !== 1 ? 's' : ''} ready
-                </p>
-              </div>
-            )}
+            {/* Fixed-height slot: card count — no layout shift */}
+            <div className="h-16 flex flex-col items-center justify-center">
+              <p className="text-5xl font-bold animate-reveal" style={{ color: 'var(--reward)' }}>
+                {studyCards.length}
+              </p>
+              <p className="text-muted mt-1">
+                card{studyCards.length !== 1 ? 's' : ''} ready
+              </p>
+            </div>
             <button
               onClick={() => setShowModeSheet(true)}
               className="w-full max-w-sm min-h-14 bg-button text-button-foreground rounded-2xl text-lg font-semibold hover:bg-button-hover transition-colors"
