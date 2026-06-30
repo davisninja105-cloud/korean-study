@@ -295,12 +295,6 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
                         >
                           Edit
                         </button>
-                        <button
-                          onClick={() => handleDelete(card.id)}
-                          className="text-sm text-red-400 hover:text-red-600 px-3 min-h-11 inline-flex items-center rounded-md hover:bg-red-50 dark:hover:bg-red-500/10"
-                        >
-                          Delete
-                        </button>
                       </div>
                     </div>
 
