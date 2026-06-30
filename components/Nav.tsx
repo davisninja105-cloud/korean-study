@@ -1,6 +1,5 @@
 'use client'
 
-import { useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Home, BookOpen, Layers, Flame, Settings } from 'lucide-react'
@@ -17,18 +16,6 @@ const links: { href: string; label: string; Icon: LucideIcon }[] = [
 export default function Nav() {
   const pathname = usePathname()
   const settingsActive = pathname === '/settings'
-
-  useEffect(() => {
-    const existing = getComputedStyle(document.documentElement).getPropertyValue('--sab').trim()
-    if (!existing) {
-      const tmp = document.createElement('div')
-      tmp.style.paddingBottom = 'env(safe-area-inset-bottom)'
-      document.body.appendChild(tmp)
-      const value = getComputedStyle(tmp).paddingBottom
-      document.body.removeChild(tmp)
-      document.documentElement.style.setProperty('--sab', value || '0px')
-    }
-  }, [])
 
   return (
     <>
@@ -74,7 +61,7 @@ export default function Nav() {
       </header>
 
       {/* ── Bottom tab bar: mobile only ── */}
-      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-10 bg-surface-1/95 backdrop-blur-md saturate-150 border-t border-border pb-[var(--sab,0px)]">
+      <nav className="sm:hidden fixed bottom-0 inset-x-0 z-10 bg-surface-1/95 backdrop-blur-md saturate-150 border-t border-border" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div className="max-w-2xl mx-auto flex">
           {links.map(({ href, label, Icon }) => {
             const active = pathname === href
