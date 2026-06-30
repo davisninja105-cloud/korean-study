@@ -513,11 +513,22 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     const { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds } = undoRef.current
     undoRef.current = null
     setCanUndo(false)
-    await fetch('/api/review/undo', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cardId, prevState }),
-    })
+
+    try {
+      const res = await fetch('/api/review/undo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardId, prevState }),
+      })
+      if (!res.ok) throw new Error(`Undo failed: ${res.status}`)
+    } catch {
+      // Network failure: undo could not be persisted. Re-arm canUndo so the user
+      // can retry, and do NOT restore client state (server is still at post-review).
+      undoRef.current = { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds }
+      setCanUndo(true)
+      return
+    }
+
     // Restore queue, stats, and seen-card tracking snapshots captured before the last review.
     setStats(prevStats)
     setQueue(prevQueue)
