@@ -41,6 +41,7 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
   const [showAdd, setShowAdd] = useState(false)
   const [newCard, setNewCard] = useState({ type: 'vocabulary', front: '', back: '', notes: '' })
   const [adding, setAdding] = useState(false)
+  const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
   const [activeView, setActiveView] = useState<ActiveView>('cards')
 
   // Collapsed state for type groups (all open by default)
@@ -89,14 +90,22 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleDelete = async (id: string) => {
+    if (deletingIds.has(id)) return
     if (!confirm('Delete this card?')) return
-    const res = await fetch(`/api/cards/${id}`, { method: 'DELETE' })
-    if (!res.ok) {
-      console.error('Delete failed:', res.status)
-      return
+    setDeletingIds((prev) => new Set(prev).add(id))
+    try {
+      const res = await fetch(`/api/cards/${id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        console.error('Delete failed:', res.status)
+        return
+      }
+      setCards((prev) => prev.filter((c) => c.id !== id))
+      if (editingId === id) setEditingId(null)
+    } catch (err) {
+      console.error('Delete failed (network):', err)
+    } finally {
+      setDeletingIds((prev) => { const s = new Set(prev); s.delete(id); return s })
     }
-    setCards((prev) => prev.filter((c) => c.id !== id))
-    if (editingId === id) setEditingId(null)
   }
 
   const handleSave = (updated: CardEditorShape) => {
