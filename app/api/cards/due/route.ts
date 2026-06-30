@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getStudyCards } from '@/lib/study-cards'
 
+// Validate raw string before parsing — parseInt silently truncates floats and mixed
+// values (e.g. '1.5' → 1, '1abc' → 1), making the isInteger check a no-op without this.
+// The regex accepts only positive integers with no leading zeros or decimals.
+// Module-level — compiled once, not on every request.
+const INTEGER_RE = /^[1-9]\d*$/
+
 export async function GET(req: NextRequest) {
   try {
   const { searchParams } = req.nextUrl
@@ -10,10 +16,6 @@ export async function GET(req: NextRequest) {
   const toParam   = searchParams.get('lessonTo')
   const scope     = searchParams.get('scope') ?? 'due'   // 'due' | 'ahead'
 
-  // Validate raw string before parsing — parseInt silently truncates floats and mixed
-  // values (e.g. '1.5' → 1, '1abc' → 1), making the isInteger check below a no-op.
-  // The regex accepts only positive integers with no leading zeros or decimals.
-  const INTEGER_RE = /^[1-9]\d*$/
   const lessonFrom = fromParam !== null
     ? (INTEGER_RE.test(fromParam) ? parseInt(fromParam, 10) : NaN)
     : null
