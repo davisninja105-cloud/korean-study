@@ -50,6 +50,13 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
   )
   const [showModeSheet, setShowModeSheet] = useState(false)
   const [showFilterSheet, setShowFilterSheet] = useState(false)
+  // Draft lesson range — local to the filter sheet; only committed to lessonFrom/To on Apply
+  const [draftFrom, setDraftFrom] = useState(() =>
+    initialLessons.length > 0 ? initialLessons[0].orderIndex : 1
+  )
+  const [draftTo, setDraftTo] = useState(() =>
+    initialLessons.length > 0 ? initialLessons[initialLessons.length - 1].orderIndex : 1
+  )
 
   // Build the URL params for the current lesson range.
   // Omit when the full span is selected so back-compat is preserved.
@@ -193,7 +200,7 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
         {lessons.length >= 2 && (
           <div className="flex justify-center">
             <button
-              onClick={() => setShowFilterSheet(true)}
+              onClick={() => { setDraftFrom(lessonFrom); setDraftTo(lessonTo); setShowFilterSheet(true) }}
               className="flex items-center gap-2 px-4 py-2 min-h-11 rounded-full bg-surface-2 text-sm text-muted-foreground hover:bg-surface-3 transition-colors"
             >
               <SlidersHorizontal className="w-4 h-4" />
@@ -261,13 +268,19 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
 
         {/* Lesson range — bottom sheet */}
         <Sheet open={showFilterSheet} onClose={() => setShowFilterSheet(false)} title="Lessons">
-          <div className="p-4 flex justify-center">
+          <div className="p-4 flex flex-col items-center gap-4">
             <LessonRangeFilter
               lessons={lessons}
-              from={lessonFrom}
-              to={lessonTo}
-              onChange={handleRangeChange}
+              from={draftFrom}
+              to={draftTo}
+              onChange={(f, t) => { setDraftFrom(f); setDraftTo(t) }}
             />
+            <button
+              onClick={() => handleRangeChange(draftFrom, draftTo)}
+              className="w-full max-w-xs text-sm font-medium px-6 min-h-11 flex items-center justify-center rounded-xl bg-button text-button-foreground hover:opacity-90 transition-opacity"
+            >
+              Apply
+            </button>
           </div>
         </Sheet>
       </div>
