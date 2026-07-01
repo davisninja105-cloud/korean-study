@@ -535,7 +535,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     seenCardIdsRef.current = prevSeenCardIds
     setSeenCount(prevSeenCount)
     setCursor((c) => c + 1)
-    setRevealed(true)
+    setRevealed(false)
     setIntervalHints(null)
   }
 
