@@ -3,6 +3,8 @@
 // All Prisma DateTime fields are serialized to ISO strings before crossing the
 // RSC → client component boundary (Next.js serialization constraint).
 
+import type { DayRecord } from '@/lib/habit'
+
 export interface ReviewDTO {
   id: string
   cardId: string
@@ -61,3 +63,23 @@ export interface LessonDTO {
 
 // Backward-compat alias so CardsClient.tsx import still works after migration
 export type LessonRefItem = LessonDTO
+
+// Dashboard DTOs — returned by lib/dashboard.ts server-only functions
+// and passed as props to RSC pages (app/page.tsx, app/habits/page.tsx) or
+// serialized to JSON by GET /api/stats + GET /api/activity.
+
+export interface StatsDTO {
+  totalCards: number
+  dueCards: number
+  totalLessons: number
+  // prisma.card.groupBy({ by: ['type'], _count: true }) → _count is scalar number
+  // when the _count arg is a boolean (Prisma 7 GetCardGroupByPayload generic).
+  cardsByType: { type: string; _count: number }[]
+  masteredCount: number
+}
+
+export interface ActivityDTO {
+  days: DayRecord[]
+  dailyGoalSeconds: number
+  dayStartHour: number
+}
