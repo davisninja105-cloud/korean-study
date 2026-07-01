@@ -19,15 +19,22 @@ import MilestoneCelebration from './MilestoneCelebration'
 
 const DAY_LETTERS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 
-export default function HabitTracker() {
-  const [days, setDays] = useState<DayRecord[] | null>(null)
-  const [today, setToday] = useState('')
-  const [goal, setGoal] = useState(DEFAULT_GOAL_SECONDS)
+interface Props {
+  initialDays?: DayRecord[]
+  initialToday?: string
+  initialGoal?: number
+}
+
+export default function HabitTracker({ initialDays, initialToday, initialGoal }: Props) {
+  const [days, setDays] = useState<DayRecord[] | null>(initialDays ?? null)
+  const [today, setToday] = useState(initialToday ?? '')
+  const [goal, setGoal] = useState(initialGoal ?? DEFAULT_GOAL_SECONDS)
   const [milestone, setMilestone] = useState<number | null>(null)
   const prevStreakRef = useRef<number | null>(null)
   const hasFiredHapticRef = useRef(false)
 
   useEffect(() => {
+    if (initialDays !== undefined && initialToday !== undefined && initialGoal !== undefined) return
     fetch('/api/activity')
       .then((r) => r.json())
       .then((d) => {
@@ -37,7 +44,7 @@ export default function HabitTracker() {
         setGoal(d.dailyGoalSeconds ?? DEFAULT_GOAL_SECONDS)
       })
       .catch(() => { setToday(habitDateStr(DEFAULT_DAY_START_HOUR)); setDays([]) })
-  }, [])
+  }, [initialDays, initialToday, initialGoal])
 
   const secByDate = useMemo(
     () => new Map((days ?? []).map((d) => [d.date, d.seconds])),
