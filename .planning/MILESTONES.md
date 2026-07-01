@@ -1,5 +1,22 @@
 # Milestones
 
+## v1.2 Performance & Snappiness (Shipped: 2026-07-01)
+
+**Phases completed:** 4 phases, 9 plans, 12 tasks
+
+**Key accomplishments:**
+
+- Every navigation to /cards, /study, or /habits shows an instant content-shaped skeleton (`bg-surface-2 animate-pulse` only) — zero blank-flash transitions
+- Cards, study, home, and habits pages all converted to the async RSC + client-shell + DTO pattern: real data now arrives in the initial HTML, eliminating every empty-state/blank-loading flash on first paint
+- `/api/cards/due` parallelizes its pool + known-lemmas queries via `Promise.allSettled`, saving roughly one Turso round-trip per study-session start, with graceful degradation on partial DB failure
+- Grade-button jitter eliminated — `submitReview` is now synchronous and optimistic (client-side FSRS via `reviewCard()`, fire-and-forget save); undo correctly restores the pre-grade unrevealed state
+- Shared `lib/dto.ts`, `lib/study-cards.ts`, and `lib/dashboard.ts` modules extracted as single sources of truth, reused by both the new RSC pages and the API routes they used to power exclusively
+- Zero new npm packages — every pattern (RSC, `loading.tsx`, `Promise.allSettled`, DTO serialization) built into the existing Next.js 16 + React 19 stack
+
+**Known verification overrides: 4** (see `.planning/STATE.md` Deferred Items — Phase 9 has no VERIFICATION.md but 4/4 automated requirement checks pass; Phases 10/11 are `human_needed` for RSC paint-timing checks, largely covered in practice by Phase 11's live UAT session; Phase 11's UAT bug was root-caused and fixed pre-close)
+
+---
+
 ## v1.0 Foundation-First Study (Shipped: 2026-06-27)
 
 **Phases completed:** 2 phases, 3 plans, 6 tasks

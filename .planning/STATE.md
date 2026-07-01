@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.2
 milestone_name: Performance & Snappiness
-current_phase: 12
-status: completed
-stopped_at: Completed 12-02-PLAN.md
-last_updated: "2026-07-01T15:44:58.522Z"
+current_phase: 2
+status: Awaiting next milestone
+stopped_at: Phase 12 complete (UAT passed, security verified, VERIFICATION.md passed) — v1.2 milestone 100% complete
+last_updated: "2026-07-01T23:37:04.603Z"
 last_activity: 2026-07-01
-last_activity_desc: Phase 12 complete
+last_activity_desc: Milestone v1.2 completed and archived
 progress:
   total_phases: 4
   completed_phases: 4
@@ -28,12 +28,10 @@ See: .planning/PROJECT.md (updated 2026-06-29)
 
 ## Current Position
 
-Phase: 12 (home-habits-hydration) — COMPLETE
-Plan: 3/3 complete
-Status: Milestone v1.2 100% complete (4/4 phases) — ready for /gsd-complete-milestone
-Last activity: 2026-07-01 — Phase 12 complete (UAT 5/5 passed, security verified, VERIFICATION.md passed)
-
-Progress: [██████████] 100%
+Phase: Milestone v1.2 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-01 — Milestone v1.2 completed and archived
 
 ## Performance Metrics
 
@@ -106,6 +104,14 @@ None yet.
 
 ## Deferred Items
 
+Items acknowledged and deferred at v1.2 milestone close on 2026-07-01:
+
+| Category | Item | Status |
+|----------|------|--------|
+| uat | Phase 11 (11-UAT.md) status stuck at `diagnosed` | Resolved in practice — the reported bug (undo showed card back instead of front) was root-caused to `handleUndo` setting `setRevealed(true)` instead of `false`; fix already committed (`2bdbe67`, pre-dates this close). File status field just never got updated. |
+| verification | Phase 10 (10-VERIFICATION.md) `human_needed` — RSC-01 paint-flash and RSC-05 serialization-error checks | Genuinely unexercised in a browser — all static checks (TS, lint, tests, 7x DTO serialization) pass; no live production-build check was run. Low risk — pattern is identical to Phase 11/12 conversions which did get live checks. |
+| verification | Phase 11 (11-VERIFICATION.md) `human_needed` — first-load flash, filter spinner, grade-button jitter | Resolved in practice — 11-UAT.md ran a live session and passed all 3 equivalent checks (test 1: no blank flash — pass; test 3: filter spinner — pass; test 4: grading feels instant — pass). Verification report just wasn't cross-linked to the UAT results. |
+
 Items acknowledged and deferred at v1.1 milestone close on 2026-06-29:
 
 | Category | Item | Status |
@@ -124,4 +130,4 @@ Resume file: None
 
 ## Operator Next Steps
 
-- `/gsd-complete-milestone v1.2` — archive milestone v1.2 and prepare for the next milestone
+- Start the next milestone with /gsd-new-milestone
