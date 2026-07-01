@@ -47,7 +47,10 @@ export default function HabitTracker({ initialDays, initialToday, initialGoal }:
       return
     }
     fetch('/api/activity')
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`activity ${r.status}`)
+        return r.json()
+      })
       .then((d) => {
         const hour = d.dayStartHour ?? DEFAULT_DAY_START_HOUR
         setToday(habitDateStr(hour))
