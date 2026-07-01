@@ -98,9 +98,58 @@
 
 ---
 
+## Milestone: v1.2 — Performance & Snappiness
+
+**Shipped:** 2026-07-01
+**Phases:** 4 (Phases 9–12) | **Plans:** 9 | **Commits:** 50
+
+### What Was Built
+
+- Three static `loading.tsx` route-segment skeletons (`/cards`, `/study`, `/habits`) using `bg-surface-2 animate-pulse` exclusively — instant feedback on client-side navigation
+- Cards, study, home, and habits pages all converted from `'use client'` mount-effect fetches to async RSC + client-shell + DTO pattern — real data arrives in the initial HTML, no empty-state/blank-loading flash on first paint
+- `/api/cards/due` parallelizes its pool + known-lemmas Prisma queries via `Promise.allSettled`, with graceful per-query degradation on partial failure
+- Optimistic, synchronous `submitReview` — FSRS computed client-side via `reviewCard()`, save is fire-and-forget — eliminates the prior 100–200ms grade-button jitter
+- Shared `lib/dto.ts`, `lib/study-cards.ts`, `lib/dashboard.ts` modules extracted as single sources of truth, reused by both the new RSC pages and the API routes that used to own that logic exclusively
+
+### What Worked
+
+- **Pattern-once, reuse-everywhere:** establishing the RSC + client-shell + DTO pattern in Phase 10 (45min for the pattern-establishing plan) let Phases 11 and 12 move fast — plan durations dropped to single-digit minutes once the pattern existed to copy.
+- **`Promise.allSettled` over the literally-specified `Promise.all`:** the requirement said `Promise.all`, but the executor recognized that a pool-query failure and a known-lemmas-query failure have different correct behaviors (500 vs. graceful empty-Set degradation) and used `allSettled` instead. Correctly judged as an improvement, not a deviation.
+- **Wave parallelization on zero-file-overlap plans:** Phase 11 (11-01 + 11-03) and Phase 12 (12-02 + 12-03) both ran independent plans concurrently with no coordination cost — same pattern that worked in v1.1 Phases 7/8.
+- **Live UAT catching what static verification can't:** Phase 11's UAT session found a real bug (undo showed the card's back face, not front) that no amount of grep/TypeScript/lint checking would have caught — it's a runtime state-transition bug, only observable by actually using the app.
+
+### What Was Inefficient
+
+- **RSC paint-timing and jitter claims are fundamentally unverifiable by static analysis, and only 2 of 4 phases got a live check.** Phases 10 and 11 both scored `human_needed` in VERIFICATION.md because "no blank flash" / "no perceptible jitter" are runtime, human-observable properties — but only Phase 11 (and Phase 12) actually got a live UAT pass to close that gap. Phase 10's RSC-01/RSC-05 claims and Phase 9's entire VERIFICATION.md remained unexercised in a browser through milestone close. Budget a live UAT pass for every phase that makes a paint-timing or interaction-feel claim, not just some of them.
+- **UAT status field left stale after the fix landed.** Phase 11's UAT found and diagnosed the undo bug, and the fix was committed (`2bdbe67`) — but `11-UAT.md`'s `status` frontmatter field was never bumped off `diagnosed`. Milestone close had to manually cross-reference git log against the UAT file to confirm the fix actually shipped.
+- **REQUIREMENTS.md checkboxes left unticked again.** SKEL-01–04 shipped with 4/4 automated checks passing in Phase 9's SUMMARY, but the REQUIREMENTS.md checkboxes stayed `[ ]` until milestone close caught it. This is the same failure mode called out in the v1.0 retrospective (PRES-01..05) — it recurred a full milestone later, meaning the "tick off immediately" lesson didn't stick as a habit.
+
+### Patterns Established
+
+- **RSC page → client shell via prop-initialized `useState`, no initial-load `useEffect`:** the standard shape for every page needing server-hydrated data (`CardsClient`, `StudyClient`, `HomeClient`, `HabitsClient`).
+- **DTO serialization boundary:** every Prisma `DateTime` field is `.toISOString()`'d before crossing the server→client prop boundary; typed as `string` in the DTO interface. No raw `Date` objects ever cross.
+- **Shared `lib/` pipeline modules as single sources of truth:** extract the data-fetching logic once (`getStudyCards`, `getStats`, `getActivityData`) and have both the RSC page and the legacy API route call the same function — avoids logic drift between the two callers.
+- **`Promise.allSettled` + per-query fallback as the standard resilience pattern:** critical-path query failures propagate (500); non-critical ranking/annotation query failures degrade gracefully (empty result) instead of crashing the request.
+
+### Key Lessons
+
+1. When a phase's success criteria include paint-timing or "feels instant" claims, plan for a live UAT/browser pass explicitly in that phase — don't let verification stop at `human_needed` and move on. Two of four phases here didn't get one.
+2. When a UAT run diagnoses and fixes a bug, update the UAT file's `status` field in the same commit as the fix. Treat it like updating a test's expected result — the tracking doc should never lag the code.
+3. This is the second milestone in a row (v1.0, now v1.2) where shipped requirements sat unticked in REQUIREMENTS.md until close. The habit of ticking off checkboxes immediately after a phase's SUMMARY confirms them still hasn't stuck — worth turning into an automated post-SUMMARY step rather than relying on manual discipline.
+4. Investing in the shared pattern early (Phase 10) measurably paid down phase duration in Phases 11–12 — when a milestone's phases are structurally similar (four page conversions to the same target shape), front-load the pattern-establishing work even if it makes the first phase slower.
+
+### Cost Observations
+
+- Model mix: Sonnet (main session model throughout)
+- Sessions: spanning 2026-06-29 to 2026-07-01 (~3 days)
+- Notable: wave parallelization on zero-overlap plans continued to pay off (Phase 11, Phase 12); the pattern-reuse effect was the dominant efficiency factor — plan durations went from 45min (pattern-establishing) to single-digit minutes (pattern-reusing).
+
+---
+
 ## Cross-Milestone Trends
 
 | Milestone | Phases | Plans | Key Pattern | Main Pitfall |
 |-----------|--------|-------|-------------|--------------|
 | v1.0 Foundation-First Study | 2 | 3 | Pure functions + TDD RED→GREEN | Fixture shape mismatch hid a field-shape bug |
 | v1.1 UI/UX Polish | 7 | 12 | Dependency-driven phase order + code-only audit | Scope didn't grep corpus-wide first (NAV-01 straggler) |
+| v1.2 Performance & Snappiness | 4 | 9 | RSC + client-shell + DTO pattern, established once and reused | Paint-timing/jitter claims left unverified in a browser for 2 of 4 phases; REQUIREMENTS.md checkboxes unticked again |
