@@ -31,6 +31,7 @@ export default function HabitTracker({ initialDays, initialToday, initialGoal }:
   const [goal, setGoal] = useState(initialGoal ?? DEFAULT_GOAL_SECONDS)
   const [milestone, setMilestone] = useState<number | null>(null)
   const prevStreakRef = useRef<number | null>(null)
+  const todayInitializedRef = useRef(false)
   const hasFiredHapticRef = useRef(false)
 
   useEffect(() => {
@@ -76,13 +77,27 @@ export default function HabitTracker({ initialDays, initialToday, initialGoal }:
     metSet.has(dayBeforeYesterday)
 
   // Check for newly crossed milestones.
+  // Guard: skip the spurious 0→realStreak transition that fires on the first
+  // render with a valid today (today transitions from '' to a real date string
+  // via HomeClient's heroState effect, causing current to jump from 0 to the
+  // actual streak — which would falsely trigger a milestone celebration).
   useEffect(() => {
+    if (!today) {
+      // today not yet resolved — don't record a baseline streak
+      return
+    }
+    if (!todayInitializedRef.current) {
+      // First render with a real today: seed the baseline without firing milestone
+      todayInitializedRef.current = true
+      prevStreakRef.current = current
+      return
+    }
     if (prevStreakRef.current !== null) {
       const hit = checkMilestone(current, prevStreakRef.current)
       if (hit) setMilestone(hit)
     }
     prevStreakRef.current = current
-  }, [current])
+  }, [current, today])
 
   // Rolling 7-day window ending today (oldest→newest, today rightmost).
   const weekDays = useMemo(() => {
@@ -199,7 +214,7 @@ export default function HabitTracker({ initialDays, initialToday, initialGoal }:
         </p>
 
         {/* 7-day week strip */}
-        {days === null ? (
+        {days === null || today === '' ? (
           <div className="h-10" />
         ) : (
           <div className="flex justify-between">
