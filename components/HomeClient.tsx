@@ -240,9 +240,7 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
       />
 
       {/* ── Proficiency ── */}
-      {typeof stats.masteredCount === 'number' && (
-        <ProficiencyArc masteredCount={stats.masteredCount} />
-      )}
+      <ProficiencyArc masteredCount={stats.masteredCount} />
 
       {/* ── My Korean link ── */}
       <Link
