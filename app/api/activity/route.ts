@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { getDailyGoalSeconds, getDayStartHour } from '@/lib/settings'
+import { getActivityData } from '@/lib/dashboard'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -24,14 +24,9 @@ export async function POST(req: NextRequest) {
 
 // Recent day records + current settings; the client computes streaks/heatmap.
 export async function GET() {
-  const [days, dailyGoalSeconds, dayStartHour] = await Promise.all([
-    prisma.studyDay.findMany({
-      orderBy: { date: 'desc' },
-      take: 400,
-      select: { date: true, seconds: true, reviews: true },
-    }),
-    getDailyGoalSeconds(),
-    getDayStartHour(),
-  ])
-  return NextResponse.json({ days, dailyGoalSeconds, dayStartHour })
+  try {
+    return NextResponse.json(await getActivityData())
+  } catch {
+    return NextResponse.json({ error: 'Database error' }, { status: 500 })
+  }
 }
