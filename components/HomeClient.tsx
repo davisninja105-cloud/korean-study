@@ -57,7 +57,7 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
   // Post-sync refetch: called only from handleSync — NOT on mount (D-08, Pitfall 1).
   const loadStats = useCallback(() => {
     fetch('/api/stats')
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error('stats failed'); return r.json() })
       .then((data: StatsDTO) => {
         if (!isMountedRef.current) return
         setStats(data)
@@ -68,7 +68,7 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
 
   const loadActivity = useCallback(() => {
     fetch('/api/activity')
-      .then((r) => r.json())
+      .then((r) => { if (!r.ok) throw new Error('activity failed'); return r.json() })
       .then((data: ActivityDTO) => {
         if (!isMountedRef.current) return
         setActivityData(data)
