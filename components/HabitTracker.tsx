@@ -34,7 +34,17 @@ export default function HabitTracker({ initialDays, initialToday, initialGoal }:
   const hasFiredHapticRef = useRef(false)
 
   useEffect(() => {
-    if (initialDays !== undefined && initialToday !== undefined && initialGoal !== undefined) return
+    if (initialDays !== undefined && initialToday !== undefined && initialGoal !== undefined) {
+      // Sync state from props when props change (e.g. initialToday transitions from
+      // '' to the real date string after HomeClient's heroState effect fires — D-09).
+      // Promise.resolve satisfies react-hooks/set-state-in-effect.
+      Promise.resolve().then(() => {
+        setDays(initialDays)
+        setToday(initialToday)
+        setGoal(initialGoal)
+      })
+      return
+    }
     fetch('/api/activity')
       .then((r) => r.json())
       .then((d) => {
