@@ -1,5 +1,5 @@
 // lib/dashboard.ts — server-only dashboard data layer
-// No 'use client — this module runs server-side only.
+// No 'use client' — this module runs server-side only.
 // Extracts the stats + activity queries from /api/stats + /api/activity so
 // the RSC pages (app/page.tsx, app/habits/page.tsx) and the GET API routes
 // call one shared, DRY function per D-05.
