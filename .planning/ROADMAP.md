@@ -37,8 +37,8 @@ See `.planning/milestones/v1.1-ROADMAP.md` for full phase details.
 
 - [x] **Phase 9: Skeleton Loading Screens** - Instant skeleton feedback on every main-route navigation (pure additive, zero risk) (completed 2026-06-29)
 - [x] **Phase 10: Cards Hydration + API Parallelization** - Cards page hydrated from the server (establishes the RSC + DTO pattern) and `/api/cards/due` queries run concurrently (completed 2026-06-30)
-- [ ] **Phase 11: Study Page Hydration & Interaction Polish** - Study page arrives at mode-select instantly; in-session flip/grade/audio feel immediate with no jitter
-- [ ] **Phase 12: Home & Habits Hydration** - Dashboard stats, activity, and heatmap arrive with the server render — no empty-state flash
+- [x] **Phase 11: Study Page Hydration & Interaction Polish** - Study page arrives at mode-select instantly; in-session flip/grade/audio feel immediate with no jitter (completed 2026-06-30)
+- [x] **Phase 12: Home & Habits Hydration** - Dashboard stats, activity, and heatmap arrive with the server render — no empty-state flash (completed 2026-07-01)
 
 ## Phase Details
 
@@ -96,7 +96,18 @@ Plans:
   3. During an active session, flipping a card, tapping a grade button, and pressing the audio button respond immediately with no visible jitter or re-fetch
   4. The session-complete screen and the "study ahead" flow continue to work end-to-end
 
-**Plans**: TBD
+**Plans**: 3/3 plans complete
+
+Plans:
+**Wave 1**
+
+- [x] 11-01-PLAN.md — Extract lib/dto.ts (shared DTO types) + lib/study-cards.ts (shared due-card pipeline); migrate cards-page imports (RSC-02)
+- [x] 11-03-PLAN.md — Optimistic grade: synchronous submitReview with client-side FSRS + fire-and-forget save (UX-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [x] 11-02-PLAN.md — Convert study page to RSC + StudyClient shell (select-mode-first, filter spinner); simplify /api/cards/due to delegate (RSC-02)
+
 **UI hint**: yes
 
 ### Phase 12: Home & Habits Hydration
@@ -112,7 +123,19 @@ Plans:
   4. The CEFR band-up confetti/banner still fires client-side when the user levels up
   5. No `Date` object is passed raw across the server→client boundary for either page (DTO types used throughout)
 
-**Plans**: TBD
+**Plans**: 3/3 plans complete
+
+Plans:
+
+**Wave 1**
+
+- [x] 12-01-PLAN.md — Extract lib/dashboard.ts (getStats + getActivityData) + add StatsDTO/ActivityDTO to lib/dto.ts + delegate /api/stats + /api/activity GET routes (D-05, D-06, D-08; foundation for Wave 2)
+
+**Wave 2** *(blocked on Wave 1 completion — both depend on 12-01; 12-02 and 12-03 have zero file overlap and run in parallel)*
+
+- [x] 12-02-PLAN.md — Convert home page to RSC + HomeClient shell + HabitTracker D-09 initialActivity props (RSC-03)
+- [x] 12-03-PLAN.md — Convert habits page to RSC + HabitsClient shell with one-tick HabitsLoading swap (RSC-04)
+
 **UI hint**: yes
 
 ## Progress
@@ -130,5 +153,5 @@ Plans:
 | 8.1. Close gap: NAV-01 --sab extension | v1.1 | 1/1 | Complete | 2026-06-29 |
 | 9. Skeleton Loading Screens | v1.2 | 1/1 | Complete   | 2026-06-29 |
 | 10. Cards Hydration + API Parallelization | v1.2 | 2/2 | Complete   | 2026-06-30 |
-| 11. Study Page Hydration & Interaction Polish | v1.2 | 0/? | Not started | - |
-| 12. Home & Habits Hydration | v1.2 | 0/? | Not started | - |
+| 11. Study Page Hydration & Interaction Polish | v1.2 | 3/3 | Complete   | 2026-06-30 |
+| 12. Home & Habits Hydration | v1.2 | 3/3 | Complete    | 2026-07-01 |

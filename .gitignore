@@ -47,4 +47,5 @@ next-env.d.ts
 
 /app/generated/prisma
 
-.planning/
+# GSD planning tool research cache (ephemeral, not meaningful history)
+.planning/**/.cache/
