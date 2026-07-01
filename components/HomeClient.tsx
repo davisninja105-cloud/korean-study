@@ -40,7 +40,7 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
   // band-up) AND inside loadStats after a pull-to-refresh refetch.
   const checkBandUp = useCallback((masteredCount: number) => {
     const { band } = computeProficiency(masteredCount)
-    const stored = typeof window !== 'undefined' ? localStorage.getItem('lastBand') : null
+    const stored = localStorage.getItem('lastBand')
     if (stored && stored !== band) {
       setBandUpMsg(bandUpMessage(band, masteredCount))
       // Confetti on band-up (lazy import, same pattern as MilestoneCelebration)
@@ -49,9 +49,7 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
         m.default({ particleCount: 80, spread: 60, origin: { y: 0.4 } })
       }).catch(() => {})
     }
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('lastBand', band)
-    }
+    localStorage.setItem('lastBand', band)
   }, [])
 
   // Post-sync refetch: called only from handleSync — NOT on mount (D-08, Pitfall 1).
