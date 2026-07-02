@@ -9,9 +9,9 @@ Requirements for milestone v1.3 "Reliability & Hardening". Sourced from the `.pl
 
 ### Review (API correctness & save reliability)
 
-- [ ] **REVIEW-01**: `/api/review` wraps its Prisma calls in `try/catch` and returns a proper error response on DB failure
-- [ ] **REVIEW-02**: `/api/review` rejects ratings outside `[1,2,3,4]` with a 400 instead of passing garbage to `reviewCard()`
-- [ ] **REVIEW-03**: Editing a card's front to a value that collides (post-normalization) with another card's front returns a clear 400 message instead of an uncaught 500
+- [x] **REVIEW-01**: `/api/review` wraps its Prisma calls in `try/catch` and returns a proper error response on DB failure
+- [x] **REVIEW-02**: `/api/review` rejects ratings outside `[1,2,3,4]` with a 400 instead of passing garbage to `reviewCard()`
+- [x] **REVIEW-03**: Editing a card's front to a value that collides (post-normalization) with another card's front returns a clear 400 message instead of an uncaught 500
 - [ ] **REVIEW-04**: Background `POST /api/review` retries silently on failure; a toast appears only if retries are exhausted
 - [ ] **REVIEW-05**: Undo restores queue/session state atomically so an interrupted undo can't leave partial state
 
@@ -53,9 +53,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| REVIEW-01 | Phase 13 | Pending |
-| REVIEW-02 | Phase 13 | Pending |
-| REVIEW-03 | Phase 13 | Pending |
+| REVIEW-01 | Phase 13 | Complete |
+| REVIEW-02 | Phase 13 | Complete |
+| REVIEW-03 | Phase 13 | Complete |
 | REVIEW-04 | Phase 13 | Pending |
 | REVIEW-05 | Phase 13 | Pending |
 | SYNC-01 | Phase 14 | Pending |
@@ -66,11 +66,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REFACTOR-02 | Phase 15 | Pending |
 
 **Coverage:**
+
 - v1 requirements: 11 total
 - Mapped to phases: 11 ✓
 - Unmapped: 0
 
 **By phase:**
+
 - Phase 13 — Review API Hardening & Save Reliability: REVIEW-01, REVIEW-02, REVIEW-03, REVIEW-04, REVIEW-05 (5)
 - Phase 14 — Sync Failure Visibility & Caching Performance: SYNC-01, PERF-01, PERF-02 (3)
 - Phase 15 — StudySession Refactor & Sentence-Selection Memoization: REFACTOR-02, PERF-03, REFACTOR-01 (3)

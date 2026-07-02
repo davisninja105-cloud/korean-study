@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Reliability & Hardening
 current_phase: 13
-current_phase_name: Review API Hardening & Save Reliability
+current_phase_name: review-api-hardening-save-reliability
 status: executing
-stopped_at: v1.3 roadmap created — Phase 13 ready to plan
-last_updated: "2026-07-02T05:20:54.259Z"
+stopped_at: Completed 13-01-PLAN.md (review API hardening)
+last_updated: "2026-07-02T05:34:28.565Z"
 last_activity: 2026-07-02
-last_activity_desc: v1.3 roadmap created (3 phases, 11/11 requirements mapped)
+last_activity_desc: Phase 13 execution started
 progress:
   total_phases: 3
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 2
+  completed_plans: 1
   percent: 0
 ---
 
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** v1.3 Reliability & Hardening — Phase 13 (Review API Hardening & Save Reliability), ready to plan
+**Current focus:** Phase 13 — review-api-hardening-save-reliability
 
 ## Current Position
 
-Phase: 13 of 15 (Review API Hardening & Save Reliability)
-Plan: — (roadmap created; no plans yet)
+Phase: 13 (review-api-hardening-save-reliability) — EXECUTING
+Plan: 2 of 2
 Status: Ready to execute
-Last activity: 2026-07-02 — v1.3 roadmap created (3 phases, 11/11 requirements mapped)
+Last activity: 2026-07-02 — Phase 13 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 13 P01 | 5 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -70,6 +71,10 @@ Recent decisions affecting current work:
 - Behavior-changing StudySession work (REVIEW-04 retry, REVIEW-05 undo atomicity) lands in Phase 13; Phase 15 restructures the same file only after behavior is locked.
 - Within Phase 15: extract the pure sentence-selection module (REFACTOR-02) + memoize it (PERF-03) BEFORE splitting into mode sub-components (REFACTOR-01) — avoids restructuring the selection logic twice.
 - Deferred (out of scope): rate limiting, time-bound auth tokens, API/UI test coverage, card retirement, review-log table, background sync, model fallback — see REQUIREMENTS.md Out of Scope.
+- [Phase ?]: Plan 13-01: rating range guard placed before try block (pure validation, zero DB/FSRS work for invalid rating); 404 kept inside try since findUnique can throw — Plan prose said 404 outside try, but binding acceptance_criteria + must_have truths require findUnique inside catch so DB hiccups are caught (REVIEW-01)
+- [Phase 13]: Plan 13-01: /api/review 500 returns generic 'Failed to record review' (raw error console.error'd server-side only) per threat T-13-02; cards route 500 left echoing e.message since REVIEW-03 scopes only the collision branch — Avoid internal-schema disclosure on review route; changing cards 500 behavior would be scope creep beyond REVIEW-03
+- [Phase 13]: Plan 13-01: used Prisma P2002 catch (not a pre-update normalizedFront findUnique) for the card-front collision 400 — Matches the codebase's existing catch-based error-handling idiom and avoids an extra query per edit
+- [Phase 13]: Plan 13-01: app/api/review/undo/route.ts left untouched despite same missing-try/catch shape — Out of scope for REVIEW-01..05 per the plan; deferred to a future phase
 
 ### Pending Todos
 
@@ -95,8 +100,8 @@ Carried forward from v1.2 close (2026-07-01) — informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-02
-Stopped at: v1.3 roadmap created — Phase 13 ready to plan
+Last session: 2026-07-02T05:34:28.559Z
+Stopped at: Completed 13-01-PLAN.md (review API hardening)
 Resume file: None
 
 ## Operator Next Steps

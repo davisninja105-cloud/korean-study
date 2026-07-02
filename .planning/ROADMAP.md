@@ -57,40 +57,50 @@ See `.planning/milestones/v1.2-ROADMAP.md` for full phase details.
 ## Phase Details
 
 ### Phase 13: Review API Hardening & Save Reliability
+
 **Goal**: Recording a review and editing a card never fail silently or corrupt session state — every failure path returns a clear response, and the client recovers gracefully instead of losing data.
 **Depends on**: v1.2 (shipped baseline); first phase of the milestone
 **Requirements**: REVIEW-01, REVIEW-02, REVIEW-03, REVIEW-04, REVIEW-05
 **Success Criteria** (what must be TRUE):
+
   1. A database error during a review returns a structured error response instead of throwing an unhandled 500 (`/api/review` is wrapped in `try/catch` like the other routes).
   2. Posting a rating outside `[1,2,3,4]` (e.g. `0` or `99`) is rejected with a 400 and never reaches `reviewCard()`.
   3. Editing a card's front to a value that normalizes to another card's front shows a clear "this front already exists" message (400), not a generic uncaught server error.
   4. When the background `POST /api/review` save fails, it retries silently; a toast appears only after all retries are exhausted.
   5. After undoing a review, the previous card reappears with the queue, seen-card set, and session stats all restored consistently — an interrupted undo never leaves partially-restored state.
-**Plans**: 2 plans
-- [ ] 13-01-PLAN.md — Harden /api/review (try/catch + rating validation) and friendly card-front collision 400 (REVIEW-01, REVIEW-02, REVIEW-03)
+
+**Plans**: 1/2 plans executed
+
+- [x] 13-01-PLAN.md — Harden /api/review (try/catch + rating validation) and friendly card-front collision 400 (REVIEW-01, REVIEW-02, REVIEW-03)
 - [ ] 13-02-PLAN.md — Silent bounded retry + toast on review-save failure, atomic undo restoration (REVIEW-04, REVIEW-05)
 
 ### Phase 14: Sync Failure Visibility & Caching Performance
+
 **Goal**: Sync problems are diagnosable at a glance, and the data layer stops repeating expensive per-lesson and per-session lookups.
 **Depends on**: Phase 13 (milestone sequencing; no hard code dependency — Phase 14 touches sync/gloss files that Phase 13 does not)
 **Requirements**: SYNC-01, PERF-01, PERF-02
 **Success Criteria** (what must be TRUE):
+
   1. When one or more lessons fail to extract during sync, the SyncPanel names the specific failed lesson(s), not just a generic "remaining" count.
   2. A multi-lesson sync resolves `CardDependency` lemmas from a `normalizedFront → cardId` map built once per request; the full-deck lookup no longer runs per lesson (verifiable via query count / logs).
   3. On a fresh page load, previously-glossed words resolve instantly from a cache preloaded from the DB `Setting` table on mount — no LLM round-trip for words already looked up.
+
 **Plans**: TBD
 
 ### Phase 15: StudySession Refactor & Sentence-Selection Memoization
+
 **Goal**: `StudySession.tsx` is decomposed into focused, independently-testable pieces and stops recomputing sentence selection on every render — with study behavior preserved exactly.
 **Depends on**: Phase 13 (shares `components/StudySession.tsx` — behavioral fixes for `submitReview`/undo land first, so this structural refactor preserves already-verified behavior rather than reworking it)
 **Requirements**: REFACTOR-02, PERF-03, REFACTOR-01
 **Sequencing note**: Extract the pure sentence-selection module (REFACTOR-02) and memoize it (PERF-03) first/together, THEN split the three modes into sub-components (REFACTOR-01) — this avoids restructuring the selection logic twice.
 **Success Criteria** (what must be TRUE):
+
   1. Sentence-selection logic lives in a pure module with its own unit tests, importable and testable without rendering `StudySession`.
   2. Sentence selection is memoized — it recomputes only when its inputs change (e.g. `[cardSentences, reps]`), not on every render.
   3. `StudySession` renders each study mode through a dedicated `FlashcardMode` / `MultipleChoiceMode` / `FillBlankMode` sub-component.
   4. A live study session behaves identically to before — flip, grade, undo, Exposure/Recall toggle, and mode switching all work with no regression.
   5. `npm run lint` stays clean (`react-hooks/purity` respected — no impure calls in render) and `npm test` passes, including the new sentence-selection tests.
+
 **Plans**: TBD
 
 ## Progress
@@ -113,6 +123,6 @@ Phases execute in numeric order: 13 → 14 → 15
 | 10. Cards Hydration + API Parallelization | v1.2 | 2/2 | Complete | 2026-06-30 |
 | 11. Study Page Hydration & Interaction Polish | v1.2 | 3/3 | Complete | 2026-06-30 |
 | 12. Home & Habits Hydration | v1.2 | 3/3 | Complete | 2026-07-01 |
-| 13. Review API Hardening & Save Reliability | v1.3 | 0/2 | Not started | - |
+| 13. Review API Hardening & Save Reliability | v1.3 | 1/2 | In Progress|  |
 | 14. Sync Failure Visibility & Caching Performance | v1.3 | 0/TBD | Not started | - |
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 0/TBD | Not started | - |
