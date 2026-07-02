@@ -105,8 +105,12 @@ See `.planning/milestones/v1.2-ROADMAP.md` for full phase details.
   5. `npm run lint` stays clean (`react-hooks/purity` respected — no impure calls in render) and `npm test` passes, including the new sentence-selection tests.
 
 **Plans**: 2 plans
+**Wave 1**
 
 - [ ] 15-01-PLAN.md — Extract sentence-selection into pure, tested `lib/sentence-selection.ts` + memoize it in StudySession; single-source `hashStr` (REFACTOR-02, PERF-03)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 15-02-PLAN.md — Split StudySession into `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` sub-components + live UAT (REFACTOR-01)
 
 ## Progress
