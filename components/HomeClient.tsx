@@ -233,10 +233,14 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
       <StatsBar totalCards={stats.totalCards} totalLessons={stats.totalLessons} level={level} />
 
       {/* ── Habit ring ── */}
+      {/* Pass the activityData *state* (not the initialActivity prop) so that
+          after a pull-to-refresh, loadActivity()'s fresh snapshot propagates
+          into HabitTracker — matching how stats already flows to StatsBar,
+          ProficiencyArc, and the hero section. T-12-08 contract. */}
       <HabitTracker
-        initialDays={initialActivity.days}
+        initialDays={activityData.days}
         initialToday={today}
-        initialGoal={initialActivity.dailyGoalSeconds}
+        initialGoal={activityData.dailyGoalSeconds}
       />
 
       {/* ── Proficiency ── */}
