@@ -18,6 +18,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'cardId and rating required' }, { status: 400 })
   }
 
+  // WR-05: validate cardId is a non-empty string, matching the sibling
+  // /api/review/undo route's input contract (`!cardId || typeof cardId !== 'string'`).
+  // Without this a non-string cardId either yields a misleading 404 (empty
+  // string) or throws inside findUnique (caught by the generic 500 below,
+  // but unnecessarily).
+  if (typeof cardId !== 'string' || cardId === '') {
+    return NextResponse.json({ error: 'cardId must be a non-empty string' }, { status: 400 })
+  }
+
   // REVIEW-02: reject any rating outside the valid FSRS grades {1,2,3,4}
   // before any DB read or FSRS computation, so reviewCard() is never reached
   // with an invalid rating (prevents undefined FSRS behavior / throws).
