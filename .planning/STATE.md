@@ -5,16 +5,16 @@ milestone_name: Reliability & Hardening
 current_phase: 14
 current_phase_name: sync-failure-visibility-caching-performance
 status: executing
-stopped_at: Phase 14 plan 01 complete (SYNC-01, PERF-01); plan 02 (PERF-02) next
-last_updated: "2026-07-02T18:42:31.855Z"
+stopped_at: Phase 14 complete (2/2 plans: SYNC-01, PERF-01, PERF-02); ready for Phase 15 planning
+last_updated: "2026-07-02T19:05:18.380Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 14 plan 01 complete
+last_activity_desc: Phase 14 complete (2/2 plans)
 progress:
   total_phases: 3
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
-  percent: 75
+  completed_plans: 4
+  percent: 67
 ---
 
 # Project State
@@ -24,31 +24,31 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 14 — sync-failure-visibility-caching-performance
+**Current focus:** Phase 14 complete — Phase 15 (StudySession refactor) next
 
 ## Current Position
 
-Phase: 14 (sync-failure-visibility-caching-performance) — EXECUTING
-Plan: 2 of 2
-Status: Plan 14-01 complete; plan 14-02 next
-Last activity: 2026-07-02 — Phase 14 plan 01 complete
+Phase: 14 (sync-failure-visibility-caching-performance) — COMPLETE (2/2 plans)
+Plan: 2 of 2 (complete)
+Status: Phase 14 complete; ready for end-of-phase UAT then Phase 15 planning
+Last activity: 2026-07-02 — Phase 14 plan 02 complete (PERF-02); phase 14 complete
 
-Progress: [████████░░] 75% (milestone: 1 of 3 phases complete; 3 of 4 plans)
+Progress: [██████░░░░] 67% (milestone: 2 of 3 phases complete; 4 of 4 planned plans — Phase 15 plans TBD)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed (v1.3): 3
-- Average duration: ~7.7 min
-- Total execution time: ~0.4 hours (v1.3)
+- Total plans completed (v1.3): 4
+- Average duration: ~7.5 min
+- Total execution time: ~0.5 hours (v1.3)
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 13 | 2/2 | ~15 min | ~7.5 min |
-| 14 | 1/2 | ~8 min | ~8 min |
+| 14 | 2/2 | ~15 min | ~7.5 min |
 | 15 | TBD | - | - |
 
 **Recent Trend:**
@@ -63,6 +63,7 @@ Progress: [████████░░] 75% (milestone: 1 of 3 phases complet
 | Phase 13 P01 | 5 min | 2 | 2 |
 | Phase 13 P02 | ~10 min | 3 | 2 |
 | Phase 14 P01 | ~8 min | 2 | 1 |
+| Phase 14 P02 | ~7 min | 3 | 3 |
 
 ## Accumulated Context
 
@@ -88,6 +89,10 @@ Recent decisions affecting current work:
 - [Phase 14]: Plan 14-01: linkTargets declared in the per-lesson try block (resets each lesson) and in scope for both the Promise.all callback (push) and the post-await linking loop (iterate); keyToId fully populated by link time so forward references within a lesson resolve (PERF-01)
 - [Phase 14]: Plan 14-01: lessonExcerpt returns the user's OWN Google Doc content (first non-empty line) — intentionally surfaced back to the sole authenticated owner (T-14-02 accepted); raw msg/dbMsg confined to server-side console.error/console.warn only (T-14-01 mitigated), mirroring Phase 13 T-13-02 (SYNC-01)
 - [Phase 14]: Plan 14-01: Response shape (failed/failures/remaining/newLessons/newCards) left unchanged so components/SyncPanel.tsx renders the new excerpt strings with zero client-side edit (SYNC-01)
+- [Phase 14]: Plan 14-02: Gloss preload keyed by `normalizeFront(raw)` on the client to match the server DB key `gloss:<normalizeFront(word)>` — the load-bearing alignment that makes a preloaded entry a HIT on the next tap; `raw` (display + POST body) kept separate so server resolution is unchanged (PERF-02)
+- [Phase 14]: Plan 14-02: Mount preload effect writes to `cache.current` (a ref) ONLY — no setState in the effect body — so it is `react-hooks/set-state-in-effect` safe; React StrictMode double-invoke is harmless (idempotent `Map.set`); rendering is never gated on preload resolving (PERF-02)
+- [Phase 14]: Plan 14-02: Preload endpoint bounded + gloss-scoped — fixed server-side `take: GLOSS_PRELOAD_LIMIT` (300), no client-controllable limit param (T-14-04); `where: { key: { startsWith: 'gloss:' } }` so app-config settings are never read/serialized (T-14-05); degrades to `{ entries: [] }` on error, never a 500 (PERF-02)
+- [Phase 14]: Plan 14-02: Per-row `JSON.parse` in try/catch (skip + console.warn malformed, mirroring getCachedGloss) — a corrupt cache row never crashes the preload (T-14-06); no new npm deps, no schema changes (T-14-SC accepted)
 
 ### Pending Todos
 
@@ -98,7 +103,7 @@ None yet.
 - [Phase 13 → resolved] Phases 13 & 15 both touched `components/StudySession.tsx` — Phase 13 shipped first, so Phase 15's refactor must preserve the `postReviewWithRetry` wiring, `isMountedRef` mount-guard, `saveError`/`<Toast>` plumbing, and atomic `handleUndo` restoration.
 - Phase 15 is a behavior-preserving refactor — needs a live study-session UAT (flip/grade/undo/mode-switch) to confirm no regression; lint (`react-hooks/purity`) must stay clean.
 - [Phase 14 → resolved] PERF-01 & SYNC-01 both edited `app/api/sync/route.ts` — landed together in plan 14-01 with no conflict (PERF-01 hoisted the map; SYNC-01 added the excerpt helper + rewrote failure strings; both tasks committed atomically).
-- [Phase 14 pending UAT] Optional end-of-phase UAT: a live sync against the tutor's Google Doc with a deliberately-failing/zero-card lesson would confirm the SyncPanel shows the excerpt (not `Lesson 1`, no raw error) and that CardDependency edges still form for a normal lesson.
+- [Phase 14 UAT] PERF-02 was live-verified at the plan level (Task 3 checkpoint, operator "approved": preloaded cache HIT post-reload, new-word fallback intact, no console errors). Optional remaining end-of-phase UAT: a live sync against the tutor's Google Doc with a deliberately-failing/zero-card lesson would confirm the SyncPanel shows the excerpt (not `Lesson 1`, no raw error) and that CardDependency edges still form for a normal lesson (SYNC-01/PERF-01).
 - [Phase 13 deferred] `app/api/review/undo/route.ts` has the same missing-try/catch shape as the hardened `/api/review` route but was out of scope for REVIEW-01..05 — left for a future hardening pass.
 
 ### Roadmap Evolution
@@ -116,10 +121,10 @@ Carried forward from v1.2 close (2026-07-01) — informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-02T18:41:28.280Z
-Stopped at: Phase 14 plan 01 complete (SYNC-01, PERF-01); plan 14-02 (PERF-02) next
+Last session: 2026-07-02T19:04:50.120Z
+Stopped at: Phase 14 complete (2/2 plans: SYNC-01, PERF-01, PERF-02); ready for Phase 15 planning
 Resume file: None
 
 ## Operator Next Steps
 
-- Phase 14 plan 01 complete (2/2 tasks; SYNC-01 + PERF-01 satisfied, build+lint clean, both committed). Next: execute plan 14-02 (PERF-02 — preload tap-to-gloss cache from the DB `Setting` table on mount in `components/GlossProvider.tsx`/`lib/gloss.ts`). Optional end-of-phase UAT for the sync-route changes can run after 14-02 or at phase close.
+- Phase 14 complete (2/2 plans; SYNC-01 + PERF-01 + PERF-02 satisfied, build+lint clean, all committed). PERF-02 was live-verified at the plan level (Task 3 checkpoint, operator "approved"). Next: plan Phase 15 (StudySession refactor & sentence-selection memoization — REFACTOR-02, PERF-03, REFACTOR-01). Optional end-of-phase UAT for the SYNC-01/PERF-01 sync-route changes (live sync against the tutor's Google Doc) can run at phase close before starting Phase 15.

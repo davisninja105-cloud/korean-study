@@ -51,7 +51,7 @@ See `.planning/milestones/v1.2-ROADMAP.md` for full phase details.
 **Milestone Goal:** Fix the most pressing correctness/reliability findings from the `.planning/codebase/CONCERNS.md` audit, plus targeted performance and maintainability cleanup. No new user-facing features — every phase makes an existing behavior more robust, more diagnosable, or more maintainable.
 
 - [x] **Phase 13: Review API Hardening & Save Reliability** - try/catch + rating validation in `/api/review`, friendly front-collision error, silent review-save retry, atomic undo (completed 2026-07-02)
-- [ ] **Phase 14: Sync Failure Visibility & Caching Performance** - name failed lessons in the SyncPanel, cache the `normalizedFront → cardId` map during sync, preload the gloss cache from the DB
+- [x] **Phase 14: Sync Failure Visibility & Caching Performance** - name failed lessons in the SyncPanel, cache the `normalizedFront → cardId` map during sync, preload the gloss cache from the DB (completed 2026-07-02)
 - [ ] **Phase 15: StudySession Refactor & Sentence-Selection Memoization** - extract sentence-selection into a pure, tested module + memoize it, then split into mode sub-components
 
 ## Phase Details
@@ -85,10 +85,10 @@ See `.planning/milestones/v1.2-ROADMAP.md` for full phase details.
   2. A multi-lesson sync resolves `CardDependency` lemmas from a `normalizedFront → cardId` map built once per request; the full-deck lookup no longer runs per lesson (verifiable via query count / logs).
   3. On a fresh page load, previously-glossed words resolve instantly from a cache preloaded from the DB `Setting` table on mount — no LLM round-trip for words already looked up.
 
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans complete
 
 - [x] 14-01-PLAN.md — Name the specific failed lesson in the SyncPanel (content excerpt + sanitized errors) and build the sync `normalizedFront → cardId` map once per request (SYNC-01, PERF-01)
-- [ ] 14-02-PLAN.md — Preload the tap-to-gloss cache from the DB `Setting` table on mount, keyed to match the server (PERF-02)
+- [x] 14-02-PLAN.md — Preload the tap-to-gloss cache from the DB `Setting` table on mount, keyed to match the server (PERF-02)
 
 ### Phase 15: StudySession Refactor & Sentence-Selection Memoization
 
@@ -127,5 +127,5 @@ Phases execute in numeric order: 13 → 14 → 15
 | 11. Study Page Hydration & Interaction Polish | v1.2 | 3/3 | Complete | 2026-06-30 |
 | 12. Home & Habits Hydration | v1.2 | 3/3 | Complete | 2026-07-01 |
 | 13. Review API Hardening & Save Reliability | v1.3 | 2/2 | Complete    | 2026-07-02 |
-| 14. Sync Failure Visibility & Caching Performance | v1.3 | 1/2 | In Progress|  |
+| 14. Sync Failure Visibility & Caching Performance | v1.3 | 2/2 | Complete   | 2026-07-02 |
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 0/TBD | Not started | - |

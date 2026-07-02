@@ -22,7 +22,7 @@ Requirements for milestone v1.3 "Reliability & Hardening". Sourced from the `.pl
 ### Performance
 
 - [x] **PERF-01**: Sync resolves `CardDependency` lemmas via a cached `normalizedFront → cardId` map instead of re-querying the full deck per lesson
-- [ ] **PERF-02**: Tap-to-gloss cache preloads recent entries from the DB `Setting` table on mount
+- [x] **PERF-02**: Tap-to-gloss cache preloads recent entries from the DB `Setting` table on mount
 - [ ] **PERF-03**: `StudySession`'s sentence-selection calculation is memoized instead of recomputing every render
 
 ### Refactor
@@ -60,7 +60,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REVIEW-05 | Phase 13 | Complete |
 | SYNC-01 | Phase 14 | Complete |
 | PERF-01 | Phase 14 | Complete |
-| PERF-02 | Phase 14 | Pending |
+| PERF-02 | Phase 14 | Complete |
 | PERF-03 | Phase 15 | Pending |
 | REFACTOR-01 | Phase 15 | Pending |
 | REFACTOR-02 | Phase 15 | Pending |
