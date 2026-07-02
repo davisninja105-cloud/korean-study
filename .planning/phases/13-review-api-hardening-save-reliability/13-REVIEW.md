@@ -1,6 +1,6 @@
 ---
 phase: 13-review-api-hardening-save-reliability
-reviewed: 2026-07-02T06:11:41Z
+reviewed: 2026-07-02T18:00:00Z
 depth: standard
 files_reviewed: 4
 files_reviewed_list:
@@ -9,208 +9,134 @@ files_reviewed_list:
   - components/StudySession.tsx
   - components/Toast.tsx
 findings:
-  critical: 0
-  warning: 5
-  info: 3
-  total: 8
+  critical: 1
+  warning: 2
+  info: 1
+  total: 4
 status: issues_found
 ---
 
 # Phase 13: Code Review Report
 
-**Reviewed:** 2026-07-02T06:11:41Z
+**Reviewed:** 2026-07-02T18:00:00Z
 **Depth:** standard
 **Files Reviewed:** 4
 **Status:** issues_found
 
 ## Summary
 
-The five REVIEW requirements (rating validation, structured 500 on Prisma failure, P2002→400 collision, bounded retry + toast-on-exhaustion, atomic undo) are implemented and satisfy the letter of the plans. The P2002 catch is correctly scoped (verified against `prisma/schema.prisma`: `Card.normalizedFront` is the only `@unique` reachable from the PUT handler, so the friendly message is never misattributed to a different constraint), the rating guard provably precedes the `reviewCard()` call, and the atomic-undo mount guard is sound.
+This is a re-review of the same four files after the prior review's 8 findings (`WR-01`–`WR-05`, `IN-01`–`IN-03`, tracked in `13-REVIEW-FIX.md`) were fixed. All 8 fixes were spot-checked against the current source and are correctly applied: `req.json()` in `/api/review` is now inside a `try`/`catch` (400 on malformed JSON); `PUT /api/cards/[id]`'s generic catch no longer leaks `e.message` and now guards against a `null`/non-object body; the card update and sentence replacement are now a single `$transaction`; `postReviewWithRetry` has an 8s `AbortController` timeout and short-circuits retries on 4xx; `/api/review` validates `cardId` is a non-empty string and uses an `isGrade` type guard instead of an `as Grade` cast; `handleUndo`'s failure path is now mount-guarded to match the success path; `Toast`'s auto-dismiss effect now depends on `message` as well as `duration`. No regressions were found in any of these eight areas.
 
-However, the hardening is **incomplete in three places where the *spirit* of the phase ("no unhandled throws", "no raw error leaks", "save reliability") is violated**, plus two smaller robustness gaps in the new client retry wrapper. None are data-loss-or-security BLOCKERs (the app is single-tenant and the framework still returns *a* 500), but they are real defects in files this phase touched and should be fixed before the phase is considered truly "hardened." No BLOCKER-tier issues found.
+However, this pass surfaces new issues the prior review's narrower scope did not catch — most notably a genuine correctness bug in the undo/save-reliability path this phase is centered on: **grading an AI-practice card after a real card leaves the client's "Undo" pointing at the wrong (already-passed) real card, and pressing it silently reverts that real card's FSRS state on the server.** There is also a sibling gap to the already-fixed `PUT` info-disclosure issue: the `DELETE` handler in the same file still leaks raw `e.message` to the client, unaddressed by the prior fix pass because it was out of that review's original scope.
 
-Cross-file facts verified against source:
-- `lib/fsrs.ts:5` re-exports `Grade` from `ts-fsrs` as `Exclude<Rating, Rating.Manual>` = `1|2|3|4` — the `rating >= 1 && rating <= 4` guard matches the type exactly.
-- `prisma/schema.prisma`: `Card.normalizedFront` (`@unique`, line 30) is the only unique constraint reachable from the PUT try-block; `Sentence` has none, `CardReview.cardId` is not touched by PUT. P2002 in the PUT catch is therefore always a front collision — the message is accurate.
-- `app/api/review/undo/route.ts` (out of scope, not modified) validates `typeof cardId !== 'string'` — the review route under-review does NOT, an inconsistency flagged below.
+## Critical Issues
+
+### CR-01: Undo can silently revert the wrong card's FSRS state once a practice card has been graded after a real card
+
+**File:** `components/StudySession.tsx:491-549`
+**Issue:** `undoRef.current` and `setCanUndo(true)` are set only inside the `if (current.kind === 'real')` branch of `submitReview`:
+```ts
+if (current.kind === 'real') {
+  ...
+  undoRef.current = { cardId, prevState, prevQueue: queue, prevStats, prevSeenCount, prevSeenCardIds }
+  setCanUndo(true)
+  void postReviewWithRetry(cardId, rating, () => { ... })
+}
+```
+Nothing resets `canUndo` / `undoRef` when the graded item is `kind: 'practice'`. Because the session queue is always built as `[...real, ...extraPractice]` (line 186-188), AI practice cards are appended after every real card, so "grade the last real card, then grade one or more practice cards, then tap Undo" is the ordinary end-of-session flow, not a contrived edge case.
+
+When this happens: `canUndo` is still `true` (never reset) and the visible "↩ Undo last rating" button still references `undoRef.current` from the **last real card**, with a `prevQueue` snapshot captured *before* that real card — i.e. before any of the intervening practice cards were graded. Tapping Undo then:
+1. `POST /api/review/undo` with the real card's `cardId` and its pre-grade `prevState` — reverting that card's FSRS scheduling state on the server, even though the user's actual last action was grading an (ephemeral, never-persisted) practice card.
+2. Restores the client queue/stats/seen-set to the snapshot from before the real card was graded, silently discarding every practice card graded in between and re-inserting the real card into the queue for re-grading.
+
+The button is labeled "Undo last rating" but reverts a rating that isn't the last one taken, and does so by actually mutating persisted spaced-repetition data the user did not ask to change. This is exactly the class of correctness bug the "save reliability" theme of this phase is meant to close.
+**Fix:** Clear the undo pointer whenever a non-real item is graded, so Undo cannot fire against a stale real card:
+```ts
+if (current.kind === 'real') {
+  ...
+  undoRef.current = { cardId, prevState, prevQueue: queue, prevStats, prevSeenCount, prevSeenCardIds }
+  setCanUndo(true)
+  void postReviewWithRetry(cardId, rating, () => { ... })
+} else {
+  // Practice cards have no server-side FSRS state to revert; grading one
+  // invalidates any pending undo so it can never act on a stale real card.
+  undoRef.current = null
+  setCanUndo(false)
+}
+```
 
 ## Warnings
 
-### WR-01: `await req.json()` is outside the try/catch — malformed JSON throws unhandled, bypassing REVIEW-01's structured 500
+### WR-01: `DELETE /api/cards/[id]` still leaks raw internal error messages to the client
 
-**File:** `app/api/review/route.ts:6`
-**Issue:** The hardening try-block opens at line 30, but `const { cardId, rating } = await req.json()` at line 6 runs *before* it. If the request body is malformed JSON (truncated by a flaky mobile connection, a buggy caller, or an attacker probing the endpoint), `req.json()` rejects and the POST handler throws an unhandled error. Next.js then returns a framework-level 500 — not the structured `{ error: 'Failed to record review' }` JSON the client (`postReviewWithRetry`) expects. This is exactly the class of failure REVIEW-01 / threat T-13-04 was meant to eliminate ("failures now return a controlled response"). The sibling PUT handler at `app/api/cards/[id]/route.ts:12-14` correctly places `await req.json()` *inside* its try — the two hardened routes are inconsistent.
-
-The 13-01 plan explicitly scoped the try to "the three lines that can throw — findUnique, reviewCard, update," so this is a plan-level oversight faithfully implemented, not a deviation. But the result is a hardening gap: a non-Prisma throw escapes the structured handler.
-
-**Fix:**
+**File:** `app/api/cards/[id]/route.ts:90-93`
+**Issue:** The previous review's `WR-02` fixed exactly this class of info disclosure in the `PUT` handler of this same file (raw `e.message` → generic message, per the `WR-02` comment at line 74-76), but `DELETE` was never in that finding's scope and still does it:
 ```ts
-export async function POST(req: NextRequest) {
-  let cardId: unknown, rating: unknown
-  try {
-    const body = await req.json()
-    ;({ cardId, rating } = body ?? {})
-  } catch {
-    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
-  }
-  if (cardId === undefined || rating === undefined) { ... }
-  ...
+} catch (e) {
+  const message = e instanceof Error ? e.message : 'Delete failed'
+  return NextResponse.json({ error: message }, { status: 500 })
 }
 ```
-(Move the parse inside a try, or fold the whole handler body into the existing try.)
-
-### WR-02: PUT `/api/cards/[id]` 500 leaks raw `e.message` to the client (info disclosure, inconsistent with /api/review)
-
-**File:** `app/api/cards/[id]/route.ts:66-67`
-**Issue:** The generic 500 branch returns `e.message` verbatim:
-```ts
-const message = e instanceof Error ? e.message : 'Unknown error'
-return NextResponse.json({ error: message }, { status: 500 })
-```
-This can surface internal details — e.g. a Prisma connection error (which may include the libSQL/Turso endpoint), or a `TypeError: Cannot read properties of null (reading 'type')` when `data` is `null` (the body is never validated to be an object — `data.type !== undefined` at line 20 throws on `null`). The /api/review route was deliberately hardened the other way (T-13-02: `console.error` server-side, return generic `'Failed to record review'`), making the two write routes inconsistent in their disclosure posture. The 13-01 plan explicitly deferred this as "scope creep beyond REVIEW-03," but it remains a real info-disclosure defect in a route this phase hardened, and the `data === null` path makes it reachable with a trivially-crafted body.
-
+Deleting a non-existent id (e.g. a stale client reference, or a double-tap of the swipe-to-delete gesture in `SwipeRow`) throws Prisma's `P2025`, whose message includes internal model/operation detail; any other DB-layer failure (e.g. a transient Turso connectivity error) would similarly surface internal detail straight to the response body — the same disclosure posture the sibling handler in this file was deliberately hardened against.
 **Fix:**
 ```ts
 } catch (e) {
-  if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-    return NextResponse.json(
-      { error: 'This front already exists (as a different variant of another card)' },
-      { status: 400 },
-    )
-  }
-  console.error('PUT /api/cards/[id] failed:', e)
-  return NextResponse.json({ error: 'Failed to update card' }, { status: 500 })
+  console.error('DELETE /api/cards/[id] failed:', e)
+  return NextResponse.json({ error: 'Failed to delete card' }, { status: 500 })
 }
 ```
-Also guard `data` against `null`/non-object before the spread at line 20.
+Consider mapping Prisma `P2025` to a `404` rather than a generic `500`, matching the not-found semantics already used by `/api/review` (`Card review not found`).
 
-### WR-03: `prisma.card.update` and the sentence-replacement `$transaction` are not atomic — partial state on mid-flow failure
+### WR-02: `PUT /api/cards/[id]` still performs no runtime validation of individual field types/shapes
 
-**File:** `app/api/cards/[id]/route.ts:17-46`
-**Issue:** The PUT performs two separate DB operations: `prisma.card.update` (line 17) commits the new `front`/`normalizedFront`, then `prisma.$transaction([deleteMany, ...creates])` (line 42) replaces sentences. These are not wrapped in a common transaction. If the card update succeeds but the sentence transaction fails (DB hiccup, libSQL error), the card is left with the **new front but stale sentences** — a silent data-inconsistency that the 500 response does not signal. A client retry then re-sends the same payload, which may or may not repair it. The inline comment at line 30 only claims the *sentence* replacement is atomic ("array-form transaction — safe with libSQL adapter") — the card-vs-sentences atomicity gap is unaddressed.
-
-Pre-existing (Phase 13 only added the P2002 catch, did not touch this flow), but it is a data-consistency defect in a reviewed file and sits squarely in the phase's "save reliability" theme.
-
-**Fix:** Wrap both the card update and the sentence operations in a single `$transaction`:
-```ts
-await prisma.$transaction([
-  prisma.card.update({ where: { id }, data: { ... } }),
-  ...(Array.isArray(data.sentences)
-    ? [prisma.sentence.deleteMany({ where: { cardId: id } }),
-       ...sentenceData.map((s) => prisma.sentence.create({ data: s }))]
-    : []),
-])
-```
-(The libSQL adapter supports array-form transactions per the existing comment.)
-
-### WR-04: `postReviewWithRetry` retries non-transient failures (4xx) and has no per-attempt timeout — misleading toast + a failure mode where the toast *never* appears
-
-**File:** `components/StudySession.tsx:110-132`
-**Issue:** Two coupled robustness gaps in the new retry wrapper:
-
-1. **Retries non-transient responses.** An attempt counts as failed whenever `!res.ok`, so a `400` (invalid rating — shouldn't happen from the local caller but is reachable) and a `404` (review record deleted between card-load and grade — a real race if sync/reorg runs mid-session) are retried with 500ms+1500ms backoff, then surface the toast *"Couldn't save your last review — check your connection."* The message is misleading (the connection is fine) and the 2s of pointless retries delays it.
-
-2. **No fetch timeout / AbortController.** If the server accepts the TCP connection but never responds (hung libSQL, paused serverless instance), `await fetch(...)` never resolves *and* never rejects. The `for` loop never advances to the next attempt, so `onExhausted` is **never called** and the toast never appears. This directly defeats REVIEW-04's guarantee ("a toast appears only after every review-save retry is exhausted") under a realistic mobile/flaky-network condition — the user gets neither the save nor the failure signal.
-
+**File:** `app/api/cards/[id]/route.ts:15-33, 36-51`
+**Issue:** The prior fix pass added a top-level `data === null || typeof data !== 'object'` guard, but nothing validates the *individual* fields once that guard passes:
+- `data.front`/`data.back`/`data.notes` are spread into the Prisma update with no `typeof === 'string'` check. A non-string `data.front` reaches `normalizeFront(data.front)`, which calls `.normalize()`/`.trim()` on it and throws — caught only by the outer generic catch, surfacing as a 500 instead of a clear 400.
+- `data.front === ''` passes the `!== undefined` guard and is persisted; `normalizeFront('')` is `''`, so two cards independently edited to an empty front will collide on `Card.normalizedFront @unique`, producing the confusing "This front already exists" message rather than a clear "front cannot be empty".
+- `data.type` is written verbatim with no check that it is one of `vocabulary` / `grammar` / `phrase`, even though the rest of the app treats `type` as a closed enum (`lib/card-style.ts:typeBadgeClass`, the extraction prompt).
+- `data.sentences` is cast (`as { korean: string; targetForm: string; translation: string }[]`) with no runtime check of element shape; a malformed element (e.g. `null` in the array) throws inside the `.map`, again only caught by the outer generic catch.
 **Fix:**
 ```ts
-async function postReviewWithRetry(cardId: string, rating: number, onExhausted: () => void) {
-  const backoffMs = [500, 1500]
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const ctrl = new AbortController()
-      const t = setTimeout(() => ctrl.abort(), 8000)
-      const res = await fetch(REVIEW_ENDPOINT, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cardId, rating }),
-        signal: ctrl.signal,
-      })
-      clearTimeout(t)
-      if (res.ok) return
-      // 4xx is permanent — don't retry; go straight to exhausted.
-      if (res.status >= 400 && res.status < 500) break
-    } catch { /* fetch rejected or aborted — counts as a failed attempt */ }
-    if (attempt < 2) {
-      await new Promise<void>((resolve) => setTimeout(resolve, backoffMs[attempt]))
-    }
-  }
-  onExhausted()
+if (data.front !== undefined && (typeof data.front !== 'string' || data.front.trim() === '')) {
+  return NextResponse.json({ error: 'front must be a non-empty string' }, { status: 400 })
 }
-```
-
-### WR-05: `/api/review` does not validate `cardId` is a string (input-validation inconsistency with the sibling undo route)
-
-**File:** `app/api/review/route.ts:7`
-**Issue:** The guard is `cardId === undefined || rating === undefined`. A non-string `cardId` (`null`, `123`, `{}`, `""`) passes the guard; `""` then yields a misleading 404 (no card with empty id), and a number/object throws inside `findUnique` (caught by the generic 500, but unnecessarily). The sibling `app/api/review/undo/route.ts:8` (same subsystem, same payload shape) validates `!cardId || typeof cardId !== 'string'` — the two review routes are inconsistent in their input contract, and the hardened route is the weaker of the two.
-
-**Fix:**
-```ts
-if (cardId === undefined || rating === undefined) {
-  return NextResponse.json({ error: 'cardId and rating required' }, { status: 400 })
+if (data.type !== undefined && !['vocabulary', 'grammar', 'phrase'].includes(data.type)) {
+  return NextResponse.json({ error: 'type must be vocabulary, grammar, or phrase' }, { status: 400 })
 }
-if (typeof cardId !== 'string' || cardId === '') {
-  return NextResponse.json({ error: 'cardId must be a non-empty string' }, { status: 400 })
+if (data.sentences !== undefined && (!Array.isArray(data.sentences) || data.sentences.some((s: unknown) => typeof s !== 'object' || s === null))) {
+  return NextResponse.json({ error: 'sentences must be an array of objects' }, { status: 400 })
 }
 ```
 
 ## Info
 
-### IN-01: `rating as Grade` is an unchecked type assertion
+### IN-01: `postReviewWithRetry`'s per-attempt timeout timer is not cleared when `fetch` rejects outright
 
-**File:** `app/api/review/route.ts:36`
-**Issue:** `reviewCard(cardReview, rating as Grade)` uses an `as` cast. It is safe *today* because the guard at lines 14-24 proves `rating ∈ {1,2,3,4}` and `Grade = Exclude<Rating, Rating.Manual>` is exactly `1|2|3|4` (verified in `node_modules/ts-fsrs/dist/index.d.ts:17`). But TypeScript cannot model `Number.isInteger` + range checks, so the cast — not a narrowing predicate — is what bridges the gap. If a future edit relaxes the guard, the cast silently keeps compiling and masks the regression. Prefer a type guard so the compiler enforces the relationship.
-
+**File:** `components/StudySession.tsx:124-146`
+**Issue:** The `WR-04` fix added the `AbortController` timeout, but `clearTimeout(timeoutId)` only runs on the line immediately after a successful `await fetch(...)`:
+```ts
+const timeoutId = setTimeout(() => ctrl.abort(), 8000)
+const res = await fetch(REVIEW_ENDPOINT, { ... signal: ctrl.signal })
+clearTimeout(timeoutId)   // skipped if fetch() rejects for a non-abort reason
+```
+If `fetch` rejects for a reason other than the 8s abort firing (e.g. an immediate `TypeError: Failed to fetch` while offline), control jumps straight to `catch` and `timeoutId` is never cleared. The stale timer fires ~8s later and calls `ctrl.abort()` on a controller whose fetch has already settled — a no-op, so there is no functional impact — but it's an avoidable dangling-timer code smell.
 **Fix:**
 ```ts
-function isGrade(n: unknown): n is Grade {
-  return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 4
-}
-if (!isGrade(rating)) {
-  return NextResponse.json({ error: 'rating must be one of 1, 2, 3, 4' }, { status: 400 })
-}
-// then: reviewCard(cardReview, rating)  // no cast needed
-```
-
-### IN-02: `handleUndo` failure path is not mount-guarded, inconsistent with the success path
-
-**File:** `components/StudySession.tsx:580-586`
-**Issue:** The success-path restoration is guarded by `if (!isMountedRef.current) return` (line 596) — the whole point of REVIEW-05. But the failure path immediately above it writes `undoRef.current = {...}` and calls `setCanUndo(true)` *without* the same guard:
-```ts
+const ctrl = new AbortController()
+const timeoutId = setTimeout(() => ctrl.abort(), 8000)
+try {
+  const res = await fetch(REVIEW_ENDPOINT, { ... signal: ctrl.signal })
+  if (res.ok) return
+  if (res.status >= 400 && res.status < 500) break
 } catch {
-  undoRef.current = { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds }
-  setCanUndo(true)
-  return
+  // ...
+} finally {
+  clearTimeout(timeoutId)
 }
 ```
-In React 18 this is harmless (setState on an unmounted component is a silent no-op; the ref write is unreachable once unmounted). But it is inconsistent with the atomic-guard pattern established two lines below it in the same function, and a reader cannot tell from the code whether the omission is intentional or an oversight. Either guard it for symmetry or add a comment explaining why the failure path needs no guard.
-
-**Fix:** Wrap for symmetry, or comment:
-```ts
-} catch {
-  if (!isMountedRef.current) return  // session ended mid-undo; no UI to re-arm
-  undoRef.current = { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds }
-  setCanUndo(true)
-  return
-}
-```
-
-### IN-03: Toast auto-dismiss timer does not reset when `message` changes (latent, not triggered by current callers)
-
-**File:** `components/Toast.tsx:34-37`
-**Issue:** The timer effect depends only on `[duration]`:
-```ts
-useEffect(() => {
-  const timer = setTimeout(() => dismissRef.current(), duration)
-  return () => clearTimeout(timer)
-}, [duration])
-```
-The `dismissRef`-held-callback design (so the timer survives parent re-renders) is correct and well-reasoned. But because `message` is not a dep, if the same Toast instance ever received a *new* message while mounted, the dismiss timer would keep ticking from the original mount — a new error would auto-dismiss based on the *old* remaining time. The current sole caller (`StudySession.tsx:666-671`) always passes the same string literal or unmounts the Toast (via `saveError → null`), so this does not manifest today. It is a footgun for any future reuse of the component with varying messages.
-
-**Fix:** Add `message` to the timer effect deps (the `dismissRef` indirection still prevents resetting on unrelated parent re-renders — only a genuine message change resets), or key the Toast by message at the call site (`<Toast key={saveError} ... />`).
 
 ---
 
-_Reviewed: 2026-07-02T06:11:41Z_
-_Reviewer: the agent (gsd-code-reviewer)_
+_Reviewed: 2026-07-02T18:00:00Z_
+_Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
