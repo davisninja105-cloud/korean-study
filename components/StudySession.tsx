@@ -546,6 +546,11 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           setSaveError("Couldn't save your last review — check your connection.")
         }
       })
+    } else {
+      // Practice cards have no server-side FSRS state to revert; grading one
+      // invalidates any pending undo so it can never act on a stale real card.
+      undoRef.current = null
+      setCanUndo(false)
     }
 
     const rest = queue.slice(1)
