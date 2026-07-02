@@ -163,7 +163,7 @@ export async function POST(req: NextRequest) {
 
             if (!existing) {
               // CREATE: new card — attach to this lesson.
-              const created = await prisma.card.create({
+              const newCard = await prisma.card.create({
                 data: {
                   type: card.type,
                   front: card.front,
@@ -185,8 +185,8 @@ export async function POST(req: NextRequest) {
                 },
               })
               if (card.components.length > 0) {
-                keyToId.set(nf, created.id)
-                linkTargets.push({ id: created.id, components: card.components })
+                keyToId.set(nf, newCard.id)
+                linkTargets.push({ id: newCard.id, components: card.components })
               }
               createdThisLesson++
             } else {
