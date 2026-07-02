@@ -31,10 +31,16 @@ export default function Toast({ message, onDismiss, duration = 4000 }: Props) {
     dismissRef.current = onDismiss
   }, [onDismiss])
 
+  // IN-03: `message` is included so the auto-dismiss timer restarts if the
+  // same Toast instance is ever reused with a new message while mounted
+  // (the current sole caller always unmounts/remounts via `saveError → null`,
+  // so this is a footgun-prevention fix, not an observed bug). The
+  // `dismissRef` indirection still means unrelated parent re-renders (which
+  // don't change `duration`/`message`) do not reset the timer.
   useEffect(() => {
     const timer = setTimeout(() => dismissRef.current(), duration)
     return () => clearTimeout(timer)
-  }, [duration])
+  }, [duration, message])
 
   return (
     <div
