@@ -96,7 +96,7 @@ Recent decisions affecting current work:
 
 ### Pending Todos
 
-None yet.
+- `2026-07-02-fix-spurious-components-in-card-extraction.md` — Claude extraction lists spurious `components` (e.g. `~(으)ㄴ 후에` on a `~ㄹ 것 같다` sentence), creating wrong CardDependency edges. Area: general. Files: `lib/extract-cards.ts:110-117`, `app/api/sync/route.ts:240-264`.
 
 ### Blockers/Concerns
 
