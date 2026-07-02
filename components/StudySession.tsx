@@ -7,6 +7,7 @@ import HighlightedSentence from './HighlightedSentence'
 import { useWordTap } from './GlossProvider'
 import AudioButton from './AudioButton'
 import { sentenceMatch, blankSentence } from '@/lib/sentence-match'
+import { selectSentence, hashStr } from '@/lib/sentence-selection'
 import { previewIntervalLabels, reviewCard, type Grade } from '@/lib/fsrs'
 import { haptic } from '@/lib/haptics'
 import { typeBadgeClass } from '@/lib/card-style'
@@ -78,19 +79,6 @@ function seededShuffle<T>(arr: T[], seed: number): T[] {
     ;[a[i], a[j]] = [a[j], a[i]]
   }
   return a
-}
-
-// Pure FNV-1a hash for a string → unsigned 32-bit int.
-// Used to pick a per-card sentence index that varies across sessions as reps
-// grow: (hashStr(card.id) + reps) % sentences.length.
-// No Math.random() / Date.now() — purity-safe.
-function hashStr(s: string): number {
-  let h = 2166136261
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i)
-    h = Math.imul(h, 16777619)
-  }
-  return (h >>> 0) || 1
 }
 
 // Background review-save endpoint (REVIEW-04). Kept as a module constant so the
@@ -357,9 +345,35 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     containerRef.current?.focus({ preventScroll: true })
   }, [cursor])
 
+  // ── Sentence selection (memoized, REFACTOR-02 + PERF-03) ─────────────────
+  // Derived BEFORE the empty-queue early return so the chosenIdx useMemo (a
+  // hook) is always called in the same order on every render (rules-of-hooks).
+  // When the queue is empty, realCard is null / cardSentences is [] and the memo
+  // returns -1 instantly — the early return discards it. RESEARCH Anti-Patterns:
+  // the `?? []` fallback makes a fresh [] each render when realCard is null; the
+  // memo does no work-saving on that path but stays correct. Expected — do not
+  // "fix" it.
+  const item = queue[0]
+  const realCard = item?.kind === 'real' ? item.card : null
+  const cardSentences = realCard?.sentences ?? []
+  // Whether the current mode needs a blank-safe sentence to function correctly.
+  // Exposure flashcard rotates freely; Recall and fill-blank require safeToBlank.
+  const needsBlank =
+    mode === 'fill-blank' ||
+    (mode === 'flashcard' && flashcardSubMode === 'recall')
+  // Least-unknown sentence selection — see lib/sentence-selection.ts (REFACTOR-02).
+  // Step 1: minimum unknownCount tier. Step 2: collect candidate indices at that tier.
+  // Step 3: hash-tie-break rotation by reps. Step 4: blank-safety override.
+  // Memoized (PERF-03): recomputes only when [cardSentences, realCard?.id,
+  // realCard?.review?.reps, needsBlank] change — not on every unrelated re-render
+  // (typing in fill-blank input, MC selection, exampleOffset cycling).
+  const chosenIdx = useMemo(
+    () => selectSentence(cardSentences, realCard?.id ?? '', realCard?.review?.reps ?? 0, needsBlank),
+    [cardSentences, realCard?.id, realCard?.review?.reps, needsBlank]
+  )
+
   if (queue.length === 0) return null
 
-  const item = queue[0]
   const currentCard = item.card
   const isPractice = item.kind === 'practice'
 
@@ -375,49 +389,9 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     ? Math.max(0, (initialCount - remainingDistinct) / initialCount * 100)
     : 0
 
-  // ── Sentence logic ───────────────────────────────────────────────────────
-  // All sentence logic is pure (hashStr, sentenceMatch, blankSentence have no side effects).
-  const realCard = item.kind === 'real' ? item.card : null
-  const cardSentences = realCard?.sentences ?? []
-
   // Bare-word-first gate: computed after chosenSentence (needs unknownCount).
   // isNewCard = never reviewed or still in Learning (state 0 or 1).
   const isNewCard = !realCard?.review || (realCard.review.state ?? 0) <= 1
-
-  // Whether the current mode needs a blank-safe sentence to function correctly.
-  // Exposure flashcard rotates freely; Recall and fill-blank require safeToBlank.
-  const needsBlank =
-    mode === 'fill-blank' ||
-    (mode === 'flashcard' && flashcardSubMode === 'recall')
-
-  // Least-unknown sentence selection — replaces bare rotation.
-  // Step 1: find the minimum unknownCount tier among all sentences.
-  // Step 2: collect candidate indices at that tier.
-  // Step 3: pick within the tier by the existing hashStr rotation (variety once words are known).
-  // Step 4: when a blank is needed, override with the first blank-safe index.
-  // Pure — Math.min/Array.map/Array.filter are all pure; no Date.now() or Math.random().
-  const chosenIdx = (() => {
-    if (cardSentences.length === 0) return -1
-    const reps = realCard!.review?.reps ?? 0
-
-    // Least-unknown tier pick (Exposure and non-blank modes).
-    const minUnknown = Math.min(...cardSentences.map((s) => s.unknownCount ?? Infinity))
-    const candidates = cardSentences
-      .map((_, i) => i)
-      .filter((i) => (cardSentences[i].unknownCount ?? Infinity) === minUnknown)
-    const tierIdx = candidates[(hashStr(realCard!.id) + reps) % candidates.length]
-
-    if (!needsBlank) return tierIdx
-
-    // Blank-safe override: if the tier pick is unsafe, find first safe sentence.
-    if (sentenceMatch(cardSentences[tierIdx].korean, cardSentences[tierIdx].targetForm).safeToBlank) {
-      return tierIdx
-    }
-    const safeIdx = cardSentences.findIndex(
-      (s) => sentenceMatch(s.korean, s.targetForm).safeToBlank
-    )
-    return safeIdx >= 0 ? safeIdx : tierIdx  // graceful degrade: no safe sentence
-  })()
 
   // chosenSentence = selected for this review; used for fill-blank answer / Recall front
   const chosenSentence = chosenIdx >= 0 ? cardSentences[chosenIdx] : null
