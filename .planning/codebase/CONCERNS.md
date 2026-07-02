@@ -1,161 +1,222 @@
-# CONCERNS
-_Last updated: 2026-07-01 (v1.2 Performance & Snappiness) — re-verified against current source_
+# Codebase Concerns
 
-## Summary
+**Analysis Date:** 2026-07-02
 
-The Korean Study app is a single-user personal tool with a single shared-password auth model. All the concerns previously flagged as "High Priority" are confirmed resolved as of this pass: `middleware.ts` is present and active (no `proxy.ts` in the repo), input length limits exist on all three LLM-backed routes, the deprecated cloze-column fallback code is gone from `app/` and `components/` (the v1.2 RSC rewrite of `app/study/page.tsx` removed it along with everything else that used to live there), the `Setting.ts` deprecated re-export is gone, and the auth cookie is `sameSite: 'strict'`. The 58-test Vitest suite (see `.planning/codebase/TESTING.md`) covers the pure `lib/` modules. Remaining open concerns are the Vercel 60 s Hobby-plan timeout (infra constraint, no code fix), the unbounded gloss cache, and the growing `StudySession.tsx` monolith — now 964 lines after v1.2 added the optimistic-grading logic on top.
+## Tech Debt
+
+### StudySession.tsx Component Size
+- **Issue:** Single component file is 964 lines; owns three study modes (flashcard, multiple-choice, fill-blank), sentence selection, FSRS integration, activity tracking, undo logic, and UI rendering.
+- **Files:** `components/StudySession.tsx`
+- **Impact:** Difficult to test in isolation, high cognitive load during maintenance, risk of side-effect bugs when adding features.
+- **Fix approach:** Break into smaller sub-components: `<FlashcardMode>`, `<MultipleChoiceMode>`, `<FillBlankMode>`. Extract sentence logic into a pure hook/module. Move activity tracking to custom hook.
+
+### Optimistic Review Submission (Fire-and-Forget Save)
+- **Issue:** `submitReview()` in `StudySession.tsx` updates client state immediately, then fires a background `POST /api/review` that is not awaited (`.catch(() => {})`). If the save fails silently, the client and server become out of sync.
+- **Files:** `components/StudySession.tsx` (line ~474-478), `app/api/review/route.ts`
+- **Impact:** User loses the review if network fails or server is down. Undo won't work correctly if the background save already partially succeeded. No user feedback on failure.
+- **Fix approach:** Show a subtle "saving…" indicator. If `/api/review` fails, either queue for retry or roll back the optimistic state and notify the user. At minimum, log the error and surface it in a toast.
+
+### Missing Error Handling in `/api/review` Route
+- **Issue:** No `try/catch` wrapper around Prisma queries; any database error will throw an unhandled 500.
+- **Files:** `app/api/review/route.ts`
+- **Impact:** Inconsistent with other API routes (activity, cards, etc. all have error handling). Silent failures if the route crashes.
+- **Fix approach:** Add `try/catch` around the Prisma calls with a proper error response.
+
+### No Validation of Review Rating
+- **Issue:** Review route does not validate that `rating` is in the range 1–4 (the valid FSRS grades).
+- **Files:** `app/api/review/route.ts`
+- **Impact:** Sending an invalid rating (e.g., `rating: 99`) will be passed to `reviewCard()`, potentially causing undefined FSRS behavior or a throw.
+- **Fix approach:** Validate `rating in [1, 2, 3, 4]` before calling `reviewCard()`.
+
+## Known Bugs
+
+### Blank-Safety Guarantee Not Enforced
+- **Symptoms:** If Claude's extraction prompt fails to meet the blank-safety guarantee (first sentence for every card must have targetForm 2+ chars, exactly once), fill-blank and Recall modes will either fail silently or show un-highlighted text.
+- **Files:** `lib/extract-cards.ts` (prompt), `components/StudySession.tsx` (sentence selection)
+- **Trigger:** Lessons where the tutor's sentence examples don't meet the safety criteria (e.g., single-char particles, ambiguous matches).
+- **Workaround:** Manual card edit to add a blank-safe sentence. The prompt is exhaustive but not infallible.
+
+### Card Front Normalization Race Condition
+- **Symptoms:** If a user edits a card's `front` to a value that normalizes to an existing card's `normalizedFront`, the update will fail with a unique constraint violation (uncaught).
+- **Files:** `app/api/cards/[id]/route.ts` (line 20-22), `lib/card-key.ts`
+- **Trigger:** Edit card A's front to match (after normalization) an existing card B's front.
+- **Workaround:** The UI doesn't prevent this; user sees a generic server error.
+- **Fix approach:** Check for `normalizedFront` collision before update. Return a 400 with a user-friendly message like "This front already exists (as a different variant of another card)."
+
+### Undo State Restoration Incomplete
+- **Symptoms:** If `POST /api/review/undo` succeeds but the client-side state restoration is interrupted (e.g., component unmounts), some state (queue, seenCardIds, stats) may be left partially restored.
+- **Files:** `components/StudySession.tsx` (line 511-540)
+- **Impact:** Session stats or queue order could be inconsistent. Unlikely in normal use but possible if user navigates away during undo.
+- **Fix approach:** Batch the state updates into a single `setState` callback or use a reducer to make it atomic.
+
+## Security Considerations
+
+### HMAC Auth Token Recomputation on Every Request
+- **Risk:** `middleware.ts` computes `computeAuthToken()` for every request. If `AUTH_SECRET` is ever compromised, an attacker can forge valid cookies.
+- **Files:** `middleware.ts`, `lib/auth.ts`
+- **Current mitigation:** `AUTH_SECRET` is a single shared password; token is deterministic (no nonce or timestamp).
+- **Recommendation:** Consider adding a timestamp or request ID to the HMAC so tokens are time-bound (e.g., valid for 1 hour). This is low-priority for a personal app.
+
+### No Rate Limiting on `/api/sync`
+- **Risk:** A malicious actor with the password could spam `/api/sync` calls to exhaust Vercel quota or Google Docs API quota.
+- **Files:** `app/api/sync/route.ts`
+- **Current mitigation:** Single-tenant app with a shared password; Vercel Hobby plan function timeout caps the damage.
+- **Recommendation:** Add a basic rate limit (e.g., one sync per 5 minutes) or check the last sync time in Settings.
+
+### Google Service Account Key in `.env.local`
+- **Risk:** If `.env.local` is ever committed or exposed, the service account's identity is leaked.
+- **Files:** `.env.local` (not committed, but exists locally)
+- **Current mitigation:** `.gitignore` protects the file; GCP scopes limit what the key can do.
+- **Recommendation:** Already in place; no action needed unless the key is rotated.
+
+### TTS Blob Token Exposure
+- **Risk:** `KOREAN_BLOB_READ_WRITE_TOKEN` (Vercel Blob) is used to cache audio. If leaked, an attacker can read/write arbitrary blobs.
+- **Files:** `app/api/tts/route.ts`, `.env.local`
+- **Current mitigation:** Token is only used server-side; blob access is set to `public` so the URLs themselves are already public.
+- **Recommendation:** Use a read-only token if Vercel Blob supports it. Rotate the token annually.
+
+## Performance Bottlenecks
+
+### Sync Extraction Per-Lesson (1 lesson per request)
+- **Problem:** Each `/api/sync` processes only 1 lesson to stay under Vercel's 60-second timeout. A 20-lesson backlog requires 20 sync taps, each taking 60–120s.
+- **Files:** `app/api/sync/route.ts` (line 18), `lib/extract-cards.ts`
+- **Cause:** Claude Opus + exhaustive extraction is slow; the prompt is large (32k tokens max); adaptive thinking adds latency.
+- **Improvement path:** Consider batching 2–3 lessons per request if extraction time can be reduced. Cache the existing normalized fronts so the hint list is smaller for subsequent lessons. Use a background job queue (e.g., Vercel Cron, Bull) instead of per-request processing.
+
+### CardDependency Query (Full Deck Lookup on Every Sync)
+- **Problem:** After each lesson extraction, the sync route queries all cards with components (line 193–196 in sync route) and builds a full `Map` to resolve dependencies. On a 500+ card deck, this is expensive per lesson.
+- **Files:** `app/api/sync/route.ts` (line 187–231)
+- **Cause:** Two-phase linking needs the full deck to resolve forward references.
+- **Improvement path:** Cache the `normalizedFront → cardId` map during the sync request, or build it incrementally per-lesson.
+
+### GlossProvider In-Memory Cache Not Persistent
+- **Problem:** Gloss lookups are cached in a `useRef<Map>` which is cleared on page reload or navigation. Popular words are re-fetched from the LLM every session.
+- **Files:** `components/GlossProvider.tsx`, `lib/gloss.ts`
+- **Cause:** Session-scoped memory cache; database cache (`Setting` table) is only written asynchronously.
+- **Improvement path:** Pre-populate the cache from the database on mount. Use `localStorage` for a user-local persistent cache (separate from Settings which is for app config).
+
+### Sentence Selection Loop (Per-Card, Every Review)
+- **Problem:** `chosenIdx` calculation in `StudySession.tsx` (line 326–347) iterates through all sentences to find unknownCount tiers. On a card with 3 sentences, this is fine; but the logic runs during render.
+- **Files:** `components/StudySession.tsx` (line 326–347)
+- **Cause:** Pure computation is good, but could be memoized.
+- **Improvement path:** Memoize the calculation with `useMemo` keyed by `[cardSentences, realCard?.review?.reps]`.
+
+## Fragile Areas
+
+### Card Editor Sentence Editing
+- **Files:** `components/CardEditor.tsx`, `app/api/cards/[id]/route.ts`
+- **Why fragile:** Sentence updates use an atomic transaction `prisma.$transaction([deleteMany, …create])`, but if the API response is lost after the update succeeds, the client won't know the new state. Also, no client-side validation that targetForm actually appears in korean.
+- **Safe modification:** Before persisting, validate every sentence with `sentenceMatch()` to ensure targetForm is found and warn if not blank-safe.
+- **Test coverage:** No tests for sentence CRUD operations.
+
+### Google Docs API Tab Discovery
+- **Files:** `lib/google-docs.ts` (line 124–141)
+- **Why fragile:** Recursive tab search assumes all nested tabs are accessible; if a tab is locked or deleted, the function throws with no fallback. Also, the tab title match is exact-string (`.trim() ===`), so a tab with a trailing space won't match.
+- **Safe modification:** Add tolerance for leading/trailing whitespace normalization. Catch tab-not-found and return a more helpful error listing available tabs.
+- **Test coverage:** No tests for the Google Docs integration.
+
+### Activity Logging Race Condition
+- **Files:** `components/StudySession.tsx` (activity flush), `app/api/activity/route.ts`
+- **Why fragile:** Multiple `POST /api/activity` calls from rapid session changes could race; the `upsert` with `increment` should be atomic, but concurrent increments could lose data if Prisma batches incorrectly.
+- **Safe modification:** Ensure the database lock/transaction is held across the read-modify-write cycle. Verify with libSQL adapter.
+
+### GlossProvider Portal Mount
+- **Files:** `components/GlossProvider.tsx` (createPortal call)
+- **Why fragile:** The popover portal mounts to `document.body`, but there's no guarantee `document.body` exists or won't be removed during the component lifecycle.
+- **Safe modification:** Move the portal to a stable ref or guard against missing DOM.
+
+## Scaling Limits
+
+### Sentence Count Per Card
+- **Current capacity:** 1–3 sentences per card (hardcoded max in `lib/extract-cards.ts`).
+- **Limit:** If a card has 4+ potential example sentences, only the first 3 are stored. The learner can't see additional contexts.
+- **Scaling path:** Increase the slice limit to 5–10 and let the UI paginate. Update the sentence rotation logic to handle more.
+
+### Card Distractors Fallback
+- **Current capacity:** 3 distractors per card. If fewer than 3 are generated, the system scrapes other cards' answers (line 250–257 in `StudySession.tsx`).
+- **Limit:** On a small deck (<20 cards), fallback distractors may repeat or be irrelevant.
+- **Scaling path:** As the deck grows, distractor quality improves. Pre-compute and cache distractors at sync time for all cards, not just extracted ones.
+
+### Dependency Graph Depth
+- **Current capacity:** No explicit limit. The sequence algorithm applies `depth − urgencyBoost` where depth is the longest in-session prereq chain.
+- **Limit:** A deep dependency chain (e.g., 10+ levels) could cause a lesson to be permanently blocked if a root prerequisite is due.
+- **Scaling path:** Cap the depth boost or implement a timeout on the prerequisite expansion in `selectSessionCards()`.
+
+## Dependencies at Risk
+
+### Claude API Model Pinning
+- **Risk:** The app uses `claude-opus-4-8` for extraction (line 51 in `lib/extract-cards.ts`). If Anthropic deprecates this model, syncs will break.
+- **Impact:** Extraction will fail; no new cards can be created.
+- **Migration plan:** Add a fallback model (e.g., `claude-3-5-sonnet`) as a config option. Test the prompt with the fallback before Opus is sunset.
+
+### Google Docs API v1
+- **Risk:** Google deprecates APIs; v1 could be sunset.
+- **Impact:** Sync will fail to fetch the document.
+- **Migration plan:** Keep an eye on Google's API roadmap. The Docs API is mature and unlikely to be removed soon, but plan a migration to v2 if it becomes available.
+
+### Vercel Blob Public Access
+- **Risk:** If Vercel Blob changes its public access model, TTS audio URLs could become private.
+- **Impact:** `AudioButton` won't load cached audio.
+- **Migration plan:** Store MP3s in a dedicated S3 bucket with explicit public ACLs, or embed audio as data URIs for small files.
+
+## Missing Critical Features
+
+### No Explicit Sync Failure Reporting
+- **Problem:** If a lesson fails to extract, the UI shows a generic "remaining" count but doesn't highlight which lessons failed. The user has to retry all remaining lessons to find out which one is problematic.
+- **Blocks:** Debugging stalled syncs; knowing if the tutor's doc is malformed.
+- **Fix:** Persist failed lesson indices or excerpts in the response and display them in the SyncPanel.
+
+### No Background Sync / Scheduled Sync
+- **Problem:** All syncs are triggered by user taps. If the user forgets to sync for a week, the content is stale.
+- **Blocks:** Keeping the deck fresh without manual intervention.
+- **Fix:** Add a Vercel Cron job (`app/api/cron/sync`) that runs daily (or weekly) and processes up to N lessons.
+
+### No Card Retirement / Mastery
+- **Problem:** Once a card reaches a high FSRS state, it's still studied. There's no way to "graduate" a card as truly mastered and remove it from the due pool.
+- **Blocks:** Long-term learners can't reduce session size as they progress.
+- **Fix:** Add a `mastered` boolean flag to Card. Filter out mastered cards from the due pool. Allow manual un-mastery.
+
+### No Study History / Review Log
+- **Problem:** Activity is tracked at the day level (StudyDay), but individual card reviews are not logged. The user can't see which cards they reviewed on a specific date.
+- **Blocks:** Analyzing learning patterns, debugging spacing algorithm, exporting review data.
+- **Fix:** Add a `ReviewLog` table with timestamp, cardId, rating, newState.
+
+## Test Coverage Gaps
+
+### API Routes Untested
+- **Untested area:** All `app/api/*/route.ts` files (sync, cards, review, activity, tts, gloss, etc.).
+- **Files:** `app/api/**/*.ts`
+- **Risk:** Regressions in error handling, validation, database queries go unnoticed.
+- **Priority:** High — API routes are the source of truth.
+- **Recommendation:** Add integration tests using `vitest` with a test database (or in-memory SQLite). Mock external APIs (Google, Anthropic, Vercel Blob).
+
+### UI Components Not Tested
+- **Untested area:** All client components (StudySession, CardsClient, GlossProvider, AudioButton, etc.).
+- **Files:** `components/**/*.tsx`
+- **Risk:** Regressions in interactivity, state management, edge cases (e.g., empty card lists, network failures).
+- **Priority:** Medium — high user-facing complexity, but users can catch bugs faster than integration tests.
+- **Recommendation:** Add snapshot and interaction tests with `vitest` + `@testing-library/react` for critical components (StudySession, CardsClient).
+
+### Google Docs Fetching Untested
+- **Untested area:** Tab discovery, emphasis capture, paragraph parsing.
+- **Files:** `lib/google-docs.ts`
+- **Risk:** Changes to the API response structure could silently break the tab finder or emphasis capture.
+- **Priority:** Medium — unlikely to change, but high-impact if broken.
+- **Recommendation:** Add unit tests with mock Google Docs API responses.
+
+### Extraction Prompt Not Validated
+- **Untested area:** Claude's extraction prompt; only tested via live sync.
+- **Files:** `lib/extract-cards.ts`
+- **Risk:** Prompt drift; Claude returns malformed JSON or violates schema.
+- **Priority:** Medium — the prompt is guarded by JSON parsing, but silent truncation could occur.
+- **Recommendation:** Add a test that calls `extractCardsFromNotes()` with a real lesson and validates the output schema.
+
+### Sequence Algorithm Edge Cases Partially Tested
+- **Untested area:** Circular dependency detection, depth calculation on deep graphs.
+- **Files:** `lib/sequence.ts`
+- **Coverage:** Basic tests exist in `tests/sequence.test.ts`, but no tests for cycle safety or max-depth scenarios.
+- **Priority:** Low — the algorithm is pure and unlikely to regress, but adding a few edge-case tests would increase confidence.
 
 ---
 
-## Resolved Since Last Audit (2026-06-23 → 2026-07-01)
-
-Verified against current source — these no longer need tracking as open concerns:
-
-| Item | Verification |
-|------|--------------|
-| Middleware misnamed (`proxy.ts` vs `middleware.ts`) | `middleware.ts` exists at project root; no `proxy.ts` in the repo |
-| No input length limits on LLM-backed routes | `app/api/gloss/route.ts` (word ≤ 50 chars), `app/api/tts/route.ts` (text ≤ 500 chars), `app/api/generate/route.ts` (cards.length ≤ 100) all guard and return 400 |
-| No CSRF / SameSite protection | `app/api/login/route.ts:19` sets `sameSite: 'strict'` on the auth cookie |
-| Zero automated test coverage | 58 Vitest tests across 6 files in `tests/` — see `.planning/codebase/TESTING.md` |
-| Deprecated cloze columns still referenced in app code | No `clozeSentence`/`clozeAnswer`/`clozeTranslation`/`hasCloze` references remain in `app/` or `components/` (only in the auto-generated Prisma client, which is expected) — removed as a side effect of the v1.2 RSC rewrite of `app/study/page.tsx` |
-| `@deprecated` export in `lib/settings.ts` | No `@deprecated` tag found in the file |
-| `dev.db` accidentally committed | Gitignored (`dev.db`, `dev.db-journal`, `*.db`) and not tracked in git |
-
----
-
-## High Priority
-
-### Vercel 60-second function timeout — sync is permanently limited
-
-**Issue:** The Vercel Hobby plan hard-limits all serverless functions at 60 seconds regardless of any `maxDuration` config. The sync route (`app/api/sync/route.ts`) processes only 1 lesson per call (`MAX_LESSONS_PER_SYNC = 1`) to stay under the limit. Bulk re-extraction of all lessons requires running `scripts/local-resync.mts` locally.
-
-**Files:** `app/api/sync/route.ts`, `scripts/local-resync.mts`
-
-**Impact:** Any operation requiring Claude to process a large lesson (complex vocabulary density, adaptive thinking enabled on `claude-opus-4-8`) can still silently time out. Bulk syncs cannot be triggered from the deployed app UI.
-
-**Fix approach:** Upgrade to Vercel Pro (removes the 60 s cap, allows `maxDuration = 300`). Alternatively, move extraction to a background queue. No code change removes the Hobby cap.
-
----
-
-### RSC paint-timing and interaction-jitter claims lack systematic browser verification *(new, v1.2)*
-
-**Issue:** v1.2 introduced several success criteria that are runtime, human-observable properties — "no blank flash on first paint," "no perceptible jitter between grade tap and next card" — which cannot be checked by `tsc`, ESLint, or the Vitest suite. Of the 4 v1.2 phases, only 2 (Study, Home/Habits) got an actual live browser/UAT pass verifying these claims before milestone close; Phase 9 (skeletons) and Phase 10 (Cards RSC) shipped with these claims resting on static code analysis only.
-
-**Files:** `app/cards/page.tsx`, `app/cards/loading.tsx` (Phase 9/10 — no live UAT run); see `.planning/milestones/v1.2-phases/10-cards-hydration-api-parallelization/10-VERIFICATION.md` for the specific unverified items.
-
-**Impact:** Low — the code paths are confirmed present and correctly wired by static analysis, and the identical pattern was live-verified in Phases 11 and 12. But a genuine RSC hydration-order bug in `/cards` specifically would not have been caught before shipping.
-
-**Fix approach:** Run `npm run build && npm start`, open `/cards` with a hard reload and disabled cache, and confirm the real card list renders with no "No cards yet" flash and no console serialization errors — the two specific checks listed in `10-VERIFICATION.md`.
-
----
-
-## Medium Priority
-
-### `StudySession.tsx` monolith continues to grow
-
-**Issue:** `components/StudySession.tsx` was already the largest hand-written source file at 857 lines (as of the 2026-06-23 audit); v1.2's optimistic-grading rework (synchronous `submitReview`, client-side FSRS via `reviewCard()`, undo-snapshot handling) added to it rather than extracting a new module. It is now **964 lines**.
-
-**Files:** `components/StudySession.tsx`
-
-**Impact:** Same as previously noted — high cognitive load for future changes, increased regression risk. The gap between "largest file" and "next largest" has widened further.
-
-**Fix approach:** Unchanged from the prior recommendation — extract per-mode sub-components (`FlashcardMode.tsx`, `MultipleChoiceMode.tsx`, `FillBlankMode.tsx`) and a `useStudyQueue` hook. Not urgent, but worth revisiting before the next feature that touches this file.
-
----
-
-### `splitParticle` known mis-splitting — documented orthographic ambiguity
-
-**Issue:** `components/HighlightedSentence.tsx` and `lib/sentence-match.ts` use `splitParticle` which is documented to mis-split multi-syllable verb stems with modifier endings (e.g. `기다리는` could be incorrectly split). The comment in `CLAUDE.md` explicitly calls this out as "an orthographic ambiguity."
-
-**Files:** `components/HighlightedSentence.tsx`, `lib/sentence-match.ts`
-
-**Impact:** Incorrect visual highlighting (particle tinted separately from stem) for affected grammar cards. Also incorrect word-boundary detection for tap-to-gloss in `GlossProvider.tsx`. Low frequency in practice but unfixable without morphological analysis.
-
-**Fix approach:** Integrate a Korean morphological analyzer (e.g. `@koreanbots/hangul` or an external POS API call) for particle detection. Short-term: expand the exclusion list in `splitParticle` for known problem patterns.
-
----
-
-### `GOOGLE_SERVICE_ACCOUNT_KEY` full JSON in environment variable
-
-**Issue:** The Google service account credentials are stored as a single-line JSON string in the `GOOGLE_SERVICE_ACCOUNT_KEY` environment variable. This is the entire private key.
-
-**Files:** `lib/google-docs.ts`, `lib/tts.ts`
-
-**Impact:** If the env var leaks (e.g. via a Next.js bundle analysis, error message, or logs), the full service account private key is exposed. The key has `documents.readonly` + `cloud-platform` scope.
-
-**Fix approach:** Consider using Google Workload Identity (if hosted on GCP) or at minimum ensure the service account's IAM permissions are scoped to the minimum required (Documents API read-only + Cloud TTS only). Rotate if ever suspected leaked. This is a standard approach for Vercel deployments and hard to eliminate entirely.
-
----
-
-### `NEXT_PUBLIC_GOOGLE_DOC_ID` exposes document ID to browser
-
-**Issue:** `NEXT_PUBLIC_GOOGLE_DOC_ID` is a client-side environment variable, making the Google Doc ID visible in the browser bundle to any logged-in user.
-
-**Files:** `components/HomeClient.tsx` (moved here from `app/page.tsx` during the v1.2 RSC conversion), `components/SyncPanel.tsx`
-
-**Impact:** The Doc ID alone is not a credential and does not grant access (the Doc must be shared to the service account separately). Low severity for a personal app. However, if the Doc is set to "anyone with link can view," the Doc ID in the bundle is sufficient for a third party to read the lesson notes.
-
-**Fix approach:** Move Doc ID to a server-only env var and have `/api/sync` use it server-side. Remove `NEXT_PUBLIC_` prefix.
-
----
-
-### `Setting` table used as a gloss cache — unbounded growth
-
-**Issue:** Tap-to-gloss lookups are cached in the `Setting` table using a `gloss:<word>` key prefix. There is no eviction policy, TTL, or size limit on this cache.
-
-**Files:** `lib/gloss.ts`, `app/api/gloss/route.ts`
-
-**Impact:** Over time, every unique word tapped across all sessions accumulates as a row in the Setting table. The table is loaded for every settings read. At low vocabulary scale (thousands of entries) this is harmless, but it conflates app configuration with a user-action cache in the same table.
-
-**Fix approach:** Either cap the cache size (LRU eviction via a separate script), add a `createdAt` column for TTL pruning, or move the gloss cache to a dedicated table or external KV store (Vercel KV / Upstash).
-
----
-
-### Transient TLS errors on Vercel deploy
-
-**Issue:** `git push origin main` / `npx vercel --prod` occasionally fails with a TLS "bad record mac" error. Documented in CLAUDE.md as "just retry."
-
-**Files:** Deployment process (not a code file)
-
-**Impact:** Non-blocking but requires awareness. A deploy could silently fail mid-transfer and require manual retry, which could be missed in an unmonitored pipeline.
-
-**Fix approach:** No code fix. Awareness: always confirm the Vercel deploy completes successfully (check the Vercel dashboard or wait for the CLI to report a deployment URL before assuming the push succeeded).
-
----
-
-## Low Priority
-
-### Swallowed errors in some catch blocks
-
-**Issue:** A number of `catch {}` / `catch (err) {}` blocks across the codebase discard errors with no `console.error` logging (e.g. `app/api/activity/route.ts`, `app/api/tts/route.ts`, `app/api/stats/route.ts`, `app/login/page.tsx`, `components/AudioButton.tsx`, `components/StudySession.tsx`). This is a broad pattern, not confined to any one file — re-scan with `grep -rn "} catch\s*{$\|} catch (.*) {$"` across `app/`, `components/`, `lib/` before acting rather than relying on a fixed line-number list (30+ files changed since this was last enumerated, and old file/line references had already gone stale by this pass).
-
-**Files:** Broad — see grep pattern above rather than a stale list.
-
-**Impact:** Silent failures are difficult to debug. `lib/extract-cards.ts` is the clearest example: it silently leaves `parsed` empty if JSON parsing fails, and the sync route then detects 0 cards and skips persist with only a `console.warn`, making extraction failures hard to diagnose.
-
-**Fix approach:** Add `console.error` at minimum in empty `catch` blocks that don't already degrade gracefully by design (some, like the TTS 503 fallback, are intentional silent degradation — those are fine as-is). For user-visible flows, surface a meaningful error state rather than silently degrading.
-
----
-
-### `scripts/` contains one-time DDL scripts that could be accidentally re-run
-
-**Issue:** `scripts/apply-graph-ddl.mjs` and `scripts/apply-sentence-ddl.mjs` are one-time DDL scripts that would fail or corrupt data if re-run against a populated database (the `UNIQUE` index requirement noted in CLAUDE.md). They live alongside idempotent operational scripts with no clear naming distinction.
-
-**Files:** `scripts/apply-graph-ddl.mjs`, `scripts/apply-sentence-ddl.mjs`
-
-**Impact:** Accidental re-run would attempt to re-create tables/indexes that already exist, failing with a SQL error. No data loss risk since the script would error before mutating, but the ambiguity in the scripts directory is a maintenance hazard.
-
-**Fix approach:** Add a comment at the top of one-time scripts: `// ONE-TIME: Do not re-run. Already applied to production.` Optionally rename to `scripts/one-time/`.
-
----
-
-## Infrastructure Constraints
-
-| Constraint | Detail |
-|-----------|--------|
-| **Vercel Hobby 60 s function timeout** | Hard cap regardless of `maxDuration` config. Sync is limited to 1 lesson/request. Bulk operations must run locally via `scripts/local-resync.mts`. Upgrade to Pro to remove. |
-| **Turso / libSQL: no Prisma migrate** | `prisma db push` and `prisma migrate` are incompatible with `libsql://` connections. Schema changes require manually generating DDL (`prisma migrate diff`) and running it via `@libsql/client`. No automated migration history. |
-| **Prisma Studio incompatible with Turso** | Cannot inspect production DB via Prisma Studio. Use `turso db shell korean-study` for ad-hoc queries. |
-| **Vercel Blob must be a public store** | `KOREAN_BLOB_READ_WRITE_TOKEN` must point to a public Vercel Blob store so synthesized TTS audio URLs are publicly accessible for the `<Audio>` element. Private store will produce 403s in the browser. |
-| **ElevenLabs TTS — paid API with no cost cap** | Every unique (text, voice) pair that misses the Vercel Blob cache triggers an ElevenLabs synthesis call. No rate limit or spend cap is enforced in the code. A cache miss storm (e.g. after wiping Blob storage) could incur unexpected charges. |
-| **`gen-icons.mjs` requires Apple SD Gothic Neo on macOS** | Icon generation (`node scripts/gen-icons.mjs`) depends on a system Korean font. Will produce incorrect output on Linux CI or machines without the font installed. |
+*Concerns audit: 2026-07-02*

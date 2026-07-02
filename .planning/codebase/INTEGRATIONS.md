@@ -1,153 +1,108 @@
 # External Integrations
-_Last updated: 2026-06-23_
 
-## Summary
+**Analysis Date:** 2026-07-02
 
-The app integrates with five external services: Anthropic Claude (AI card extraction, tap-to-gloss, practice generation), Google Docs API (source lesson content), ElevenLabs TTS (Korean audio synthesis), Vercel Blob (TTS audio cache), and Turso/libSQL (hosted SQLite database). Authentication is a custom HMAC session-cookie gate — no third-party auth provider. Deployment is on Vercel with auto-deploy from GitHub `main`.
+## APIs & External Services
 
----
+**AI/LLM — Anthropic Claude:**
+- `claude-opus-4-8` with adaptive thinking — exhaustive lesson content → study cards
+  - Endpoint: `messages.stream()` in `lib/extract-cards.ts`
+  - Input: lesson text + emphasized spans (bold/underline/highlight from Google Docs)
+  - Output: JSON array of cards (front, back, type, sentences, distractors, component lemmas)
+  - Used by: `POST /api/sync` for content ingestion
+  - Environment: `ANTHROPIC_API_KEY`
 
-## AI / LLM
+- `claude-haiku-4-5-20251001` — single Korean word → dictionary form + gloss
+  - Endpoint: `messages.create()` in `lib/gloss.ts`
+  - Input: word string (max 50 chars)
+  - Output: JSON (dictionaryForm, gloss, partOfSpeech; max 256 tokens)
+  - Used by: `POST /api/gloss` (tap-to-gloss on sentences)
+  - Caching: results stored in Prisma `Setting` table with `gloss:` prefix (max 2000 entries)
+  - Environment: `ANTHROPIC_API_KEY`
 
-### Anthropic Claude
-- **SDK:** `@anthropic-ai/sdk` 0.80.0
-- **Models used:**
-  - `claude-opus-4-8` — exhaustive card extraction from lesson text (`lib/extract-cards.ts`); uses `thinking: { type: 'adaptive' }` and streams via `.finalMessage()`
-  - `claude-haiku-4-5-20251001` — tap-to-gloss single-word lookups (`lib/gloss.ts`); max 256 tokens, JSON response; fast/cheap
-  - `claude-opus-4-8` — practice exercise generation (`lib/generate-practice.ts`)
-- **Auth env var:** `ANTHROPIC_API_KEY`
-- **API endpoints used:** `/v1/messages` (via SDK)
-- **No webhook / callback** — all calls are synchronous request/response
+- `claude-sonnet-4-6` — study cards → ephemeral practice exercises
+  - Endpoint: `messages.create()` in `lib/generate-practice.ts`
+  - Input: array of cards (front, back, type)
+  - Output: JSON array of practice items (example-sentence, fill-blank, transformation)
+  - Used by: `POST /api/generate`
+  - Environment: `ANTHROPIC_API_KEY`
 
----
+**Document API — Google Docs API v1:**
+- Purpose: Fetch lesson content from shared Google Doc (`수업 노트` tab only)
+- Auth: OAuth2 service account via `google-auth-library` 10.7.0
+  - Scope: `https://www.googleapis.com/auth/documents.readonly`
+  - Credentials: `GOOGLE_SERVICE_ACCOUNT_KEY` (full JSON, single line)
+- Client: `lib/google-docs.ts` → `fetchGoogleDoc(documentId)`
+- Data captured: text + textStyle emphasis (bold, underline, backgroundColor) per run
+- Returns: `{ text, emphasized }[]` per lesson section (split at horizontal rules)
+- Environment: `GOOGLE_SERVICE_ACCOUNT_KEY`, `NEXT_PUBLIC_GOOGLE_DOC_ID`
 
-## Google Docs API
+## Data Storage
 
-- **Purpose:** Fetches the `수업 노트` (lesson notes) tab from a shared Google Doc as the source of lesson content
-- **Auth:** Service account OAuth2 via `google-auth-library` 10.7.0; token minted with `documents.readonly` scope
-- **Client:** `lib/google-docs.ts` — mints access token from service account JSON, calls Docs API v1 REST endpoint
-- **API version:** Google Docs API v1
-- **Env vars:**
-  - `GOOGLE_SERVICE_ACCOUNT_KEY` — full service account JSON (single-line string); used for both Docs API and Google TTS
-  - `NEXT_PUBLIC_GOOGLE_DOC_ID` — the target Google Doc ID (public env var, safe to expose to client)
-- **Data captured:** Text content, `textStyle` emphasis (bold/underline/backgroundColor) per text run; returns `{ text, emphasized }[]` per lesson
+**Databases:**
+- Turso (production) — libSQL/SQLite hosted
+  - Connection: `libsql://…` in `DATABASE_URL`
+  - Auth: `DATABASE_AUTH_TOKEN` (Turso token)
+  - ORM: Prisma 7.6.0 + `@prisma/adapter-libsql`
+  - Client: `@libsql/client` 0.17.2
+  - Constraint: NO `prisma db push` / `prisma migrate` — DDL applied manually via `@libsql/client.executeMultiple()`
 
----
+- Local SQLite (development)
+  - Connection: `file:./prisma/dev.db` in `DATABASE_URL`
+  - Same Prisma setup; no auth token
 
-## Text-to-Speech
+**File Storage:**
+- Vercel Blob (TTS audio cache)
+  - Store type: **public** (unsigned client-side GET access)
+  - Cache key: SHA256 hash of `(provider.id, voice, text)`
+  - Stored path: `tts/{hash}.mp3`
+  - Authentication: `KOREAN_BLOB_READ_WRITE_TOKEN` or `BLOB_READ_WRITE_TOKEN` (fallback)
+  - Degradation: returns 503 when token absent; client falls back to `window.speechSynthesis`
 
-### ElevenLabs (active provider)
-- **Purpose:** Korean audio synthesis for flashcard sentences and card fronts
-- **Model:** `eleven_multilingual_v2`
-- **Env var:** `ELEVENLABS_API_KEY`
-- **Implementation:** `lib/tts.ts` — `elevenLabsProvider` implementing `TtsProvider` interface
-- **Activation:** `TTS_PROVIDER=elevenlabs` env var (currently active)
+**Caching:**
+- Tap-to-gloss results: Prisma `Setting` table (`gloss:<normalizedWord>` prefix keys; max 2000 entries)
+- TTS audio: Vercel Blob (deterministic cache key, public access)
 
-### Google Cloud TTS (alternate provider)
-- **Purpose:** Alternative Korean TTS — `ko-KR-Neural2-A` voice
-- **Scope:** `cloud-platform` (reuses `GOOGLE_SERVICE_ACCOUNT_KEY`)
-- **Implementation:** `lib/tts.ts` — `googleNeural2Provider`
-- **Activation:** `TTS_PROVIDER=google` (default when env var absent)
-- **Requirement:** Cloud Text-to-Speech API must be enabled on the GCP project
+## Authentication & Identity
 
-**Provider abstraction:** `lib/tts.ts` exports `TtsProvider` interface + `activeTtsProvider`. Switching providers requires only an env var change — no call-site changes.
-
-**API endpoint:** `app/api/tts/route.ts` — `GET ?text=&voice=`; hashes `(provider.id, voice, text)` → checks Vercel Blob cache; miss → synthesizes → stores in Blob → returns public URL. Returns 503 when blob token is unset; client (`components/AudioButton.tsx`) falls back to `window.speechSynthesis`.
-
----
-
-## Database
-
-### Turso (production)
-- **Type:** Hosted libSQL (SQLite-compatible)
-- **Client:** `@libsql/client` 0.17.2 via `@prisma/adapter-libsql` 0.7.6
-- **ORM:** Prisma 7.6.0
-- **Connection env vars:**
-  - `DATABASE_URL` — `libsql://…` (Turso endpoint)
-  - `DATABASE_AUTH_TOKEN` — Turso auth token
-- **Prisma client singleton:** `lib/prisma.ts`
-- **Schema:** `prisma/schema.prisma`
-- **DDL management:** Manual via `@libsql/client` scripts (NOT `prisma migrate`); see `scripts/apply-graph-ddl.mjs`
-- **Shell access:** `turso db shell korean-study`
-
-### Local SQLite (development)
-- Same Prisma client; `DATABASE_URL=file:./dev.db`; no auth token needed
-
----
-
-## File / Blob Storage
-
-### Vercel Blob
-- **Purpose:** Caches synthesized TTS audio (MP3) to avoid re-synthesizing on every request
-- **SDK:** `@vercel/blob` 2.4.1
-- **Store type:** Must be a **public** Blob store (audio URLs returned directly to clients)
-- **Env vars:**
-  - `KOREAN_BLOB_READ_WRITE_TOKEN` — primary token (project-specific Blob store)
-  - `BLOB_READ_WRITE_TOKEN` — fallback token
-- **Cache key:** Hash of `(provider.id, voice, text)` → filename in Blob
-- **Degradation:** When token is absent, `/api/tts` returns 503 and `AudioButton` falls back to browser speech synthesis
-
----
-
-## Hosting & Deployment
-
-### Vercel
-- **Project:** `jason-d-28-projects/korean-study`
-- **URL:** `https://korean-study-five.vercel.app`
-- **Plan:** Hobby (hard 60s serverless function timeout — `maxDuration` setting has no effect)
-- **Deploy trigger:** Push to `main` on GitHub → automatic Vercel deploy
-- **Manual deploy:** `npx vercel --prod` (CLI at `/opt/homebrew/bin/vercel`)
-- **Runtime:** Serverless (Next.js App Router API routes)
-
----
-
-## Authentication
-
-- **Type:** Custom single-password gate (no third-party auth provider)
-- **Implementation:** `middleware.ts` guards all routes except `/login`, `/api/login`, static assets, and PWA assets
-- **Session:** HMAC-signed cookie via Web Crypto (`lib/auth.ts`)
-- **Env vars:**
-  - `APP_PASSWORD` — the login password
-  - `AUTH_SECRET` — random string used to sign the session cookie (HMAC key)
-
----
-
-## Environment Variables Reference
-
-| Variable | Service | Required | Purpose |
-|----------|---------|----------|---------|
-| `ANTHROPIC_API_KEY` | Anthropic | Yes | Claude API authentication |
-| `GOOGLE_SERVICE_ACCOUNT_KEY` | Google | Yes | Full service account JSON for Docs API + (optional) Cloud TTS |
-| `NEXT_PUBLIC_GOOGLE_DOC_ID` | Google | Yes | Target Google Doc ID (safe to expose client-side) |
-| `DATABASE_URL` | Turso / SQLite | Yes | `libsql://…` in prod, `file:./dev.db` in dev |
-| `DATABASE_AUTH_TOKEN` | Turso | Prod only | Turso auth token (not needed for local `file:` DB) |
-| `APP_PASSWORD` | Auth | Yes | Login password for the app |
-| `AUTH_SECRET` | Auth | Yes | HMAC signing key for session cookie |
-| `TTS_PROVIDER` | TTS | No | `'elevenlabs'` or `'google'`; defaults to `'google'` |
-| `ELEVENLABS_API_KEY` | ElevenLabs | When `TTS_PROVIDER=elevenlabs` | ElevenLabs API key |
-| `KOREAN_BLOB_READ_WRITE_TOKEN` | Vercel Blob | Recommended | Primary Blob store token for TTS cache |
-| `BLOB_READ_WRITE_TOKEN` | Vercel Blob | Fallback | Secondary Blob token if `KOREAN_BLOB_READ_WRITE_TOKEN` absent |
-
----
-
-## Webhooks & Callbacks
-
-**Incoming:** None — all external service calls are outbound request/response.
-
-**Outgoing:** None — no webhooks sent to external services.
-
----
+**Auth Provider:**
+- Custom HMAC-SHA256 session cookie (no third-party provider)
+  - Implementation: `lib/auth.ts` using Web Crypto API
+  - Cookie name: `ks_auth`
+  - Middleware: `middleware.ts` (Edge) validates on every request
+  - Flow: `POST /api/login` checks password → creates HMAC → sets cookie
+  - Credentials: `AUTH_SECRET` (HMAC key) + `APP_PASSWORD` (login password)
+  - Single-user (shared password, no user model)
 
 ## Monitoring & Observability
 
-- **Error tracking:** None (no Sentry, Datadog, etc.)
-- **Logging:** `console.log` / `console.error` only; visible in Vercel function logs
-- **Analytics:** None
+**Error Tracking:**
+- None (no Sentry, Datadog, etc.)
+
+**Logs:**
+- Approach: `console.log()` / `console.error()` → Vercel function logs
+- Vercel dashboard captures and archives logs automatically
+
+## CI/CD & Deployment
+
+**Hosting:**
+- Vercel (serverless)
+  - Project: `korean-study` (https://korean-study-five.vercel.app)
+  - Plan: Hobby (60s hard timeout on functions)
+  - Deploy: GitHub `main` → auto-deploy (no manual CI/CD pipeline)
+
+**CI Pipeline:**
+- None (no GitHub Actions, no automated test gates)
+- ESLint runs locally before commit; must pass clean
+
+## Webhooks & Callbacks
+
+**Incoming:**
+- None
+
+**Outgoing:**
+- None
 
 ---
 
-## CI/CD
-
-- **CI pipeline:** None (no GitHub Actions, no automated tests)
-- **Deploy:** GitHub `main` → Vercel auto-deploy
-- **Schema migrations:** Manual scripts run locally against Turso before or after code deploy
+*Integration audit: 2026-07-02*

@@ -1,5 +1,6 @@
 # Coding Conventions
-_Last updated: 2026-07-01 (v1.2 Performance & Snappiness)_
+
+**Analysis Date:** 2026-07-02
 
 ## Summary
 
@@ -9,7 +10,7 @@ This is a Next.js 16 App Router project written in strict TypeScript with Tailwi
 
 ## File and Folder Naming
 
-- **Files:** `kebab-case` for all `.ts`, `.tsx`, `.mjs`, `.mts` files (e.g., `card-key.ts`, `sentence-match.ts`, `GlossProvider.tsx`).
+- **Files:** `kebab-case` for all `.ts`, `.tsx`, `.mjs`, `.mts` files (e.g., `card-key.ts`, `sentence-match.ts`, `audio-button.tsx`).
 - **Components:** PascalCase filenames matching the default export (e.g., `Sheet.tsx` exports `Sheet`, `AudioButton.tsx` exports `AudioButton`).
 - **API routes:** Next.js App Router convention — `app/api/<resource>/route.ts`; nested resources use `app/api/<resource>/[id]/route.ts`.
 - **Scripts:** `scripts/` directory, `.mjs` for plain JS operational scripts, `.mts` for TypeScript scripts that import `lib/` modules (e.g., `local-resync.mts`).
@@ -118,7 +119,7 @@ Imports within a file follow this order (no enforced blank-line grouping, but co
 2. Next.js utilities (`import { NextRequest, NextResponse } from 'next/server'`)
 3. Third-party packages (`import Anthropic from '@anthropic-ai/sdk'`)
 4. Internal `lib/` modules (`import { prisma } from '@/lib/prisma'`)
-5. Internal `components/` modules (`import Sheet from './Sheet'`)
+5. Internal `components/` modules (`import Sheet from '@/components/Sheet'`)
 
 ---
 
@@ -128,18 +129,18 @@ Imports within a file follow this order (no enforced blank-line grouping, but co
 
 - All route handlers wrap their body in `try { … } catch (e) { return NextResponse.json({ error: … }, { status: 500 }) }`.
 - Validation errors return `{ status: 400 }` with a descriptive message before hitting business logic.
-- Example pattern:
+- Example pattern from `app/api/review/route.ts`:
   ```ts
   export async function POST(req: NextRequest) {
-    try {
-      const { documentId } = await req.json()
-      if (!documentId) return NextResponse.json({ error: 'documentId is required' }, { status: 400 })
-      // …
-    } catch (e) {
-      return NextResponse.json({ error: String(e) }, { status: 500 })
+    const { cardId, rating } = await req.json()
+    if (cardId === undefined || rating === undefined) {
+      return NextResponse.json({ error: 'cardId and rating required' }, { status: 400 })
     }
+    // … business logic
+    return NextResponse.json(review)
   }
   ```
+- DTO serialization must happen before returning: any Prisma `Date` fields must be converted to ISO strings via `.toISOString()` to ensure proper JSON serialization (see `app/api/cards/route.ts` POST handler for an example).
 
 ### Library Modules
 
@@ -185,14 +186,16 @@ The `eslint-config-next` `react-hooks/purity` rule enforces that render function
 ### JSDoc / Block Comments
 
 - Public library functions that are the single source of truth for a behavior get a leading block comment explaining their contract, inputs, rules, and call sites.
-- Example (`lib/card-key.ts`): a full JSDoc block listing rules, the "No side-effects" guarantee, and where the function is used.
-- Example (`lib/sequence.ts`): header comment explains the scoring formula, constants, and cycle-safety guarantee before the first line of code.
+- Example from `lib/card-key.ts`: a full JSDoc block listing the normalization rules, the "No side-effects" guarantee, and where the function is used.
+- Example from `lib/sequence.ts`: header comments explain the scoring formula (`score = depth − urgencyBoost`), constants (`URGENCY_SCALE = 7`, `MAX_BOOST = 3`), and cycle-safety guarantee before the first line of code.
+- Large decision points or non-obvious logic in a client component also get block comments (e.g., `AudioButton.tsx` has a comment block at the top explaining the TTS/fallback strategy).
 
 ### Inline Comments
 
 - Used to explain non-obvious decisions, not to restate what the code does.
 - Temporal/historical context uses present tense ("A card is still due today iff …").
 - Deprecated items are marked with `/** @deprecated — … */` (e.g., `DEFAULT_BUTTON_COLOR` in `lib/settings.ts`).
+- Comments on trailing lines explain **why**, not what (e.g., `const delay = 300 // ms; gives user time to read the card before auto-next` rather than `// delay is 300`).
 
 ### Constants
 
@@ -227,3 +230,9 @@ The `eslint-config-next` `react-hooks/purity` rule enforces that render function
 10. **RSC serialization is a runtime error, not a compile error (v1.2):** Passing a raw Prisma `Date` object as a prop from a `page.tsx` RSC to a `'use client'` component throws "Only plain objects can be passed to Client Components" / "Date objects are not supported" — only visible in the browser console at runtime, not caught by `tsc` or ESLint. Always route DateTime fields through `lib/dto.ts` types and call `.toISOString()` before the boundary.
 
 11. **`loading.tsx` only covers client-side navigation:** it is Next.js's fallback while a destination route's RSC is loading during a `<Link>` transition — it does not run on first load (hard refresh / direct URL). First-load speed comes entirely from the RSC + client-shell hydration pattern. Test first-paint behavior with `npm run build && npm start`, not `next dev`.
+
+12. **Error handling is validation-first:** Always validate request inputs at the top of API route handlers (check required fields, parse types) before any business logic. Return `status: 400` for validation errors. Use `status: 404` only when a specific resource lookup fails; use `status: 500` for unhandled exceptions.
+
+---
+
+*Conventions analysis: 2026-07-02*

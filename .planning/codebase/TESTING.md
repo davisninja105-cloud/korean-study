@@ -1,5 +1,6 @@
 # Testing Patterns
-_Last updated: 2026-07-01 (v1.2 Performance & Snappiness)_
+
+**Analysis Date:** 2026-07-02
 
 ## Summary
 
@@ -23,16 +24,56 @@ npm run build  # prisma generate && next build — full TypeScript type-check + 
 
 All tests live in a single top-level `tests/` directory (not co-located with source), one file per pure `lib/` module:
 
-| File | Covers | Test count |
-|------|--------|-----------|
-| `tests/card-key.test.ts` | `lib/card-key.ts` — `normalizeFront()` | 7 |
-| `tests/habit.test.ts` | `lib/habit.ts` — `computeStreaks()`, `computeFreezeBudget()`, etc. | 17 |
-| `tests/known-words.test.ts` | `lib/known-words.ts` — `countUnknownWords()` | 5 |
-| `tests/proficiency.test.ts` | `lib/proficiency.ts` — `computeProficiency()` | 6 |
-| `tests/sentence-match.test.ts` | `lib/sentence-match.ts` — match/blank-safety rules | 11 |
-| `tests/sequence.test.ts` | `lib/sequence.ts` — `sequenceCards()`, `selectSessionCards()` | 12 |
+| File | Covers | Test count | Sample assertions |
+|------|--------|-----------|-------------------|
+| `tests/card-key.test.ts` | `lib/card-key.ts` — `normalizeFront()` | 7 | Trims whitespace, strips English gloss, handles empty string, idempotence |
+| `tests/habit.test.ts` | `lib/habit.ts` — `computeStreaks()`, `computeFreezeBudget()`, `habitDateStr()` | 17 | Streak counting with freeze budgets, date shifting, month/year boundaries |
+| `tests/known-words.test.ts` | `lib/known-words.ts` — `countUnknownWords()` | 5 | Token counting excluding target/known, particle stem resolution |
+| `tests/proficiency.test.ts` | `lib/proficiency.ts` — `computeProficiency()` | 6 | CEFR band boundaries (A1 0–500, A2 500–1200, …, C1+ 8000+), percentage within band |
+| `tests/sentence-match.test.ts` | `lib/sentence-match.ts` — match/blank-safety rules | 11 | Multi-char target matching, single-char safety, multi-occurrence detection, particle splitting |
+| `tests/sequence.test.ts` | `lib/sequence.ts` — `sequenceCards()`, `selectSessionCards()` | 12 | Prerequisite ordering, urgency boost scoring, downward-closed selection, cycle safety |
 
 **Total: 58 tests, 6 files.**
+
+---
+
+## Test Structure
+
+### Pattern: Vitest + `describe` / `it` / `expect`
+
+All test files follow a consistent structure:
+
+```typescript
+import { describe, it, expect } from 'vitest'
+import { functionUnderTest } from '../lib/module-name'
+
+describe('functionUnderTest', () => {
+  it('does X when given Y', () => {
+    expect(functionUnderTest(Y)).toBe(X)
+  })
+
+  it('handles edge case: Z', () => {
+    expect(functionUnderTest(Z)).toEqual(expectedResult)
+  })
+})
+```
+
+### Fixtures and Test Data
+
+Test data is created inline within test cases. For pure functions with simple inputs:
+
+- **`sequence.test.ts`:** uses a `card()` helper factory function to construct `SeqCard` objects with controllable overdue days. Uses a fixed `NOW = new Date('2026-06-23T12:00:00Z')` to avoid impurity.
+  ```typescript
+  function card(id: string, daysOverdue = 0): SeqCard {
+    const now = new Date('2026-06-23T12:00:00Z')
+    const nextReview = new Date(now.getTime() - daysOverdue * 86_400_000)
+    return { id, review: { nextReview } }
+  }
+  ```
+
+- **`card-key.test.ts`:** creates inline test strings (Korean and English) without fixtures.
+
+- **`habit.test.ts`:** defines inline `DayRecord[]` arrays and computes expected outputs manually.
 
 ---
 
@@ -48,12 +89,41 @@ All tests live in a single top-level `tests/` directory (not co-located with sou
 
 - **API routes** (`app/api/*/route.ts`) — no integration tests; verified by manual browser exercise or production observation.
 - **React components** — no component/rendering tests (no React Testing Library, no `@testing-library/react` installed).
-- **RSC hydration / paint-timing behavior (v1.2):** claims like "no blank flash on first paint" or "no perceptible jitter between grade tap and next card" are runtime, human-observable properties — they cannot be verified by `tsc`/ESLint/Vitest, only by running a production build (`npm run build && npm start`) and watching the browser. This was a recurring gap during the v1.2 milestone: 2 of 4 phases shipped without a live browser check closing these claims (see `.planning/RETROSPECTIVE.md` — "v1.2 — Performance & Snappiness" section).
+- **RSC hydration / paint-timing behavior (v1.2):** claims like "no blank flash on first paint" or "no perceptible jitter between grade tap and next card" are runtime, human-observable properties — they cannot be verified by `tsc`/ESLint/Vitest, only by running a production build (`npm run build && npm start`) and watching the browser. This was a recurring gap during the v1.2 milestone: 2 of 4 phases shipped without a live browser check closing these claims.
 - **Operational scripts (`scripts/`)** serve as informal integration smoke tests: `local-resync.mts` exercises the full Google Docs → Claude → DB pipeline; `relink-dependencies.mjs` and `find-duplicates.mjs` validate data-integrity invariants after a bulk operation.
 
 ### Production Deployment as Verification
 
 `git push origin main` triggers automatic Vercel deployment. The deploy either succeeds (build passes, including the type-check) or fails with a build error — the Vercel build log is the only CI-like feedback beyond local `npm run build`/`npm run lint`/`npm test`.
+
+---
+
+## Assertion Library
+
+All tests use **Vitest's built-in `expect()`** from the `vitest` package (no external assertion library needed). Common patterns:
+
+```typescript
+// Exact equality
+expect(result).toBe(expected)
+expect(result).toBe(true)
+
+// Structural equality (for objects, arrays)
+expect(result).toEqual(expectedObject)
+expect(result).toEqual([itemA, itemB])
+
+// Type checks
+expect(result).toHaveLength(3)
+expect(result.map(c => c.id)).toContain('a')
+
+// Existence
+expect(result.nextBand).toBeNull()
+expect(result).toBeDefined()
+
+// Numeric / percentile comparisons
+expect(result).toBeLessThan(10)
+expect(result).toBeLessThanOrEqual(4)
+expect(new Set(ids).size).toBe(2)
+```
 
 ---
 
@@ -83,12 +153,27 @@ The following are NOT covered by the existing 58 tests and would need new test f
 
 ## If Extending the Suite
 
-- **Co-location vs. top-level `tests/`:** the existing convention is a single top-level `tests/` directory, one file per `lib/` module, named `<module>.test.ts`. Follow this pattern rather than introducing `lib/__tests__/`.
-- **Do NOT add tests for modules that import Prisma** (`lib/study-cards.ts`, `lib/dashboard.ts`, any `app/api/*/route.ts`) without first deciding on a mock/test-DB strategy — the libSQL adapter requires a live database connection and none of the existing tests set one up.
-- **For RSC/paint-timing assertions**, the existing suite cannot help — this needs either Playwright (not installed) or continued reliance on the manual production-build browser check documented in `CLAUDE.md` and the phase VERIFICATION.md files under `.planning/milestones/v1.2-phases/`.
+**File location convention:**
+- Keep the single top-level `tests/` directory — do not introduce `lib/__tests__/` or co-location.
+- Name new test files `<module>.test.ts` to match existing pattern.
+
+**Module selection:**
+- Only add tests for modules that are **pure** (no Prisma, no Node.js builtins, no external API calls).
+- Do NOT add tests for modules that import Prisma (`lib/study-cards.ts`, `lib/dashboard.ts`, any `app/api/*/route.ts`) without first deciding on a mock/test-DB strategy — the libSQL adapter requires a live database connection and none of the existing tests set one up.
+
+**Test data strategy:**
+- Prefer inline fixture creation (factories, helper functions) over external data files.
+- For time-dependent tests, use a fixed `now` parameter rather than `Date.now()` to ensure reproducibility and maintain purity.
+
+**For RSC/paint-timing assertions:**
+- The existing suite cannot help — this needs either Playwright (not installed) or continued reliance on the manual production-build browser check documented in `CLAUDE.md` and the phase VERIFICATION.md files under `.planning/milestones/v1.2-phases/`.
 
 ---
 
 ## CI Configuration
 
 None. There is no `.github/workflows/`, no CircleCI, no pre-commit hooks beyond whatever the local git configuration provides. The only automated check on push is the Vercel build, which runs `prisma generate && next build` (type-check + production build) — it does **not** run `npm test` or `npm run lint`.
+
+---
+
+*Testing analysis: 2026-07-02*

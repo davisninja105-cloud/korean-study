@@ -1,11 +1,6 @@
 # Architecture
-_Last updated: 2026-07-01 (v1.2 Performance & Snappiness)_
 
-## Summary
-
-Korean Study is a Next.js 16 App Router application for spaced-repetition Korean language learning. It is structured as a single-tenant PWA (one user behind a shared password) with server-side React components, a Next.js API layer, Prisma over libSQL/Turso as the database, and Claude (Anthropic) as the AI backbone for card extraction, practice generation, and tap-to-gloss. The architecture is request-driven with no background workers; all AI and sync operations are triggered by user actions and processed inside Vercel serverless functions. As of v1.2, every main route (`/cards`, `/study`, `/`, `/habits`) follows an **RSC + client-shell + DTO** pattern: the `page.tsx` is a thin async server component that fetches initial data and hands it to exactly one `*Client.tsx` component as props, eliminating the empty-state/blank-loading flash that a `'use client'`-with-`useEffect` page would otherwise show on first paint.
-
----
+**Analysis Date:** 2026-07-02
 
 ## System Overview
 
@@ -41,257 +36,269 @@ Korean Study is a Next.js 16 App Router application for spaced-repetition Korean
 
 ---
 
-## Authentication
+## Component Responsibilities
 
-**Model:** Single shared-password gate.
+| Component | Responsibility | File |
+|-----------|----------------|------|
+| **Auth Middleware** | HMAC cookie validation, request gating | `middleware.ts` |
+| **RSC Pages** | Fetch initial data server-side, render one `*Client` component | `app/page.tsx`, `app/study/page.tsx`, `app/cards/page.tsx`, `app/habits/page.tsx` |
+| **Client Shells** | All state, interactivity, event handlers | `components/*Client.tsx` |
+| **Business Logic** | Pure functions, algorithms, data transformations | `lib/` |
+| **API Routes** | Request validation, DB queries via Prisma, response formatting | `app/api/*/route.ts` |
+| **UI Components** | Presentational + interactive primitives | `components/` |
 
-- `middleware.ts` (compiled to `.next/server/middleware.js`) intercepts all requests. It allows `/login`, `/api/login`, and PWA/static assets; everything else requires a valid auth cookie.
-- `lib/auth.ts` provides `computeAuthToken()` — HMAC-SHA256(`AUTH_SECRET`, fixed message string). The cookie stores this token; middleware recomputes and compares. No sessions table; stateless.
-- Login flow: `POST /api/login/route.ts` checks the posted password against `APP_PASSWORD`, sets the HMAC cookie on success.
-- Auth cookie name: `ks_auth`. Uses Web Crypto so the same code runs in Edge middleware and Node route handlers.
+---
+
+## Pattern Overview
+
+**Overall:** Three-tier server-centric architecture with a strict RSC/DTO boundary.
+
+**Key Characteristics:**
+- **Server-first data fetching:** Pages (RSCs) fetch data directly via Prisma and shared `lib/` pipelines; no `useEffect` data-loading on the client
+- **DTO serialization contract:** All `Date` objects are serialized to ISO strings before crossing the RSC→client prop boundary (`lib/dto.ts`)
+- **Shared pipeline logic:** Data-fetching logic (`lib/study-cards.ts`, `lib/dashboard.ts`) is extracted from API routes so RSC pages and the API call the same code — single source of truth
+- **Pure library modules:** All algorithms and business logic live in `lib/` and are side-effect-free (testable, safe to call from server or client)
+- **No data-loading skeleton on first paint:** RSC hydration delivers initial data in the HTML; client shells start directly in their "ready" state (`'select-mode'` for study, populated list for cards)
+
+---
+
+## Layers
+
+**Network & Auth Layer:**
+- Location: `middleware.ts`, `lib/auth.ts`, `app/api/login/route.ts`
+- Purpose: Protect all routes behind a single shared-password HMAC gate
+- Contains: Edge middleware that validates HMAC cookie on every request
+- Depends on: Web Crypto API (Edge-compatible)
+- Used by: All pages, all API routes
+
+**Data Fetching & Coordination Layer:**
+- Location: `app/*/page.tsx` (RSC pages), `lib/study-cards.ts`, `lib/dashboard.ts`
+- Purpose: Orchestrate data pipelines; fetch from Prisma, call pure lib functions, serialize to DTOs
+- Contains: `getStudyCards()`, `getStats()`, `getActivityData()` — server-only functions extracted to `lib/`
+- Depends on: Prisma, `lib/` utilities, settings
+- Used by: RSC pages, API routes (`/api/cards/due`, `/api/stats`, `/api/activity`)
+
+**Business Logic & Algorithms Layer:**
+- Location: `lib/`
+- Purpose: Pure, testable functions for domain logic
+- Contains: FSRS scheduling (`fsrs.ts`), foundation-first sequencing (`sequence.ts`), card dedup (`card-key.ts`), spaced-repetition scoring, habit tracking, Korean text utilities
+- Depends on: Nothing (no I/O, no side effects)
+- Used by: Data layer, client components (for display logic)
+
+**Persistence Layer:**
+- Location: `lib/prisma.ts`, `prisma/schema.prisma`, Turso database
+- Purpose: Data storage and schema definition
+- Contains: Singleton Prisma client, 7 models (Lesson, Card, Sentence, CardReview, CardDependency, StudyDay, Setting)
+- Depends on: libSQL wire protocol (Turso/libsql://)
+- Used by: Data-fetching layer, API routes
+
+**API Layer:**
+- Location: `app/api/*/route.ts`
+- Purpose: HTTP request handlers; validate input, delegate to lib/Prisma, return JSON
+- Contains: Thin wrappers around business logic (no logic lives here)
+- Depends on: `lib/`, Prisma, Next.js request/response types
+- Used by: Client-side fetch calls, external webhooks
+
+**UI Layer (Client):**
+- Location: `components/`, client shells (`*Client.tsx`)
+- Purpose: Render UI, handle user events, manage session-local state
+- Contains: React hooks, event handlers, CSS-in-JS via Tailwind
+- Depends on: `lib/` for pure logic, API routes for persistence
+- Used by: Browser
 
 ---
 
 ## Data Flow
 
-### 1. Content Ingestion (Sync)
+### Primary Request Path: Study Session
 
-```
-User taps "sync" (pull-to-refresh on Home, or Settings ▸ Advanced)
-  → POST /api/sync  (app/api/sync/route.ts)
-    → lib/google-docs.ts: fetches Google Doc tab "수업 노트" via Docs API v1
-        returns { text, emphasized }[] — one entry per lesson (split at <hr>)
-    → SHA-256 hash each lesson text; query DB for already-processed hashes
-    → For each new lesson (max 1 per request per MAX_LESSONS_PER_SYNC):
-        → lib/extract-cards.ts: sends lesson text + emphasized terms + existing
-            normalizedFronts to claude-opus-4-8 (adaptive thinking, streaming)
-        → Returns typed Card objects with sentences[] and components[]
-        → Prisma upsert by normalizedFront (DB-enforced dedup via @unique)
-        → Resolves components[] lemmas → CardDependency edges (two-phase link)
-    → Returns { synced, newLessons, newCards, remaining }
-    → Client repeats if remaining > 0
-```
+1. **Page Load** (`app/study/page.tsx` — RSC, ~8 lines)
+   - Calls `getStudyCards({ scope: 'due', lessonFrom: null, lessonTo: null })`
+   - Calls `prisma.lesson.findMany()`
+   - Renders `<StudyClient initialCards={...} initialLessons={...} />`
 
-### 2. Study Session
+2. **Data Pipeline** (`lib/study-cards.ts:getStudyCards()`)
+   - Query 1 (concurrent): Fetch eligible cards (WHERE `nextReview <= now`, lesson range, take 1000)
+   - Query 2 (concurrent): Fetch known lemmas (state ≥ 1, for context ranking)
+   - Query 3 (sequential, depends on pool IDs): Fetch prerequisite edges within the pool
+   - `selectSessionCards()` → downward-closed subset capped at sessionSize
+   - `sequenceCards()` → foundation-first blended sort: `depth − urgencyBoost`
+   - Annotate sentences with `unknownCount` via `countUnknownWords()`
+   - Serialize all `Date` → ISO strings (DTO contract, `lib/dto.ts`)
+   - Return `CardDTO[]`
 
-```
-User opens /study
-  → app/study/page.tsx (async RSC, no 'use client')
-      → Promise.all([ getStudyCards({scope:'due',...}), prisma.lesson.findMany() ])
-      → renders <StudyClient initialCards initialLessons> — no loading phase
+3. **Client Interactivity** (`components/StudyClient.tsx`)
+   - Receives `initialCards` as props; starts directly in `'select-mode'` (no `loading` phase)
+   - User selects mode → `StudySession.tsx` renders
+   - Grading: `submitReview()` computes FSRS client-side (`reviewCard()` from `lib/fsrs.ts`), advances queue immediately
+   - Background: `POST /api/review` fires fire-and-forget (no await)
+   - Session ends → `handleComplete()` shows score + "Study N more" option
 
-  → lib/study-cards.ts: getStudyCards()
-      → Promise.allSettled([ pool fetch (cards WHERE nextReview <= now,
-          filtered by lesson range, take 1000), knownLemmas fetch (state >= 1) ])
-          pool reject → throw (500); knownLemmas reject → empty Set (degrade)
-      → CardDependency edges among pool IDs (sequential — depends on pool)
-      → selectSessionCards() — downward-closed prerequisite selection, capped
-      → lib/sequence.ts: sequenceCards() — blended depth+urgency sort
-      → lib/known-words.ts: annotate each sentence with unknownCount
-      → serialize: all Date fields → ISO strings (lib/dto.ts CardDTO contract)
-      → Returns reordered CardDTO[] with sentences and FSRS state
+4. **Background Persistence** (`app/api/review/route.ts`)
+   - Receives `{ cardId, rating }`
+   - Looks up `CardReview`, applies `reviewCard()` algorithm, updates DB
+   - Returns updated `CardReview` JSON (client doesn't wait)
 
-  → components/StudyClient.tsx starts in 'select-mode' (props, not fetch)
-      → Lesson-range filter change re-calls GET /api/cards/due (delegates to
-          the same getStudyCards()) with isFilterLoading spinner, not a phase change
-      → components/StudySession.tsx renders cards in server-supplied order
-          → submitReview is synchronous: reviewCard() computes FSRS client-side,
-              queue advances immediately; POST /api/review fires fire-and-forget
-          → POST /api/review/undo available to restore previous state
-          → POST /api/activity increments StudyDay.seconds / reviews
-```
+### Secondary Flow: Content Ingestion (Sync)
 
-### 3. Tap-to-Gloss
+1. **User Initiates** (Home pull-to-refresh or Settings ▸ Advanced)
+   - Calls `POST /api/sync` with `documentId`
 
-```
-User taps a word in a Korean sentence (HighlightedSentence.tsx)
-  → useWordTap() from GlossProvider context
-  → Resolution order:
-      1. normalizeFront(word) → exact Card lookup (in-memory, instant)
-      2. Stem fallback via splitParticle
-      3. Setting table cache (key prefix "gloss:")
-      4. POST /api/gloss → lib/gloss.ts → claude-haiku-4-5-20251001
-  → GlossProvider renders anchored popover with dictionary form + gloss
-  → "Add as card?" → POST /api/cards
-```
+2. **Fetch & Hash** (`app/api/sync/route.ts`)
+   - `lib/google-docs.ts:fetchGoogleDoc()` → fetches "수업 노트" tab
+   - Returns `{ text, emphasized }[]` (one per `<hr>`-separated lesson)
+   - Hash each lesson text via SHA-256; filter to new lessons only
 
-### 4. Text-to-Speech
+3. **Extract Cards** (for each new lesson, max 1 per request)
+   - `lib/extract-cards.ts` → prompts `claude-opus-4-8` with adaptive thinking
+   - Sends: lesson text, emphasized spans, existing normalized fronts (for dedup hint)
+   - Receives: `Card[]` with `{ type, front, back, notes, sentences[], components[] }`
+   - Validates: ≥1 card extracted
 
-```
-AudioButton taps on sentence or card front
-  → GET /api/tts?text=&voice=
-      → Hash (provider.id, voice, text) → check Vercel Blob (head())
-      → Cache hit: return stable public Blob URL
-      → Cache miss: lib/tts.ts → activeTtsProvider.synthesize()
-          → ElevenLabs (eleven_multilingual_v2) or Google Neural2
-          → put() to Vercel Blob → return URL
-  → new Audio(url).play() in browser
-  → Fallback: window.speechSynthesis (ko-KR) on non-200
-```
+4. **Persist & Link**
+   - Create `Lesson` row (orderIndex = max + 1)
+   - Upsert `Card[]` by `normalizedFront` (DB enforces uniqueness)
+   - Create `Sentence` rows (CASCADE on card delete)
+   - Resolve `Card.components[]` lemmas → `CardDependency` edges (two-phase link, sequential)
 
-### 5. AI Practice Generation
+5. **Report** → `{ synced: true, newLessons, newCards, remaining }`
+   - If `remaining > 0`, user taps sync again to drain backlog
 
-```
-POST /api/generate
-  → lib/generate-practice.ts → Claude API (model from lib context)
-  → Returns ephemeral extra exercises (not persisted to DB)
-```
+### Tertiary Flow: Tap-to-Gloss
+
+1. **User taps word** in `HighlightedSentence.tsx`
+2. **Resolution order** (via `useWordTap()` in `GlossProvider` context):
+   - Exact lookup: `normalizeFront(word)` → in-memory Card search (instant)
+   - Stem fallback: `splitParticle(word)` → try base form
+   - Cache lookup: `Setting` table, key `gloss:<normalizedWord>` (JSON `GlossResult`)
+   - LLM fallback: `POST /api/gloss` → `lib/gloss.ts` → `claude-haiku-4-5-20251001`
+3. **Cache write** (non-blocking) via `setCachedGloss()`
+4. **Popover display** with dictionary form, gloss, POS, and "Add as card?" button
 
 ---
 
-## Module Boundaries
+## State Management
 
-### `lib/` — Pure Business Logic
+**Server-side (RSC/Prisma):**
+- Single source of truth: Turso database
+- Queried fresh on each page load
+- Shared pipeline logic ensures consistency
 
-All modules in `lib/` are side-effect-free or explicitly named for their single external dependency. They do not import from `app/` or `components/`.
-
-| File | Responsibility |
-|------|---------------|
-| `lib/auth.ts` | HMAC token computation; usable in Edge + Node |
-| `lib/card-key.ts` | `normalizeFront()` — single dedup-key function |
-| `lib/card-style.ts` | `typeBadgeClass()` — card-type badge CSS source of truth |
-| `lib/color.ts` | `readableForeground()` — contrast color helper |
-| `lib/copy.ts` | Pure warm-copy string helpers; no side effects |
-| `lib/dashboard.ts` *(v1.2)* | Server-only: `getStats()` + `getActivityData()`, shared by RSC pages and GET API routes |
-| `lib/dto.ts` *(v1.2)* | Shared server→client DTO types; every `DateTime` field typed `string` (ISO) — the RSC serialization contract |
-| `lib/extract-cards.ts` | Claude Opus prompt for lesson → cards extraction |
-| `lib/fsrs.ts` | FSRS spaced-repetition algorithm (ts-fsrs wrapper) |
-| `lib/generate-practice.ts` | Claude prompt for ephemeral practice generation |
-| `lib/gloss.ts` | Haiku gloss prompt + Setting-table cache helpers |
-| `lib/google-docs.ts` | Google Docs API v1 fetch + emphasis capture |
-| `lib/habit.ts` | Pure streak/freeze/heatmap computation helpers |
-| `lib/haptics.ts` | `haptic()` — `navigator.vibrate` wrapper, no-op-safe |
-| `lib/known-words.ts` | `countUnknownWords()` — pure ranking signal for sentence selection |
-| `lib/palettes.ts` | Color palette data — pure, client+server safe |
-| `lib/prisma.ts` | Singleton Prisma client (libSQL adapter) |
-| `lib/proficiency.ts` | CEFR band mapper; `computeProficiency()` |
-| `lib/sentence-match.ts` | Korean substring match/blank safety rules |
-| `lib/sequence.ts` | `sequenceCards()` — foundation-first blended sort |
-| `lib/settings.ts` | Server-side DB getters/setters for all app settings |
-| `lib/study-cards.ts` *(v1.2)* | Server-only: `getStudyCards()` due-card pipeline, shared by the study RSC page and `GET /api/cards/due` |
-| `lib/theme.ts` | Theme toggle helpers (localStorage-based) |
-| `lib/tts.ts` | TTS provider abstraction + two provider implementations |
-| `lib/usePullToRefresh.ts` | Touch pull-to-refresh React hook |
-
-### `app/api/` — API Route Handlers
-
-Thin handlers: validate input, call `lib/` functions, query Prisma, return JSON. No business logic lives here.
-
-| Route | Method(s) | Purpose |
-|-------|-----------|---------|
-| `/api/sync` | POST | Ingest new Google Doc lessons → extract cards |
-| `/api/cards` | GET, POST | List all cards; create a card |
-| `/api/cards/due` | GET | Due (or ahead-scope) cards, sequenced — delegates to `lib/study-cards.ts:getStudyCards()` |
-| `/api/cards/[id]` | GET, PUT, DELETE | Single card CRUD |
-| `/api/review` | POST | Record FSRS review answer |
-| `/api/review/undo` | POST | Undo last review |
-| `/api/generate` | POST | Generate ephemeral AI practice |
-| `/api/gloss` | POST | Tap-to-gloss lookup |
-| `/api/tts` | GET | TTS audio (Blob cache) |
-| `/api/activity` | POST | Increment StudyDay time/reviews |
-| `/api/lessons` | GET | List all lessons ordered by orderIndex |
-| `/api/stats` | GET | Aggregate stats for /wrapped |
-| `/api/settings` | GET, PUT | App settings (DB-backed) |
-| `/api/login` | POST | Password auth → set HMAC cookie |
-
-### `components/` — UI Primitives and Compositions
-
-Components are `'use client'` unless they contain no interactivity. They import from `lib/` and call API routes via `fetch`. They do not import from `app/`.
-
-Key component groups:
-
-- **Page shells (v1.2 RSC pattern):** `CardsClient.tsx`, `StudyClient.tsx`, `HomeClient.tsx`, `HabitsClient.tsx` — each owns all interactivity for its route, initialized from server-fetched props (no initial-load `useEffect`)
-- **Study:** `StudySession.tsx`, `ModeSelector.tsx`, `HighlightedSentence.tsx`, `AudioButton.tsx`
-- **Cards management:** `CardEditor.tsx`, `SwipeRow.tsx`, `LessonRangeFilter.tsx`
-- **Habit/stats:** `HabitTracker.tsx`, `HabitHeatmap.tsx`, `MilestoneCelebration.tsx`, `ProficiencyArc.tsx`, `ProgressRing.tsx`, `StatsBar.tsx`
-- **Layout/shell:** `Nav.tsx`, `Sheet.tsx`, `ThemeWatcher.tsx`, `GlossProvider.tsx`, `SyncPanel.tsx`
-
-### `app/` — Page Routes (RSC)
-
-Pages are React Server Components by default. As of v1.2, the four main routes (`/`, `/study`, `/cards`, `/habits`) are thin async RSCs: they fetch data directly (Prisma via `lib/dashboard.ts` / `lib/study-cards.ts`, or `lib/settings`) and render exactly one `*Client.tsx` component with the results as props — no hooks, no `'use client'`, no other logic. They do not import from each other. `app/*/loading.tsx` files (static server components, `bg-surface-2 animate-pulse`) are the Next.js fallback shown during client-side navigation to these routes.
-
-| Route | Page (RSC) | Client shell |
-|-------|-----------|--------------|
-| `/` | Home — fetches `StatsDTO` + `ActivityDTO` | `HomeClient.tsx`: hero + HabitTracker + StatsBar + ProficiencyArc |
-| `/study` | Study — fetches `CardDTO[]` + lessons | `StudyClient.tsx`: mode selector + StudySession, starts in `select-mode` |
-| `/cards` | Cards — fetches `CardDTO[]` + lessons | `CardsClient.tsx`: filterable list + CardEditor sheet |
-| `/habits` | Habits — fetches `ActivityDTO` + masteredCount | `HabitsClient.tsx`: heatmap + streaks + ProficiencyArc |
-| `/settings` | App settings: theme + colors + goal + sync | *(not yet RSC-converted)* |
-| `/wrapped` | "My Korean" summary: CEFR arc + stats + share | *(not yet RSC-converted)* |
-| `/login` | Password login form | — |
+**Client-side (React hooks):**
+- Session-local state only: current card index, grading results, open sheets
+- Optimistic UI: grade button → immediate queue advance, background API call
+- Never stores study cards or review state (could diverge from server)
 
 ---
 
-## Database Schema Overview
+## Key Abstractions
 
-Seven models in `prisma/schema.prisma`. Prisma client is generated to `app/generated/prisma/` and accessed via the singleton in `lib/prisma.ts`.
+**CardDTO:**
+- Purpose: Serialization contract for Card + review state + sentences crossing the RSC→client boundary
+- Example: `app/cards/page.tsx` serializes all Prisma `Date` fields to ISO strings before passing to `CardsClient`
+- Pattern: Every route that serves data to a client component defines and uses a `*DTO` type
 
-```
-Lesson  (1) ──< Card (N)
-Card    (1) ──< Sentence (N)
-Card    (1) ──< CardReview (1)
-Card    (N) ──< CardDependency >── Card (N)   [prerequisite graph]
-StudyDay    (standalone, keyed by habit-date string)
-Setting     (key/value store; also holds gloss: cache entries)
-```
+**Foundation-First Sequencing:**
+- Purpose: Learner sees prerequisites before dependents, blended with urgency
+- Examples: `lib/sequence.ts:sequenceCards()`, `lib/sequence.ts:selectSessionCards()`
+- Pattern: `score = depth − urgencyBoost`; sort ascending; cycle-safe DFS
 
-- `Card.normalizedFront` is `@unique` — enforces dedup at the DB level.
-- `Card.components` (JSON string[]) stores raw Claude-returned prerequisite lemmas; resolved to `CardDependency` rows at sync time.
-- `StudyDay.date` uses the user-local habit-day string `"YYYY-MM-DD"` (not UTC), computed via `habitDateStr(hour)` from `lib/habit.ts`.
-- `Setting` doubles as a gloss lookup cache (`gloss:<normalizedWord>` prefix keys).
+**Normalized Front:**
+- Purpose: Dedup key for cards (strips English gloss in parens, NFC-normalizes, collapses whitespace)
+- Examples: `lib/card-key.ts:normalizeFront()`, DB `Card.normalizedFront @unique`, gloss cache prefix
+- Pattern: Single source of truth; used by sync upsert, card editor, dedup scripts
 
 ---
 
-## Key Design Patterns
+## Entry Points
 
-**Foundation-first sequencing:** `lib/sequence.ts` implements a blended score `depth − urgencyBoost` where `depth` is the longest in-session prerequisite chain (DFS, cycle-safe) and `urgencyBoost` rewards overdue cards. Cards are sorted ascending by score — foundations come first, but severely overdue cards can leapfrog up to 3 prerequisite levels.
+**Web Request (Middleware):**
+- Location: `middleware.ts`
+- Triggers: Every HTTP request to the app
+- Responsibilities: HMAC cookie validation; redirect to `/login` if unauthenticated; allow `/api/login` and static assets
 
-**Dedup via normalizedFront:** `lib/card-key.ts:normalizeFront()` strips trailing English glosses in parens, NFC-normalizes, collapses whitespace. This is the single source of truth for "are two card fronts the same item?" Used by sync upsert, card editor, scripts, and gloss resolution.
+**Page Render (RSC):**
+- Location: `app/page.tsx`, `app/study/page.tsx`, `app/cards/page.tsx`, `app/habits/page.tsx`
+- Triggers: User navigates to route (or refresh)
+- Responsibilities: Fetch data server-side, serialize to DTO, render one `*Client.tsx` component with props
 
-**Sentence-centric presentation:** `Sentence` rows are purely presentational. The FSRS review unit is `Card`. Sentences rotate across reviews via `(hashStr(card.id) + reps) % sentences.length` — purity-safe (no `Math.random()`).
+**API Route:**
+- Location: `app/api/*/route.ts`
+- Triggers: Client fetch call or external webhook
+- Responsibilities: Validate input (400 on bad data), call `lib/`/Prisma, return JSON; catch errors (500)
 
-**TTS provider abstraction:** `lib/tts.ts` exports a `TtsProvider` interface. Adding a new TTS provider requires only a new implementation + env var flip; call sites (`app/api/tts/route.ts`) never change.
-
-**Color system:** Semantic CSS tokens (`--surface-1/2/3`, `--reward`, `--button`, `--cat-*`, `--highlight-bg/fg`) defined in `app/globals.css`. Blue is reserved for actions; card-type colors (indigo/violet/teal) are off the primary action color. Two user-configurable accents (`buttonColor`, `rewardColor`) are DB settings injected as `style` on `<html>` at server render.
-
-**Theme without flash:** A pre-paint inline `<script>` in `app/layout.tsx` reads `localStorage('theme')` and sets `data-theme` on `<html>` before first paint. Tailwind's `dark:` variant is rebound to `[data-theme="dark"]` via `@custom-variant dark`. The OS `@media` block stays as a no-JS fallback.
-
-**RSC + client-shell + DTO (v1.2):** Every main route's `page.tsx` is a thin async server component (no hooks, no `'use client'`) that fetches its data via a shared `lib/` pipeline function and renders exactly one `*Client.tsx` component with the result as props. This eliminates first-paint empty-state flashes without introducing per-page fetch logic duplication — the same `lib/` function (`getStudyCards`, `getStats`, `getActivityData`) also backs the legacy GET API route used for client-side re-fetches (e.g. the lesson-range filter). The DTO boundary (`lib/dto.ts`) is the enforcement point: every `DateTime` field must be `.toISOString()`'d before the prop crosses into the client component, or Next.js throws a serialization error at runtime.
-
-**Concurrent non-critical queries via `Promise.allSettled`:** Where a request has one critical query (must succeed or the request fails) and one non-critical query (a ranking/annotation signal), the two run concurrently via `Promise.allSettled` rather than `Promise.all` — a non-critical failure degrades gracefully (e.g. empty known-lemmas Set) instead of failing the whole request. Established in `lib/study-cards.ts`.
+**Background Process:**
+- Location: `components/StudySession.tsx:submitReview()` → `POST /api/review` (fire-and-forget)
+- Triggers: User submits grade on flashcard
+- Responsibilities: Persist review to DB; no wait, no error handling (client assumes success and advances queue)
 
 ---
 
 ## Architectural Constraints
 
-- **Vercel Hobby 60 s timeout:** `maxDuration = 300` in route code has no effect. Each `/api/sync` processes exactly 1 lesson (`MAX_LESSONS_PER_SYNC = 1`). Bulk operations must run locally via `scripts/local-resync.mts`.
+- **Vercel Hobby 60s timeout:** `maxDuration = 300` in route code has no effect. Each `/api/sync` processes ≤1 lesson. Bulk operations run locally via `scripts/local-resync.mts`.
 - **Turso / libSQL:** `prisma db push` and `prisma migrate` do not work against `libsql://`. Schema changes require manual DDL via `@libsql/client` `executeMultiple()`.
-- **Single-tenant:** No user model, no multi-tenancy. Auth is a single shared password.
-- **No background workers:** All processing is triggered by user actions.
-- **ESLint strict mode:** `react-hooks/purity` forbids `Date.now()` / `Math.random()` in render. `react-hooks/set-state-in-effect` forbids synchronous `setState` in effect bodies. Lint must pass clean.
+- **Single-tenant:** No user model, no multi-tenancy. Auth is one shared password.
+- **No background workers:** All processing is request-driven. No cron, no job queue.
+- **React purity (ESLint strict mode):** `react-hooks/purity` forbids `Date.now()` / `Math.random()` during render. Must use seeded randomness or pass time as a parameter.
+- **No circular imports:** `app/` does not import from `components/`; `components/` does not import from `app/`.
 
 ---
 
 ## Anti-Patterns
 
-### Raw `localDateStr()` for activity logging
+### Using Raw `new Date()` or `Date.now()` in Render
 
-**What happens:** Using UTC or raw local date for StudyDay entries.
-**Why it's wrong:** The habit day may start at a configurable hour (e.g. 2 AM), not midnight. Using the wrong date string corrupts streak data.
-**Do this instead:** Always call `habitDateStr(hour)` from `lib/habit.ts` when writing or reading `StudyDay.date`.
+**What happens:** Component re-renders with different timestamps each time, breaking React's purity guarantee.
 
-### `Math.random()` / `Date.now()` in render or module scope
+**Why it's wrong:** ESLint (`react-hooks/purity`) will fail the build. More importantly, it makes the component non-deterministic and hard to test.
 
-**What happens:** Calling impure functions at the top of a component or directly in JSX.
-**Why it's wrong:** ESLint `react-hooks/purity` will fail; values also differ between server and client, causing hydration mismatches.
-**Do this instead:** Read time/randomness in `useEffect`, event handlers, or via seeded values (see `seededShuffle` and the `seed` memo in `components/StudySession.tsx`).
+**Do this instead:** Read time in an event handler or `useEffect`. For deterministic behavior during render (e.g., sentence rotation in `StudySession.tsx`), use a seeded pseudo-RNG keyed on session-immutable data (see `seededShuffle()` in `StudySession.tsx`, which seeds on `sessionKey`).
 
-### Adding new settings outside `lib/settings.ts`
+### Calling `setState` Directly in an Effect Body
 
-**What happens:** Directly querying `prisma.setting.findUnique` in route handlers or components for a new setting.
-**Why it's wrong:** Bypasses the single source of truth; defaults and types become scattered.
-**Do this instead:** Add a getter/setter to `lib/settings.ts`, then plumb it through `app/api/settings/route.ts`.
+**What happens:** State updates run on every render cycle, causing infinite loops or duplicate effects.
+
+**Why it's wrong:** ESLint (`react-hooks/set-state-in-effect`) forbids synchronous `setState` in effect bodies. It breaks dependency-tracking and causes layout thrashing.
+
+**Do this instead:** Use `.then()` or `.catch()` callbacks inside async calls:
+```typescript
+useEffect(() => {
+  fetch('/api/data').then(setData) // ✓ OK — setState is in a callback
+}, [])
+```
+
+### Persisting New Settings Outside `lib/settings.ts`
+
+**What happens:** Settings logic scattered across API routes and components; multiple sources of truth.
+
+**Why it's wrong:** Changes are hard to coordinate; new settings require updating multiple files and tests.
+
+**Do this instead:** Add a getter/setter to `lib/settings.ts`, then call it from `app/api/settings/route.ts` and `app/layout.tsx` (if the setting needs to be injected server-side).
 
 ---
 
-*Architecture analysis: 2026-06-23 — updated 2026-07-01 for v1.2 (RSC + client-shell + DTO hydration pattern)*
+## Error Handling
+
+**Strategy:** Fail-open for non-critical operations; fail-closed for critical ones.
+
+**Patterns:**
+- **Critical (pool fetch):** Throws on DB error; client gets HTTP 500
+- **Non-critical (known-lemmas fetch):** Rejected promise → empty Set; session continues with degraded ranking
+- **LLM calls:** Validation after receipt (check `content[0].type`, regex-extract JSON); throw on parse error
+- **TTS/Blob failures:** Return 503; client falls back to browser speech synthesis
+- **Auth:** Fail closed — missing/invalid cookie → 401 for API, redirect to `/login` for pages
+
+---
+
+## Cross-Cutting Concerns
+
+**Logging:** Console-only (dev-local via `console.error`, `console.warn`, `console.log`). Production logs go to Vercel's built-in function logs.
+
+**Validation:** Input validation happens at the API route entry point (400 on bad schema). Business logic assumes validated input.
+
+**Authentication:** Middleware gate + stateless HMAC cookie. No sessions table, no JWT. One password shared by all users (single-tenant).
+
+---
+
+*Architecture analysis: 2026-07-02*
