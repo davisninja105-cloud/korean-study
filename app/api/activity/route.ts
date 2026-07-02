@@ -4,11 +4,26 @@ import { getActivityData } from '@/lib/dashboard'
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
+// Validate that a YYYY-MM-DD string is a real calendar day, not just well-shaped.
+// DATE_RE alone accepts `2026-13-45` / `2026-02-31` / `0000-00-00`, which then
+// corrupts streak/heatmap math downstream (shiftDate, computeStreaks, etc.).
+// The round-trip check rejects rollover dates and NaN dates.
+function isRealDate(dateStr: string): boolean {
+  if (!DATE_RE.test(dateStr)) return false
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const dt = new Date(Date.UTC(y, m - 1, d))
+  return (
+    dt.getUTCFullYear() === y &&
+    dt.getUTCMonth() === m - 1 &&
+    dt.getUTCDate() === d
+  )
+}
+
 // Log a chunk of active study time for a local calendar day (increment).
 export async function POST(req: NextRequest) {
   try {
     const { date, seconds, reviews } = await req.json().catch(() => ({}))
-    if (typeof date !== 'string' || !DATE_RE.test(date)) {
+    if (typeof date !== 'string' || !isRealDate(date)) {
       return NextResponse.json({ error: 'valid date (YYYY-MM-DD) required' }, { status: 400 })
     }
     const sec = Math.max(0, Math.min(600, Math.round(Number(seconds) || 0))) // clamp per-flush
