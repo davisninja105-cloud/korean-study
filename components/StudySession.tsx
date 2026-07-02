@@ -100,10 +100,18 @@ const REVIEW_ENDPOINT = '/api/review'
 
 // Bounded silent-retry wrapper for the background review save (REVIEW-04).
 // Makes up to 3 total attempts (1 initial + 2 retries) of POST /api/review.
-// An attempt counts as failed when the fetch rejects OR `res.ok` is false.
-// Between attempts it awaits a short backoff (~500ms then ~1500ms). On any
-// success it returns immediately WITHOUT invoking onExhausted; only after all
-// attempts fail does it call onExhausted once.
+// An attempt counts as failed when the fetch rejects/aborts OR `res.ok` is
+// false. Between attempts it awaits a short backoff (~500ms then ~1500ms). On
+// any success it returns immediately WITHOUT invoking onExhausted; only after
+// all attempts fail does it call onExhausted once.
+//
+// WR-04 hardening:
+// - A 4xx response is a permanent failure (bad input / stale card) — retrying
+//   won't help and would delay + mislabel the "check your connection" toast.
+//   Only network errors / 5xx / timeouts are retried.
+// - Each attempt has an 8s AbortController timeout so a hung connection
+//   (paused serverless instance, stalled libSQL) can't stall the loop forever
+//   and starve onExhausted from ever firing.
 //
 // Runs from an event-handler flow (submitReview), never during render, so the
 // setTimeout usage is purity-safe (react-hooks/purity).
@@ -115,14 +123,20 @@ async function postReviewWithRetry(
   const backoffMs = [500, 1500]
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
+      const ctrl = new AbortController()
+      const timeoutId = setTimeout(() => ctrl.abort(), 8000)
       const res = await fetch(REVIEW_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cardId, rating }),
+        signal: ctrl.signal,
       })
+      clearTimeout(timeoutId)
       if (res.ok) return
+      // 4xx is a permanent failure — don't retry; go straight to exhausted.
+      if (res.status >= 400 && res.status < 500) break
     } catch {
-      // fetch rejected — counts as a failed attempt; fall through to backoff/retry
+      // fetch rejected or aborted (timeout) — counts as a failed attempt; fall through to backoff/retry
     }
     if (attempt < 2) {
       await new Promise<void>((resolve) => setTimeout(resolve, backoffMs[attempt]))
