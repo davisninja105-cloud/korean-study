@@ -28,14 +28,17 @@ Explicitly deferred: security hardening (rate limiting, time-bound auth tokens) 
 
 The app is deployed and fully functional. v1.2 eliminated the blank/empty-state flash across every main route: skeleton loading screens on navigation (Phase 9), RSC + DTO server-side hydration for cards, study, home, and habits pages (Phases 10–12), concurrent Prisma queries in `/api/cards/due` (Phase 10), and an optimistic client-side FSRS flow that removes grade-button jitter during study (Phase 11). v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — design-system tokens, warm study-loop copy, and accessibility baseline remain in place underneath this milestone's work.
 
-v1.3 (in progress) opened with Phase 13: the two authenticated write routes (`/api/review`, `/api/cards/[id]`) now fail with structured responses instead of unhandled 500s, the background review save retries silently before surfacing a single toast, and undo restoration is mount-guarded/atomic. Phases 14 (sync visibility + caching) and 15 (StudySession refactor) remain.
+v1.3 (in progress) opened with Phase 13: the two authenticated write routes (`/api/review`, `/api/cards/[id]`) now fail with structured responses instead of unhandled 500s, the background review save retries silently before surfacing a single toast, and undo restoration is mount-guarded/atomic. Phase 14 shipped sync failure visibility (lessons named by content excerpt, not 'Lesson 1' or raw errors), the `keyToId` performance refactor (map built once per request, not per-lesson), and gloss cache preloading from the DB on mount. Phase 15 (StudySession refactor) remains.
 
-**Next:** Phase 14 — Sync Failure Visibility & Caching Performance (v1.3 in progress: 1 of 3 phases complete)
+**Next:** Phase 15 — StudySession Refactor & Sentence Selection Memoization (v1.3 in progress: 2 of 3 phases complete)
 
 ## Requirements
 
 ### Validated
 
+- ✓ SyncPanel names the specific failed lesson(s) with a safe content excerpt (not 'Lesson 1', no raw error) (SYNC-01) — Phase 14
+- ✓ `normalizedFront → cardId` map cached once per sync request; no per-lesson full-deck lookup (PERF-01) — Phase 14
+- ✓ Gloss cache preloaded from DB on mount via `GET /api/gloss/preload`; no LLM round-trip for already-looked-up words (PERF-02) — Phase 14
 - ✓ Instant skeleton feedback on navigating to cards/study/habits, `bg-surface-2 animate-pulse` tokens only (SKEL-01–04) — v1.2
 - ✓ Cards page hydrates from the server — real card list on first paint, no "no cards yet" flash (RSC-01) — v1.2
 - ✓ Study page hydrates from the server — lands on mode-select with the correct due count, no blank loading phase (RSC-02) — v1.2
@@ -71,9 +74,6 @@ v1.3 (in progress) opened with Phase 13: the two authenticated write routes (`/a
 
 ### Active
 
-- [ ] SyncPanel names the specific failed lesson(s), not just a generic "remaining" count (SYNC-01) — Phase 14
-- [ ] `normalizedFront → cardId` map cached during sync; no per-lesson full-deck lookup (PERF-01) — Phase 14
-- [ ] Gloss cache preloaded from DB on mount; no LLM round-trip for already-looked-up words (PERF-02) — Phase 14
 - [ ] Sentence-selection logic in a pure, unit-tested module importable without rendering StudySession (REFACTOR-02) — Phase 15
 - [ ] Sentence selection memoized — recomputes only on input change, not every render (PERF-03) — Phase 15
 - [ ] StudySession split into FlashcardMode/MultipleChoiceMode/FillBlankMode sub-components (REFACTOR-01) — Phase 15
@@ -135,8 +135,13 @@ v1.3 (in progress) opened with Phase 13: the two authenticated write routes (`/a
 | Generic 500 on `/api/review` (no schema leak); cards 500 left echoing `e.message` | Threat T-13-02: avoid internal-schema disclosure on the review route; REVIEW-03 scopes only the collision branch, so changing the cards 500 behavior would be scope creep | ✓ Phase 13 (REVIEW-03) |
 | P2002-catch (not pre-update `findUnique`) for the card-front collision 400 | Matches the codebase's existing catch-based error-handling idiom; avoids an extra query per edit | ✓ Phase 13 (REVIEW-03) |
 | `postReviewWithRetry`: 3 bounded attempts (1 initial + 2 retries) with ~500ms/~1500ms backoff, toast only on exhaustion | Hard-bounded so a persistent failure can't spin an unbounded request loop against the app's own API / Vercel quota (threat T-13-05) | ✓ Phase 13 (REVIEW-04) |
-| Mount-guard + React 18/19 auto-batched `setState` for atomic undo (not `useReducer`) | `isMountedRef` gates the whole restoration incl. `seenCardIdsRef` write so it applies all-or-nothing; Phase 15 owns the larger StudySession refactor so this plan minimized churn | ✓ Phase 13 (REVIEW-05) |
+- ✓ Mount-guard + React 18/19 auto-batched `setState` for atomic undo (not `useReducer`) | `isMountedRef` gates the whole restoration incl. `seenCardIdsRef` write so it applies all-or-nothing; Phase 15 owns the larger StudySession refactor so this plan minimized churn | ✓ Phase 13 (REVIEW-05) |
 | Toast dismiss callback held in a ref (`dismissRef`) | `setTimeout` set up once on mount, survives parent re-renders; `onDismiss` fires inside the timeout (not the effect body) — satisfies `react-hooks/set-state-in-effect` | ✓ Phase 13 |
+| `keyToId` map built once per sync request (before the lesson loop), augmented incrementally during upserts — not a per-lesson full-deck `findMany` | Eliminates O(lessons × deck) DB query growth; preserves edge-creation semantics exactly (same `where: { components: { not: null } }` seed, same `cardId_prerequisiteId` compound key, self-edge skip, non-fatal per-edge try/catch) | ✓ Phase 14 (PERF-01) |
+| `lessonExcerpt` extracts the first non-empty line (~48 chars, quoted) for sync failure naming; raw extraction/Prisma errors stay in `console.error`/`console.warn` only | Threat T-14-01: the user can find the failed section in their Google Doc without internal error text leaking to the client | ✓ Phase 14 (SYNC-01) |
+| Gloss preload: fixed server-side `take: 300`, `gloss:` prefix scoping, per-row `JSON.parse` try/catch | Threats T-14-04/05/06: bounded payload, no app-config settings exposed, corrupt cache rows never crash the preload | ✓ Phase 14 (PERF-02) |
+| `lessonExcerpt` extracted to `lib/lesson-excerpt.ts` for unit testability | Pure helper was inline in the route file; Nyquist validation gap filled by extracting + adding 9 unit tests | ✓ Phase 14 (Nyquist) |
+| `@source not "../.planning"` in `globals.css` | Tailwind v4 auto-scanned `.planning/` markdown docs, found truncated class names like `pb-[env(...)]`, and generated invalid CSS; excluding the directory fixes the parse error | ✓ Phase 14 UAT |
 
 ## Evolution
 
@@ -157,4 +162,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-02 after Phase 13*
+*Last updated: 2026-07-02 after Phase 14*

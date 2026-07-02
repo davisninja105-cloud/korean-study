@@ -4,8 +4,8 @@ milestone: v1.3
 milestone_name: Reliability & Hardening
 current_phase: 15
 current_phase_name: StudySession Refactor & Sentence-Selection Memoization
-status: verifying
-stopped_at: "Phase 14 complete (2/2 plans: SYNC-01, PERF-01, PERF-02); ready for Phase 15 planning"
+status: ready_to_plan
+stopped_at: "Phase 14 complete and verified (UAT 3/3, SECURITY threats_open:0, VALIDATION partial); ready to plan Phase 15"
 last_updated: "2026-07-02T22:55:00.720Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 14 complete, transitioned to Phase 15
@@ -24,16 +24,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 14 — human verification needed (3 UAT items) before phase close
+**Current focus:** Phase 15 — StudySession Refactor & Sentence-Selection Memoization (ready to plan)
 
 ## Current Position
 
 Phase: 15 — StudySession Refactor & Sentence-Selection Memoization
 Plan: Not started
-Status: Phase 14 plans complete; verification human_needed — run /gsd-verify-work 14
-Last activity: 2026-07-02 — Phase 14 complete, transitioned to Phase 15
+Status: Ready to plan
+Last activity: 2026-07-02 — Phase 14 complete and verified, transitioned to Phase 15
 
-Progress: [███░░░░░░░] 33% (milestone: 1 of 3 phases complete; Phase 14 plans done, UAT pending)
+Progress: [██████░░░░] 67% (milestone: 2 of 3 phases complete; 4 of 4 plans done)
 
 ## Performance Metrics
 
@@ -103,7 +103,7 @@ Recent decisions affecting current work:
 - [Phase 13 → resolved] Phases 13 & 15 both touched `components/StudySession.tsx` — Phase 13 shipped first, so Phase 15's refactor must preserve the `postReviewWithRetry` wiring, `isMountedRef` mount-guard, `saveError`/`<Toast>` plumbing, and atomic `handleUndo` restoration.
 - Phase 15 is a behavior-preserving refactor — needs a live study-session UAT (flip/grade/undo/mode-switch) to confirm no regression; lint (`react-hooks/purity`) must stay clean.
 - [Phase 14 → resolved] PERF-01 & SYNC-01 both edited `app/api/sync/route.ts` — landed together in plan 14-01 with no conflict (PERF-01 hoisted the map; SYNC-01 added the excerpt helper + rewrote failure strings; both tasks committed atomically).
-- [Phase 14 UAT] PERF-02 was live-verified at the plan level (Task 3 checkpoint, operator "approved": preloaded cache HIT post-reload, new-word fallback intact, no console errors). Optional remaining end-of-phase UAT: a live sync against the tutor's Google Doc with a deliberately-failing/zero-card lesson would confirm the SyncPanel shows the excerpt (not `Lesson 1`, no raw error) and that CardDependency edges still form for a normal lesson (SYNC-01/PERF-01).
+- [Phase 14 → resolved] UAT complete (3/3 passed, 0 issues): SYNC-01 excerpt rendering confirmed, PERF-01 CardDependency edge creation confirmed (2095 edges, 0 self-edges, edges connect cards with components to prereq cards with components), PERF-02 live-verified at plan level. Security: threats_open:0 (8 threats, all closed). Nyquist: partial (lessonExcerpt unit-tested, sync route + gloss preload manual-only).
 - [Phase 13 deferred] `app/api/review/undo/route.ts` has the same missing-try/catch shape as the hardened `/api/review` route but was out of scope for REVIEW-01..05 — left for a future hardening pass.
 
 ### Roadmap Evolution
@@ -121,10 +121,10 @@ Carried forward from v1.2 close (2026-07-01) — informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-02T19:04:50.120Z
-Stopped at: Phase 14 complete (2/2 plans: SYNC-01, PERF-01, PERF-02); ready for Phase 15 planning
+Last session: 2026-07-02T22:55:00.720Z
+Stopped at: Phase 14 complete and verified (UAT 3/3, SECURITY + VALIDATION produced); ready to plan Phase 15
 Resume file: None
 
 ## Operator Next Steps
 
-- Phase 14 complete (2/2 plans; SYNC-01 + PERF-01 + PERF-02 satisfied, build+lint clean, all committed). PERF-02 was live-verified at the plan level (Task 3 checkpoint, operator "approved"). Next: plan Phase 15 (StudySession refactor & sentence-selection memoization — REFACTOR-02, PERF-03, REFACTOR-01). Optional end-of-phase UAT for the SYNC-01/PERF-01 sync-route changes (live sync against the tutor's Google Doc) can run at phase close before starting Phase 15.
+- Phase 14 complete and verified (UAT 3/3 passed, 0 issues; SECURITY threats_open:0; VALIDATION partial with lessonExcerpt unit test). Next: plan Phase 15 (StudySession refactor & sentence-selection memoization — REFACTOR-02, PERF-03, REFACTOR-01). A pending todo was captured during UAT: spurious `components` in Claude extraction creating wrong CardDependency edges (lib/extract-cards.ts) — future work, not blocking Phase 15.
