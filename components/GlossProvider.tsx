@@ -24,6 +24,7 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { typeBadgeClass } from '@/lib/card-style'
+import { normalizeFront } from '@/lib/card-key'
 
 // ── Types ─────────────────────────────────────────────────────────────────
 
@@ -221,37 +222,59 @@ export function GlossProvider({ children }: { children: React.ReactNode }) {
   const [popover, setPopover] = useState<PopoverState | null>(null)
   const cache = useRef<Map<string, GlossEntry>>(new Map())
 
+  // Preload the persistent DB gloss cache into the in-memory map on mount
+  // (PERF-02): previously-glossed words then resolve instantly on a fresh
+  // load with no LLM round-trip. Writes to the ref ONLY (no setState in the
+  // effect body) so this is react-hooks/set-state-in-effect safe; React
+  // StrictMode double-invoke is harmless (idempotent Map writes). A preload
+  // failure is silent + non-fatal — the popover still fetches per-tap on a
+  // cache miss, so the feature works whether or not preload has resolved.
+  useEffect(() => {
+    fetch('/api/gloss/preload')
+      .then((r) => r.json())
+      .then((data: { entries?: { word: string; entry: GlossEntry }[] }) => {
+        for (const { word, entry } of data.entries ?? []) {
+          cache.current.set(word, entry)
+        }
+      })
+      .catch(() => {/* non-fatal — degrade to per-tap fetching */})
+  }, [])
+
   const showGloss = useCallback((word: string, anchorRect: DOMRect) => {
-    const key = word.trim()
-    if (!key) return
+    // `raw` is the display word + POST body; `cacheKey` is the normalized
+    // form that matches the DB `gloss:<normalizeFront(word)>` key, so a
+    // preloaded entry is a hit here on the next tap of the same word.
+    const raw = word.trim()
+    if (!raw) return
+    const cacheKey = normalizeFront(raw)
 
     // In-memory cache hit — instant display
-    const hit = cache.current.get(key)
+    const hit = cache.current.get(cacheKey)
     if (hit) {
-      setPopover({ word: key, anchorRect, entry: hit, loading: false, added: false, error: false })
+      setPopover({ word: raw, anchorRect, entry: hit, loading: false, added: false, error: false })
       return
     }
 
     // Show loading state then fetch
-    setPopover({ word: key, anchorRect, entry: null, loading: true, added: false, error: false })
+    setPopover({ word: raw, anchorRect, entry: null, loading: true, added: false, error: false })
 
     fetch('/api/gloss', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ word: key }),
+      body: JSON.stringify({ word: raw }),
     })
       .then((r) => r.json())
       .then((data: GlossEntry & { error?: string }) => {
-        if (!data.error) cache.current.set(key, data)
+        if (!data.error) cache.current.set(cacheKey, data)
         setPopover((prev) =>
-          prev?.word === key
+          prev?.word === raw
             ? { ...prev, entry: data.error ? null : data, loading: false, error: !!data.error }
             : prev
         )
       })
       .catch(() => {
         setPopover((prev) =>
-          prev?.word === key ? { ...prev, loading: false, error: true } : prev
+          prev?.word === raw ? { ...prev, loading: false, error: true } : prev
         )
       })
   }, [])
