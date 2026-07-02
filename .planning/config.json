@@ -1,6 +1,6 @@
 {
   "model_profile": "adaptive",
-  "commit_docs": false,
+  "commit_docs": true,
   "parallelization": false,
   "search_gitignored": false,
   "brave_search": false,
@@ -21,7 +21,7 @@
     "research": true,
     "plan_check": true,
     "verifier": true,
-    "nyquist_validation": false,
+    "nyquist_validation": true,
     "auto_advance": false,
     "node_repair": true,
     "node_repair_budget": 2,
@@ -31,7 +31,7 @@
     "human_verify_mode": "end-of-phase",
     "context_guard_mode": "warn",
     "text_mode": false,
-    "research_before_questions": false,
+    "research_before_questions": true,
     "discuss_mode": "discuss",
     "skip_discuss": false,
     "code_review": true,
@@ -59,7 +59,7 @@
   "agent_skills": {},
   "claude_md_path": "./.claude/CLAUDE.md",
   "plan_review": {
-    "source_grounding": false,
+    "source_grounding": true,
     "source_grounding_authority": "grep"
   },
   "mode": "yolo",

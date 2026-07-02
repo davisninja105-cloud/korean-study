@@ -8,13 +8,27 @@ A personal Korean spaced-repetition study app (Next.js + Prisma/Turso, Claude-po
 
 When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context. If everything else fails, this must hold.
 
+## Current Milestone: v1.3 Reliability & Hardening
+
+**Goal:** Fix the most pressing correctness/reliability findings from the `.planning/codebase/CONCERNS.md` audit, plus targeted performance and maintainability cleanup.
+
+**Target features:**
+- Review API hardening — `try/catch` in `/api/review`, validate rating ∈ [1,2,3,4]
+- Card front collision handling — friendly error (not raw 500) when an edit's normalized front collides with an existing card
+- Review save reliability — silent retry on background `POST /api/review` failure, toast only if retries exhausted; fix incomplete undo state restoration
+- Sync failure visibility — persist + surface which lesson(s) failed in the SyncPanel, not just a generic "remaining" count
+- Performance — cache the `normalizedFront → cardId` map during sync, preload `GlossProvider` cache from DB on mount, memoize `StudySession`'s sentence-selection calc
+- `StudySession.tsx` refactor — split into `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` sub-components, extract sentence logic into a pure hook
+
+Explicitly deferred: security hardening (rate limiting, time-bound auth tokens) — `CONCERNS.md` itself flags these low-priority for a single-user app.
+
 ## Current State
 
 **Shipped:** v1.2 Performance & Snappiness (2026-07-01)
 
 The app is deployed and fully functional. v1.2 eliminated the blank/empty-state flash across every main route: skeleton loading screens on navigation (Phase 9), RSC + DTO server-side hydration for cards, study, home, and habits pages (Phases 10–12), concurrent Prisma queries in `/api/cards/due` (Phase 10), and an optimistic client-side FSRS flow that removes grade-button jitter during study (Phase 11). v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — design-system tokens, warm study-loop copy, and accessibility baseline remain in place underneath this milestone's work.
 
-**Next:** Planning next milestone (run `/gsd-new-milestone`)
+**Next:** Defining requirements for v1.3
 
 ## Requirements
 
@@ -125,4 +139,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-01 — after v1.2 Performance & Snappiness milestone*
+*Last updated: 2026-07-02 — v1.3 Reliability & Hardening milestone started*
