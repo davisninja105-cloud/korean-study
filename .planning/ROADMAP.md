@@ -66,7 +66,9 @@ See `.planning/milestones/v1.2-ROADMAP.md` for full phase details.
   3. Editing a card's front to a value that normalizes to another card's front shows a clear "this front already exists" message (400), not a generic uncaught server error.
   4. When the background `POST /api/review` save fails, it retries silently; a toast appears only after all retries are exhausted.
   5. After undoing a review, the previous card reappears with the queue, seen-card set, and session stats all restored consistently — an interrupted undo never leaves partially-restored state.
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 13-01-PLAN.md — Harden /api/review (try/catch + rating validation) and friendly card-front collision 400 (REVIEW-01, REVIEW-02, REVIEW-03)
+- [ ] 13-02-PLAN.md — Silent bounded retry + toast on review-save failure, atomic undo restoration (REVIEW-04, REVIEW-05)
 
 ### Phase 14: Sync Failure Visibility & Caching Performance
 **Goal**: Sync problems are diagnosable at a glance, and the data layer stops repeating expensive per-lesson and per-session lookups.
@@ -111,6 +113,6 @@ Phases execute in numeric order: 13 → 14 → 15
 | 10. Cards Hydration + API Parallelization | v1.2 | 2/2 | Complete | 2026-06-30 |
 | 11. Study Page Hydration & Interaction Polish | v1.2 | 3/3 | Complete | 2026-06-30 |
 | 12. Home & Habits Hydration | v1.2 | 3/3 | Complete | 2026-07-01 |
-| 13. Review API Hardening & Save Reliability | v1.3 | 0/TBD | Not started | - |
+| 13. Review API Hardening & Save Reliability | v1.3 | 0/2 | Not started | - |
 | 14. Sync Failure Visibility & Caching Performance | v1.3 | 0/TBD | Not started | - |
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 0/TBD | Not started | - |
