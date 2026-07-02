@@ -88,7 +88,13 @@ export async function DELETE(
     await prisma.card.delete({ where: { id } })
     return NextResponse.json({ deleted: true })
   } catch (e) {
-    const message = e instanceof Error ? e.message : 'Delete failed'
-    return NextResponse.json({ error: message }, { status: 500 })
+    // WR-01: don't leak the raw error message to the client (may include
+    // internal schema/Turso endpoint details) — same disclosure posture as
+    // the PUT handler above (WR-02). Map "not found" (P2025) to 404.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+      return NextResponse.json({ error: 'Card not found' }, { status: 404 })
+    }
+    console.error('DELETE /api/cards/[id] failed:', e)
+    return NextResponse.json({ error: 'Failed to delete card' }, { status: 500 })
   }
 }
