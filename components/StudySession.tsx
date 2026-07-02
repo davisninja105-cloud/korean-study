@@ -592,6 +592,10 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       })
       if (!res.ok) throw new Error(`Undo failed: ${res.status}`)
     } catch {
+      // IN-02: guarded for symmetry with the success-path restore below
+      // (REVIEW-05) — if the session ended mid-undo, there is no UI left to
+      // re-arm, so skip the ref write + setState entirely.
+      if (!isMountedRef.current) return
       // Network failure: undo could not be persisted. Re-arm canUndo so the user
       // can retry, and do NOT restore client state (server is still at post-review).
       undoRef.current = { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds }
