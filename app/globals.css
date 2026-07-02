@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* Exclude .planning/ from Tailwind's content scanner — its markdown docs contain
+   truncated class names like `pb-[env(...)]` that generate invalid CSS. */
+@source not "../.planning";
+
 /* Manual theme toggle: drive Tailwind's `dark:` variant off [data-theme="dark"]
    instead of the OS media query. A pre-paint script in app/layout.tsx resolves
    System → light/dark and sets the attribute before first paint (no flash). */
