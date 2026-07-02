@@ -28,7 +28,9 @@ Explicitly deferred: security hardening (rate limiting, time-bound auth tokens) 
 
 The app is deployed and fully functional. v1.2 eliminated the blank/empty-state flash across every main route: skeleton loading screens on navigation (Phase 9), RSC + DTO server-side hydration for cards, study, home, and habits pages (Phases 10–12), concurrent Prisma queries in `/api/cards/due` (Phase 10), and an optimistic client-side FSRS flow that removes grade-button jitter during study (Phase 11). v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — design-system tokens, warm study-loop copy, and accessibility baseline remain in place underneath this milestone's work.
 
-**Next:** Defining requirements for v1.3
+v1.3 (in progress) opened with Phase 13: the two authenticated write routes (`/api/review`, `/api/cards/[id]`) now fail with structured responses instead of unhandled 500s, the background review save retries silently before surfacing a single toast, and undo restoration is mount-guarded/atomic. Phases 14 (sync visibility + caching) and 15 (StudySession refactor) remain.
+
+**Next:** Phase 14 — Sync Failure Visibility & Caching Performance (v1.3 in progress: 1 of 3 phases complete)
 
 ## Requirements
 
@@ -42,6 +44,11 @@ The app is deployed and fully functional. v1.2 eliminated the blank/empty-state 
 - ✓ All server→client prop boundaries use DTO types; no raw Prisma `Date` crosses the boundary (RSC-05) — v1.2
 - ✓ `/api/cards/due` runs its Prisma queries concurrently via `Promise.allSettled`, with graceful degradation on partial failure (DB-01) — v1.2
 - ✓ Card flip, grade buttons, and audio have no re-fetch/recompute jitter during an active session — optimistic client-side FSRS (UX-01) — v1.2
+- ✓ POST /api/review wrapped in try/catch — returns a generic 500 (no schema leak) on DB/FSRS failure (REVIEW-01) — Phase 13
+- ✓ Rating validation rejects values outside {1,2,3,4} with a 400 before any DB/FSRS work (REVIEW-02) — Phase 13
+- ✓ Card-front collision returns a friendly 400 (not raw 500) on normalizedFront collision (REVIEW-03) — Phase 13
+- ✓ Background POST /api/review save retries silently (3 bounded attempts); toast only after retries exhausted (REVIEW-04) — Phase 13
+- ✓ Undo restoration is mount-guarded + atomic; an interrupted undo leaves no partially-restored state (REVIEW-05) — Phase 13
 - ✓ Full UI/UX audit: 27 findings across 7 screens × 6 dimensions, P0/P1/P2 classified — v1.1
 - ✓ Complete design-system token sweep: `--muted`, `--border`, fixed dark highlight; zero gray-* utilities — v1.1
 - ✓ Study session polish: "Card N of Total" counter, warm haptic grade differentiation, Korean line-height 1.7, smooth inter-card fade — v1.1
@@ -64,7 +71,12 @@ The app is deployed and fully functional. v1.2 eliminated the blank/empty-state 
 
 ### Active
 
-(None yet — run `/gsd-new-milestone` to define the next milestone's requirements)
+- [ ] SyncPanel names the specific failed lesson(s), not just a generic "remaining" count (SYNC-01) — Phase 14
+- [ ] `normalizedFront → cardId` map cached during sync; no per-lesson full-deck lookup (PERF-01) — Phase 14
+- [ ] Gloss cache preloaded from DB on mount; no LLM round-trip for already-looked-up words (PERF-02) — Phase 14
+- [ ] Sentence-selection logic in a pure, unit-tested module importable without rendering StudySession (REFACTOR-02) — Phase 15
+- [ ] Sentence selection memoized — recomputes only on input change, not every render (PERF-03) — Phase 15
+- [ ] StudySession split into FlashcardMode/MultipleChoiceMode/FillBlankMode sub-components (REFACTOR-01) — Phase 15
 
 **Deferred performance candidates** (raised during v1.2, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
@@ -119,6 +131,12 @@ The app is deployed and fully functional. v1.2 eliminated the blank/empty-state 
 | `submitReview` made synchronous/optimistic — FSRS computed client-side via `reviewCard()`, save is fire-and-forget | Eliminates the 100–200ms grade-button jitter; the server write can safely lag the UI since FSRS state is deterministic | ✓ Shipped in Phase 11; undo restores the pre-grade snapshot including `revealed=false` (fixed post-UAT, commit `2bdbe67`) |
 | RSC pages start client shells in their "ready" state (`select-mode`, populated hero, etc.) instead of a `loading` phase, fed by props | Removes the blank/loading flash entirely — the server render already has the data, so there's nothing to wait for on mount | ✓ Shipped across Phases 10–12 (`CardsClient`, `StudyClient`, `HomeClient`, `HabitsClient`) |
 | No new npm packages for entire v1.2 milestone | Every pattern (RSC, `loading.tsx`, `Promise.allSettled`, DTO serialization) is built into Next.js 16 + React 19 | ✓ Delivered — entire v1.2 done with zero new dependencies |
+| Rating guard placed before the try block (pure validation); 404 kept inside try | Invalid rating short-circuits to 400 with zero DB/FSRS work; `findUnique` is a DB call that can throw so the 404 return stays inside the catch (plan prose said "outside" but binding truths required inside) | ✓ Phase 13 (REVIEW-01/02) |
+| Generic 500 on `/api/review` (no schema leak); cards 500 left echoing `e.message` | Threat T-13-02: avoid internal-schema disclosure on the review route; REVIEW-03 scopes only the collision branch, so changing the cards 500 behavior would be scope creep | ✓ Phase 13 (REVIEW-03) |
+| P2002-catch (not pre-update `findUnique`) for the card-front collision 400 | Matches the codebase's existing catch-based error-handling idiom; avoids an extra query per edit | ✓ Phase 13 (REVIEW-03) |
+| `postReviewWithRetry`: 3 bounded attempts (1 initial + 2 retries) with ~500ms/~1500ms backoff, toast only on exhaustion | Hard-bounded so a persistent failure can't spin an unbounded request loop against the app's own API / Vercel quota (threat T-13-05) | ✓ Phase 13 (REVIEW-04) |
+| Mount-guard + React 18/19 auto-batched `setState` for atomic undo (not `useReducer`) | `isMountedRef` gates the whole restoration incl. `seenCardIdsRef` write so it applies all-or-nothing; Phase 15 owns the larger StudySession refactor so this plan minimized churn | ✓ Phase 13 (REVIEW-05) |
+| Toast dismiss callback held in a ref (`dismissRef`) | `setTimeout` set up once on mount, survives parent re-renders; `onDismiss` fires inside the timeout (not the effect body) — satisfies `react-hooks/set-state-in-effect` | ✓ Phase 13 |
 
 ## Evolution
 
@@ -139,4 +157,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-02 — v1.3 Reliability & Hardening milestone started*
+*Last updated: 2026-07-02 after Phase 13*

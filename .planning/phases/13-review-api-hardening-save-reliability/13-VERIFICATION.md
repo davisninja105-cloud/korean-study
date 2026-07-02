@@ -1,19 +1,22 @@
 ---
 phase: 13-review-api-hardening-save-reliability
 verified: 2026-07-02T06:30:00Z
-status: human_needed
+status: passed
 score: 4/5 must-haves verified
 behavior_unverified: 1 # Count of ⚠️ PRESENT_BEHAVIOR_UNVERIFIED truths (present + wired, behavior not exercised); each is detailed in behavior_unverified_items below (and in human_verification when status is human_needed)
 overrides_applied: 0
 behavior_unverified_items:
+
   - truth: "After undoing a review, the previous card reappears with the queue, seen-card set, and session stats all restored consistently — an interrupted undo never leaves partially-restored state (REVIEW-05 / SC5)."
     test: "Unmount the StudySession component between the `await fetch('/api/review/undo')` resolving and the restoration block (line 596+). Concretely: trigger an undo, then force-unmount the component (e.g. navigate away / session-key change) before the undo fetch resolves, then re-mount and inspect seenCardIdsRef + queue/stats coherence."
     expected: "No partially-restored state: seenCardIdsRef.current is NOT mutated, no stale setState calls fire, and on re-mount the queue/stats/seen-count are coherent (not half-restored). The `if (!isMountedRef.current) return` guard at line 596 is the structural guarantee."
     why_human: "This is a cancellation/cleanup invariant (behavior-dependent). The Task 3 live checkpoint verified undo-during-flux (consistency after grade→undo), but did NOT exercise the unmount-mid-undo path specifically. The mount guard is structurally present and correctly placed before the seenCardIdsRef write (line 600), but grep cannot prove React's unmount lifecycle reliably sets isMountedRef.current=false before the async callback fires — a runtime check is needed to close the invariant."
 human_verification:
+
   - test: "Verify the save-failure toast appears (or the retry loop terminates) under a HUNG-connection scenario — server accepts the TCP connection but never responds (paused serverless instance / hung libSQL). DevTools → Network → throttle to a hung backend or block response mid-flight, then grade a card."
     expected: "Either (a) the retry loop terminates within a bounded time and the 'Couldn't save your last review' toast appears, OR (b) the developer confirms this edge case is acceptable for a single-tenant app. If neither holds, add an AbortController timeout (~8s per attempt) to postReviewWithRetry so a hung fetch aborts and the loop advances to onExhausted."
     why_human: "postReviewWithRetry (components/StudySession.tsx:110-132) has NO fetch timeout/AbortController. If `await fetch(...)` never resolves AND never rejects (hung server), the for-loop never advances, onExhausted is never called, and the toast NEVER appears — defeating REVIEW-04's guarantee under exactly the flaky-network condition it targets. The Task 3 checkpoint tested the offline=reject path (fetch rejects immediately → loop advances → toast), NOT the hung-fetch path. This is 13-REVIEW.md WR-04 issue 2."
+
   - test: "Verify unmount-during-undo leaves no partially-restored state (REVIEW-05 cleanup invariant)."
     expected: "seenCardIdsRef.current is not mutated post-unmount; no stale setters fire; queue/stats/seen-count are coherent on re-mount. The `if (!isMountedRef.current) return` guard at components/StudySession.tsx:596 is the structural guarantee."
     why_human: "Cleanup invariant — see behavior_unverified_items above. Task 3 verified undo-during-flux consistency, not the unmount-mid-undo path. The mount guard is structurally sound (present, precedes the ref write at line 600, isMountedRef effect sets false on unmount at lines 212-215), but the specific unmount-mid-undo runtime path was not exercised."

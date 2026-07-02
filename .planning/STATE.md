@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Reliability & Hardening
-current_phase: 13
-current_phase_name: review-api-hardening-save-reliability
-status: verifying
-stopped_at: Completed 13-02-PLAN.md (client retry + atomic undo)
-last_updated: "2026-07-02T06:00:28.752Z"
+current_phase: 14
+current_phase_name: Sync Failure Visibility & Caching Performance
+status: ready_to_plan
+stopped_at: Phase 13 complete, transitioned to Phase 14; ready to plan
+last_updated: "2026-07-02T17:31:34.423Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 13 execution started
+last_activity_desc: Phase 13 complete, transitioned to Phase 14
 progress:
   total_phases: 3
   completed_phases: 1
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 13 — review-api-hardening-save-reliability
+**Current focus:** Phase 14 — Sync Failure Visibility & Caching Performance
 
 ## Current Position
 
-Phase: 13 (review-api-hardening-save-reliability) — COMPLETE (ready for verification)
-Plan: 2 of 2
-Status: Phase complete — ready for verification
-Last activity: 2026-07-02 — Plan 13-02 complete (client retry + atomic undo); Phase 13 finished
+Phase: 14 — Sync Failure Visibility & Caching Performance
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-02 — Phase 13 complete, transitioned to Phase 14
 
 Progress: [███░░░░░░░] 33% (milestone: 1 of 3 phases complete)
 
@@ -89,9 +89,10 @@ None yet.
 
 ### Blockers/Concerns
 
-- Phases 13 & 15 both touch `components/StudySession.tsx` (submitReview/undo). Sequence 13 before 15 so the refactor preserves the hardened retry/atomic-undo behavior rather than reworking it.
+- [Phase 13 → resolved] Phases 13 & 15 both touched `components/StudySession.tsx` — Phase 13 shipped first, so Phase 15's refactor must preserve the `postReviewWithRetry` wiring, `isMountedRef` mount-guard, `saveError`/`<Toast>` plumbing, and atomic `handleUndo` restoration.
 - Phase 15 is a behavior-preserving refactor — needs a live study-session UAT (flip/grade/undo/mode-switch) to confirm no regression; lint (`react-hooks/purity`) must stay clean.
 - Phase 14: PERF-01 & SYNC-01 both edit `app/api/sync/route.ts` — coordinate the two changes within the phase to avoid conflicts.
+- [Phase 13 deferred] `app/api/review/undo/route.ts` has the same missing-try/catch shape as the hardened `/api/review` route but was out of scope for REVIEW-01..05 — left for a future hardening pass.
 
 ### Roadmap Evolution
 
@@ -104,13 +105,14 @@ Carried forward from v1.2 close (2026-07-01) — informational only:
 | Category | Item | Status |
 |----------|------|--------|
 | verification | Phase 10/11 `human_needed` RSC paint-timing checks | Resolved in practice via Phase 11 live UAT; low risk |
+| hardening | `app/api/review/undo/route.ts` missing try/catch (deferred in Phase 13) | Open — future hardening pass |
 
 ## Session Continuity
 
-Last session: 2026-07-02T06:00:12.531Z
-Stopped at: Completed 13-02-PLAN.md (client retry + atomic undo)
+Last session: 2026-07-02T17:31:00Z
+Stopped at: Phase 13 complete, ready to plan Phase 14
 Resume file: None
 
 ## Operator Next Steps
 
-- Phase 13 complete (2/2 plans; REVIEW-01..05 all satisfied) — run `/gsd-verify-work 13` to verify the phase, then `/gsd-plan-phase 14` (sync visibility + caching) to continue the milestone
+- Phase 13 verified & complete (2/2 plans; REVIEW-01..05 satisfied, UAT passed). Next: `/gsd-plan-phase 14` (sync visibility + caching) to continue the milestone.

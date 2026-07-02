@@ -123,6 +123,6 @@ Phases execute in numeric order: 13 → 14 → 15
 | 10. Cards Hydration + API Parallelization | v1.2 | 2/2 | Complete | 2026-06-30 |
 | 11. Study Page Hydration & Interaction Polish | v1.2 | 3/3 | Complete | 2026-06-30 |
 | 12. Home & Habits Hydration | v1.2 | 3/3 | Complete | 2026-07-01 |
-| 13. Review API Hardening & Save Reliability | v1.3 | 2/2 | Complete   | 2026-07-02 |
+| 13. Review API Hardening & Save Reliability | v1.3 | 2/2 | Complete    | 2026-07-02 |
 | 14. Sync Failure Visibility & Caching Performance | v1.3 | 0/TBD | Not started | - |
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 0/TBD | Not started | - |
