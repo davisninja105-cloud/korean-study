@@ -6,14 +6,14 @@ current_phase: 15
 current_phase_name: StudySession Refactor & Sentence-Selection Memoization
 status: executing
 stopped_at: "Phase 14 complete and verified (UAT 3/3, SECURITY threats_open:0, VALIDATION partial); ready to plan Phase 15"
-last_updated: "2026-07-02T23:31:28.405Z"
+last_updated: "2026-07-02T23:42:46.017Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 14 complete and verified, transitioned to Phase 15
+last_activity_desc: Phase 15 execution started
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 6
+  completed_plans: 5
   percent: 67
 ---
 
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 15 — StudySession Refactor & Sentence-Selection Memoization (ready to plan)
+**Current focus:** Phase 15 — StudySession Refactor & Sentence-Selection Memoization
 
 ## Current Position
 
-Phase: 15 — StudySession Refactor & Sentence-Selection Memoization
-Plan: Not started
+Phase: 15 (StudySession Refactor & Sentence-Selection Memoization) — EXECUTING
+Plan: 2 of 2
 Status: Ready to execute
-Last activity: 2026-07-02 — Phase 14 complete and verified, transitioned to Phase 15
+Last activity: 2026-07-02 — Phase 15 execution started
 
 Progress: [██████░░░░] 67% (milestone: 2 of 3 phases complete; 4 of 4 plans done)
 
@@ -64,6 +64,7 @@ Progress: [██████░░░░] 67% (milestone: 2 of 3 phases complet
 | Phase 13 P02 | ~10 min | 3 | 2 |
 | Phase 14 P01 | ~8 min | 2 | 1 |
 | Phase 14 P02 | ~7 min | 3 | 3 |
+| Phase 15 P01 | 6 min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -93,6 +94,9 @@ Recent decisions affecting current work:
 - [Phase 14]: Plan 14-02: Mount preload effect writes to `cache.current` (a ref) ONLY — no setState in the effect body — so it is `react-hooks/set-state-in-effect` safe; React StrictMode double-invoke is harmless (idempotent `Map.set`); rendering is never gated on preload resolving (PERF-02)
 - [Phase 14]: Plan 14-02: Preload endpoint bounded + gloss-scoped — fixed server-side `take: GLOSS_PRELOAD_LIMIT` (300), no client-controllable limit param (T-14-04); `where: { key: { startsWith: 'gloss:' } }` so app-config settings are never read/serialized (T-14-05); degrades to `{ entries: [] }` on error, never a 500 (PERF-02)
 - [Phase 14]: Plan 14-02: Per-row `JSON.parse` in try/catch (skip + console.warn malformed, mirroring getCachedGloss) — a corrupt cache row never crashes the preload (T-14-06); no new npm deps, no schema changes (T-14-SC accepted)
+- [Phase ?]: [Phase 15] Plan 15-01: Co-located hashStr in lib/sentence-selection.ts (not a separate lib/hash.ts) — single source of truth shared by sentence-selection tie-break and mcOptions distractor seeding; lower ceremony than a one-function file (REFACTOR-02)
+- [Phase ?]: [Phase 15] Plan 15-01: Moved chosenIdx useMemo + its inputs above the empty-queue early return to satisfy react-hooks/rules-of-hooks — the original inline IIFE was not a hook so could sit after the return, but useMemo cannot be called conditionally (PERF-03)
+- [Phase ?]: [Phase 15] Plan 15-01: Used minimal structural SelectableSentence interface ({korean, targetForm, unknownCount?}) instead of importing SentenceDTO — mirrors lib/sequence.ts SeqCard, keeps the pure module decoupled from the DTO layer (REFACTOR-02)
 
 ### Pending Todos
 
@@ -121,7 +125,7 @@ Carried forward from v1.2 close (2026-07-01) — informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-02T22:55:00.720Z
+Last session: 2026-07-02T23:42:23.440Z
 Stopped at: Phase 14 complete and verified (UAT 3/3, SECURITY + VALIDATION produced); ready to plan Phase 15
 Resume file: None
 

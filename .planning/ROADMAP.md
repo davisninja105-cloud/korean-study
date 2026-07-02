@@ -104,10 +104,10 @@ See `.planning/milestones/v1.2-ROADMAP.md` for full phase details.
   4. A live study session behaves identically to before — flip, grade, undo, Exposure/Recall toggle, and mode switching all work with no regression.
   5. `npm run lint` stays clean (`react-hooks/purity` respected — no impure calls in render) and `npm test` passes, including the new sentence-selection tests.
 
-**Plans**: 2 plans
+**Plans**: 1/2 plans executed
 **Wave 1**
 
-- [ ] 15-01-PLAN.md — Extract sentence-selection into pure, tested `lib/sentence-selection.ts` + memoize it in StudySession; single-source `hashStr` (REFACTOR-02, PERF-03)
+- [x] 15-01-PLAN.md — Extract sentence-selection into pure, tested `lib/sentence-selection.ts` + memoize it in StudySession; single-source `hashStr` (REFACTOR-02, PERF-03)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -135,4 +135,4 @@ Phases execute in numeric order: 13 → 14 → 15
 | 12. Home & Habits Hydration | v1.2 | 3/3 | Complete | 2026-07-01 |
 | 13. Review API Hardening & Save Reliability | v1.3 | 2/2 | Complete    | 2026-07-02 |
 | 14. Sync Failure Visibility & Caching Performance | v1.3 | 2/2 | Complete    | 2026-07-02 |
-| 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 0/2 | Not started | - |
+| 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 1/2 | In Progress|  |
