@@ -16,8 +16,10 @@ export async function PUT(
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
     }
 
-    // Update scalar card fields. When front changes, keep normalizedFront in sync.
-    await prisma.card.update({
+    // WR-03: update scalar card fields (when front changes, keep normalizedFront
+    // in sync) and replace-all sentences in a SINGLE transaction, so a mid-flow
+    // failure never leaves the card with a new front but stale sentences.
+    const cardUpdate = prisma.card.update({
       where: { id },
       data: {
         ...(data.type  !== undefined && { type:  data.type }),
@@ -30,23 +32,26 @@ export async function PUT(
       },
     })
 
-    // Replace-all sentences atomically (array-form transaction — safe with libSQL adapter).
     // If no sentences key in payload, leave existing sentences untouched.
-    if (Array.isArray(data.sentences)) {
-      const sentenceData = (data.sentences as { korean: string; targetForm: string; translation: string }[])
-        .map((s, i) => ({
-          korean: s.korean ?? '',
-          targetForm: s.targetForm ?? '',
-          translation: s.translation ?? '',
-          cardId: id,
-          orderIndex: i,
-        }))
+    const sentenceOps = Array.isArray(data.sentences)
+      ? (() => {
+          const sentenceData = (data.sentences as { korean: string; targetForm: string; translation: string }[])
+            .map((s, i) => ({
+              korean: s.korean ?? '',
+              targetForm: s.targetForm ?? '',
+              translation: s.translation ?? '',
+              cardId: id,
+              orderIndex: i,
+            }))
+          return [
+            prisma.sentence.deleteMany({ where: { cardId: id } }),
+            ...sentenceData.map((s) => prisma.sentence.create({ data: s })),
+          ]
+        })()
+      : []
 
-      await prisma.$transaction([
-        prisma.sentence.deleteMany({ where: { cardId: id } }),
-        ...sentenceData.map((s) => prisma.sentence.create({ data: s })),
-      ])
-    }
+    // Array-form transaction — safe with the libSQL adapter.
+    await prisma.$transaction([cardUpdate, ...sentenceOps])
 
     // Return the full updated card (sentences included) so the client can merge state.
     const card = await prisma.card.findUniqueOrThrow({
