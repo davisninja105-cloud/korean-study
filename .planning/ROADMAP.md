@@ -51,7 +51,7 @@ See `.planning/milestones/v1.2-ROADMAP.md` for full phase details.
 **Milestone Goal:** Fix the most pressing correctness/reliability findings from the `.planning/codebase/CONCERNS.md` audit, plus targeted performance and maintainability cleanup. No new user-facing features — every phase makes an existing behavior more robust, more diagnosable, or more maintainable.
 
 - [x] **Phase 13: Review API Hardening & Save Reliability** - try/catch + rating validation in `/api/review`, friendly front-collision error, silent review-save retry, atomic undo (completed 2026-07-02)
-- [x] **Phase 14: Sync Failure Visibility & Caching Performance** - name failed lessons in the SyncPanel, cache the `normalizedFront → cardId` map during sync, preload the gloss cache from the DB (completed 2026-07-02)
+- [ ] **Phase 14: Sync Failure Visibility & Caching Performance** - name failed lessons in the SyncPanel, cache the `normalizedFront → cardId` map during sync, preload the gloss cache from the DB
 - [ ] **Phase 15: StudySession Refactor & Sentence-Selection Memoization** - extract sentence-selection into a pure, tested module + memoize it, then split into mode sub-components
 
 ## Phase Details

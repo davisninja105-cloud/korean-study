@@ -5,16 +5,16 @@ milestone_name: Reliability & Hardening
 current_phase: 14
 current_phase_name: sync-failure-visibility-caching-performance
 status: executing
-stopped_at: Phase 14 complete (2/2 plans: SYNC-01, PERF-01, PERF-02); ready for Phase 15 planning
-last_updated: "2026-07-02T19:05:18.380Z"
+stopped_at: Phase 14 plans complete (2/2: SYNC-01, PERF-01, PERF-02); verification human_needed — 3 UAT items pending before phase close
+last_updated: "2026-07-02T19:40:00.000Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 14 complete (2/2 plans)
+last_activity_desc: Phase 14 plans complete; verification human_needed (3 UAT items)
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 1
   total_plans: 4
   completed_plans: 4
-  percent: 67
+  percent: 33
 ---
 
 # Project State
@@ -24,16 +24,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 14 complete — Phase 15 (StudySession refactor) next
+**Current focus:** Phase 14 — human verification needed (3 UAT items) before phase close
 
 ## Current Position
 
-Phase: 14 (sync-failure-visibility-caching-performance) — COMPLETE (2/2 plans)
+Phase: 14 (sync-failure-visibility-caching-performance) — PLANS COMPLETE, verification human_needed
 Plan: 2 of 2 (complete)
-Status: Phase 14 complete; ready for end-of-phase UAT then Phase 15 planning
-Last activity: 2026-07-02 — Phase 14 plan 02 complete (PERF-02); phase 14 complete
+Status: Phase 14 plans complete; verification human_needed — run /gsd-verify-work 14
+Last activity: 2026-07-02 — Phase 14 plans 01+02 complete; verification human_needed (3 UAT items)
 
-Progress: [██████░░░░] 67% (milestone: 2 of 3 phases complete; 4 of 4 planned plans — Phase 15 plans TBD)
+Progress: [███░░░░░░░] 33% (milestone: 1 of 3 phases complete; Phase 14 plans done, UAT pending)
 
 ## Performance Metrics
 
