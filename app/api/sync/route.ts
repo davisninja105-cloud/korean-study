@@ -17,6 +17,24 @@ export const maxDuration = 300
 // so process 1 lesson per request to stay safely under the function timeout.
 const MAX_LESSONS_PER_SYNC = 1
 
+/**
+ * Pure helper — produce a short, searchable excerpt of a lesson body so sync
+ * failures can name the specific lesson the user can find in their Google Doc.
+ * Returns the first non-empty line, whitespace-collapsed, truncated to ~48
+ * chars with a trailing `…`; falls back to `(untitled lesson)` when there's
+ * no usable text. The excerpt is the user's OWN doc content (intentionally
+ * surfaced back to them — see threat T-14-02; raw error text never leaks).
+ */
+function lessonExcerpt(text: string): string {
+  const firstLine = text
+    .split('\n')
+    .map((l) => l.trim().replace(/\s+/g, ' '))
+    .find((l) => l.length > 0)
+  if (!firstLine) return '(untitled lesson)'
+  const MAX = 48
+  return firstLine.length > MAX ? `${firstLine.slice(0, MAX)}…` : firstLine
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { documentId } = await req.json()
@@ -86,11 +104,14 @@ export async function POST(req: NextRequest) {
 
     for (let i = 0; i < extractResults.length; i++) {
       const result = extractResults[i]
+      // Identify this lesson by its own content so failures[] names something
+      // the user can search for in their Google Doc (SYNC-01).
+      const excerpt = lessonExcerpt(batch[i].text)
 
       if (result.status === 'rejected') {
         const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error'
         console.error(`Failed to extract cards for batch item ${i}:`, msg)
-        failures.push(`Lesson ${i + 1}: extraction error — ${msg}`)
+        failures.push(`"${excerpt}" — extraction failed (will retry on next sync)`)
         // No Lesson row created → contentHash not stored → auto-retried on next sync.
         continue
       }
@@ -99,7 +120,7 @@ export async function POST(req: NextRequest) {
 
       if (cards.length === 0) {
         console.warn(`Batch item ${i}: Claude returned 0 cards — skipping persist.`)
-        failures.push(`Lesson ${i + 1}: no cards extracted (will retry on next sync)`)
+        failures.push(`"${excerpt}" — no cards extracted (will retry on next sync)`)
         continue
       }
 
@@ -244,7 +265,7 @@ export async function POST(req: NextRequest) {
         // Compensate by deleting the orphan lesson so it retries cleanly next sync.
         const dbMsg = dbErr instanceof Error ? dbErr.message : 'Unknown DB error'
         console.error(`DB write failed for batch item ${i}:`, dbMsg)
-        failures.push(`Lesson ${i + 1}: failed to save — ${dbMsg}`)
+        failures.push(`"${excerpt}" — failed to save (will retry on next sync)`)
         if (lesson) {
           try {
             await prisma.lesson.delete({ where: { id: lesson.id } })
