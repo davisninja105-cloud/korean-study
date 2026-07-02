@@ -71,7 +71,11 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
         setStats(data)
         checkBandUp(data.masteredCount)
       })
-      .catch(() => {})
+      .catch(() => {
+        // Post-sync refetch failed (transient network/5xx) — surface it so the
+        // user knows the displayed stats may be stale despite sync succeeding.
+        if (isMountedRef.current) setSyncMsg('Synced — refresh failed, reload to update')
+      })
   }, [checkBandUp])
 
   const loadActivity = useCallback(() => {
@@ -81,7 +85,10 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
         if (!isMountedRef.current) return
         setActivityData(data)
       })
-      .catch(() => {})
+      .catch(() => {
+        // Same partial-failure feedback as loadStats above.
+        if (isMountedRef.current) setSyncMsg('Synced — refresh failed, reload to update')
+      })
   }, [])
 
   // Mount effect: greeting + first-load band-up check.
