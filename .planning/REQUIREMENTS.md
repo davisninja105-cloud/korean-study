@@ -12,8 +12,8 @@ Requirements for milestone v1.3 "Reliability & Hardening". Sourced from the `.pl
 - [x] **REVIEW-01**: `/api/review` wraps its Prisma calls in `try/catch` and returns a proper error response on DB failure
 - [x] **REVIEW-02**: `/api/review` rejects ratings outside `[1,2,3,4]` with a 400 instead of passing garbage to `reviewCard()`
 - [x] **REVIEW-03**: Editing a card's front to a value that collides (post-normalization) with another card's front returns a clear 400 message instead of an uncaught 500
-- [ ] **REVIEW-04**: Background `POST /api/review` retries silently on failure; a toast appears only if retries are exhausted
-- [ ] **REVIEW-05**: Undo restores queue/session state atomically so an interrupted undo can't leave partial state
+- [x] **REVIEW-04**: Background `POST /api/review` retries silently on failure; a toast appears only if retries are exhausted
+- [x] **REVIEW-05**: Undo restores queue/session state atomically so an interrupted undo can't leave partial state
 
 ### Sync
 
@@ -56,8 +56,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REVIEW-01 | Phase 13 | Complete |
 | REVIEW-02 | Phase 13 | Complete |
 | REVIEW-03 | Phase 13 | Complete |
-| REVIEW-04 | Phase 13 | Pending |
-| REVIEW-05 | Phase 13 | Pending |
+| REVIEW-04 | Phase 13 | Complete |
+| REVIEW-05 | Phase 13 | Complete |
 | SYNC-01 | Phase 14 | Pending |
 | PERF-01 | Phase 14 | Pending |
 | PERF-02 | Phase 14 | Pending |

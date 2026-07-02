@@ -50,7 +50,7 @@ See `.planning/milestones/v1.2-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Fix the most pressing correctness/reliability findings from the `.planning/codebase/CONCERNS.md` audit, plus targeted performance and maintainability cleanup. No new user-facing features — every phase makes an existing behavior more robust, more diagnosable, or more maintainable.
 
-- [ ] **Phase 13: Review API Hardening & Save Reliability** - try/catch + rating validation in `/api/review`, friendly front-collision error, silent review-save retry, atomic undo
+- [x] **Phase 13: Review API Hardening & Save Reliability** - try/catch + rating validation in `/api/review`, friendly front-collision error, silent review-save retry, atomic undo (completed 2026-07-02)
 - [ ] **Phase 14: Sync Failure Visibility & Caching Performance** - name failed lessons in the SyncPanel, cache the `normalizedFront → cardId` map during sync, preload the gloss cache from the DB
 - [ ] **Phase 15: StudySession Refactor & Sentence-Selection Memoization** - extract sentence-selection into a pure, tested module + memoize it, then split into mode sub-components
 
@@ -69,10 +69,10 @@ See `.planning/milestones/v1.2-ROADMAP.md` for full phase details.
   4. When the background `POST /api/review` save fails, it retries silently; a toast appears only after all retries are exhausted.
   5. After undoing a review, the previous card reappears with the queue, seen-card set, and session stats all restored consistently — an interrupted undo never leaves partially-restored state.
 
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans complete
 
 - [x] 13-01-PLAN.md — Harden /api/review (try/catch + rating validation) and friendly card-front collision 400 (REVIEW-01, REVIEW-02, REVIEW-03)
-- [ ] 13-02-PLAN.md — Silent bounded retry + toast on review-save failure, atomic undo restoration (REVIEW-04, REVIEW-05)
+- [x] 13-02-PLAN.md — Silent bounded retry + toast on review-save failure, atomic undo restoration (REVIEW-04, REVIEW-05)
 
 ### Phase 14: Sync Failure Visibility & Caching Performance
 
@@ -123,6 +123,6 @@ Phases execute in numeric order: 13 → 14 → 15
 | 10. Cards Hydration + API Parallelization | v1.2 | 2/2 | Complete | 2026-06-30 |
 | 11. Study Page Hydration & Interaction Polish | v1.2 | 3/3 | Complete | 2026-06-30 |
 | 12. Home & Habits Hydration | v1.2 | 3/3 | Complete | 2026-07-01 |
-| 13. Review API Hardening & Save Reliability | v1.3 | 1/2 | In Progress|  |
+| 13. Review API Hardening & Save Reliability | v1.3 | 2/2 | Complete   | 2026-07-02 |
 | 14. Sync Failure Visibility & Caching Performance | v1.3 | 0/TBD | Not started | - |
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 0/TBD | Not started | - |

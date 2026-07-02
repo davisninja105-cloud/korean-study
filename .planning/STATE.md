@@ -4,17 +4,17 @@ milestone: v1.3
 milestone_name: Reliability & Hardening
 current_phase: 13
 current_phase_name: review-api-hardening-save-reliability
-status: executing
-stopped_at: Completed 13-01-PLAN.md (review API hardening)
-last_updated: "2026-07-02T05:35:14.452Z"
+status: verifying
+stopped_at: Completed 13-02-PLAN.md (client retry + atomic undo)
+last_updated: "2026-07-02T06:00:28.752Z"
 last_activity: 2026-07-02
 last_activity_desc: Phase 13 execution started
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 1
-  percent: 50
+  completed_plans: 2
+  percent: 33
 ---
 
 # Project State
@@ -28,26 +28,26 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 13 (review-api-hardening-save-reliability) — EXECUTING
+Phase: 13 (review-api-hardening-save-reliability) — COMPLETE (ready for verification)
 Plan: 2 of 2
-Status: Ready to execute
-Last activity: 2026-07-02 — Phase 13 execution started
+Status: Phase complete — ready for verification
+Last activity: 2026-07-02 — Plan 13-02 complete (client retry + atomic undo); Phase 13 finished
 
-Progress: [█████░░░░░] 50%
+Progress: [███░░░░░░░] 33% (milestone: 1 of 3 phases complete)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed (v1.3): 1
-- Average duration: 5 min
-- Total execution time: ~0.1 hours (v1.3)
+- Total plans completed (v1.3): 2
+- Average duration: ~7.5 min
+- Total execution time: ~0.3 hours (v1.3)
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 13 | 1/2 | 5 min | 5 min |
+| 13 | 2/2 | ~15 min | ~7.5 min |
 | 14 | TBD | - | - |
 | 15 | TBD | - | - |
 
@@ -57,6 +57,11 @@ Progress: [█████░░░░░] 50%
 - Trend: —
 
 *Updated after each plan completion*
+
+| Plan | Duration | Tasks | Files |
+|------|----------|-------|-------|
+| Phase 13 P01 | 5 min | 2 | 2 |
+| Phase 13 P02 | ~10 min | 3 | 2 |
 
 ## Accumulated Context
 
@@ -74,6 +79,9 @@ Recent decisions affecting current work:
 - [Phase 13]: Plan 13-01: /api/review 500 returns generic 'Failed to record review' (raw error console.error'd server-side only) per threat T-13-02; cards route 500 left echoing e.message since REVIEW-03 scopes only the collision branch — Avoid internal-schema disclosure on review route; changing cards 500 behavior would be scope creep beyond REVIEW-03
 - [Phase 13]: Plan 13-01: used Prisma P2002 catch (not a pre-update normalizedFront findUnique) for the card-front collision 400 — Matches the codebase's existing catch-based error-handling idiom and avoids an extra query per edit
 - [Phase 13]: Plan 13-01: app/api/review/undo/route.ts left untouched despite same missing-try/catch shape — Out of scope for REVIEW-01..05 per the plan; deferred to a future phase
+- [Phase 13]: Plan 13-02: postReviewWithRetry uses 3 total attempts (1 initial + 2 retries) with ~500ms/~1500ms backoff, toast only on exhaustion (REVIEW-04) — Hard-bounded so a persistent failure can't spin an unbounded request loop (threat T-13-05); toast scoped to background-save failure path only, not handleUndo
+- [Phase 13]: Plan 13-02: atomic undo via mount-guard + React 18/19 auto-batched setState block (not useReducer) — isMountedRef gates the whole restoration incl. seenCardIdsRef write so it applies all-or-nothing (REVIEW-05); Phase 15 owns the larger StudySession refactor so this plan minimized churn
+- [Phase 13]: Plan 13-02: Toast dismiss callback held in a ref so auto-dismiss setTimeout is set up once on mount and survives parent re-renders; onDismiss fires inside the timeout (not the effect body) — satisfies react-hooks/set-state-in-effect; token-styled, no new npm dep
 
 ### Pending Todos
 
@@ -99,10 +107,10 @@ Carried forward from v1.2 close (2026-07-01) — informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-02T05:34:28.559Z
-Stopped at: Completed 13-01-PLAN.md (review API hardening)
+Last session: 2026-07-02T06:00:12.531Z
+Stopped at: Completed 13-02-PLAN.md (client retry + atomic undo)
 Resume file: None
 
 ## Operator Next Steps
 
-- Execute Plan 13-02 with `/gsd-execute-phase 13` (1 of 2 plans complete; REVIEW-04 retry + REVIEW-05 undo atomicity in StudySession.tsx)
+- Phase 13 complete (2/2 plans; REVIEW-01..05 all satisfied) — run `/gsd-verify-work 13` to verify the phase, then `/gsd-plan-phase 14` (sync visibility + caching) to continue the milestone
