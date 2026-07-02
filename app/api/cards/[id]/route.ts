@@ -16,6 +16,31 @@ export async function PUT(
       return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
     }
 
+    // WR-02: validate individual field types/shapes before they reach Prisma —
+    // a non-string front would throw inside normalizeFront() (caught only by
+    // the generic 500 catch below), an empty front would collide with other
+    // cards on the normalizedFront unique index, and type/sentences are
+    // otherwise written verbatim with no shape check.
+    if (data.front !== undefined && (typeof data.front !== 'string' || data.front.trim() === '')) {
+      return NextResponse.json({ error: 'front must be a non-empty string' }, { status: 400 })
+    }
+    if (data.back !== undefined && typeof data.back !== 'string') {
+      return NextResponse.json({ error: 'back must be a string' }, { status: 400 })
+    }
+    if (data.notes !== undefined && data.notes !== null && typeof data.notes !== 'string') {
+      return NextResponse.json({ error: 'notes must be a string' }, { status: 400 })
+    }
+    if (data.type !== undefined && !['vocabulary', 'grammar', 'phrase'].includes(data.type)) {
+      return NextResponse.json({ error: 'type must be vocabulary, grammar, or phrase' }, { status: 400 })
+    }
+    if (
+      data.sentences !== undefined &&
+      (!Array.isArray(data.sentences) ||
+        data.sentences.some((s: unknown) => typeof s !== 'object' || s === null))
+    ) {
+      return NextResponse.json({ error: 'sentences must be an array of objects' }, { status: 400 })
+    }
+
     // WR-03: update scalar card fields (when front changes, keep normalizedFront
     // in sync) and replace-all sentences in a SINGLE transaction, so a mid-flow
     // failure never leaves the card with a new front but stale sentences.
