@@ -1,25 +1,29 @@
 # CONCERNS
-_Last updated: 2026-06-23 (partially resolved 2026-06-23)_
+_Last updated: 2026-07-01 (v1.2 Performance & Snappiness) — re-verified against current source_
 
 ## Summary
 
-The Korean Study app is a single-user personal tool with a single shared-password auth model. The previously-flagged critical issues (misnamed middleware, missing input limits, zero test coverage, deprecated cloze code, silent error swallowing, unbounded gloss cache, deprecated settings export) have all been addressed. Remaining open concerns are the Vercel 60 s Hobby-plan timeout (infra constraint, no code fix), the CSRF/SameSite gap (now set to Strict), and low-priority housekeeping items. The codebase is well-structured, consistently linted, and now has a 47-test Vitest suite covering all pure lib functions.
+The Korean Study app is a single-user personal tool with a single shared-password auth model. All the concerns previously flagged as "High Priority" are confirmed resolved as of this pass: `middleware.ts` is present and active (no `proxy.ts` in the repo), input length limits exist on all three LLM-backed routes, the deprecated cloze-column fallback code is gone from `app/` and `components/` (the v1.2 RSC rewrite of `app/study/page.tsx` removed it along with everything else that used to live there), the `Setting.ts` deprecated re-export is gone, and the auth cookie is `sameSite: 'strict'`. The 58-test Vitest suite (see `.planning/codebase/TESTING.md`) covers the pure `lib/` modules. Remaining open concerns are the Vercel 60 s Hobby-plan timeout (infra constraint, no code fix), the unbounded gloss cache, and the growing `StudySession.tsx` monolith — now 964 lines after v1.2 added the optimistic-grading logic on top.
+
+---
+
+## Resolved Since Last Audit (2026-06-23 → 2026-07-01)
+
+Verified against current source — these no longer need tracking as open concerns:
+
+| Item | Verification |
+|------|--------------|
+| Middleware misnamed (`proxy.ts` vs `middleware.ts`) | `middleware.ts` exists at project root; no `proxy.ts` in the repo |
+| No input length limits on LLM-backed routes | `app/api/gloss/route.ts` (word ≤ 50 chars), `app/api/tts/route.ts` (text ≤ 500 chars), `app/api/generate/route.ts` (cards.length ≤ 100) all guard and return 400 |
+| No CSRF / SameSite protection | `app/api/login/route.ts:19` sets `sameSite: 'strict'` on the auth cookie |
+| Zero automated test coverage | 58 Vitest tests across 6 files in `tests/` — see `.planning/codebase/TESTING.md` |
+| Deprecated cloze columns still referenced in app code | No `clozeSentence`/`clozeAnswer`/`clozeTranslation`/`hasCloze` references remain in `app/` or `components/` (only in the auto-generated Prisma client, which is expected) — removed as a side effect of the v1.2 RSC rewrite of `app/study/page.tsx` |
+| `@deprecated` export in `lib/settings.ts` | No `@deprecated` tag found in the file |
+| `dev.db` accidentally committed | Gitignored (`dev.db`, `dev.db-journal`, `*.db`) and not tracked in git |
 
 ---
 
 ## High Priority
-
-### Auth middleware file is misnamed — may not be active
-
-**Issue:** The auth guard is implemented in `proxy.ts` at the project root, not `middleware.ts`. Next.js requires the Edge middleware to be a file named exactly `middleware.ts` (or `middleware.js`) at the project root. `proxy.ts` is never imported by any other file in the codebase.
-
-**Files:** `proxy.ts`
-
-**Impact:** If Next.js is not picking up `proxy.ts` as a middleware module, the entire auth gate (all pages and API routes) could be unprotected in production. All routes except `/login` and `/api/login` would be publicly accessible without a session cookie.
-
-**Fix approach:** Rename `proxy.ts` to `middleware.ts`. The internal function name and logic are otherwise correct — only the filename matters for Next.js auto-discovery.
-
----
 
 ### Vercel 60-second function timeout — sync is permanently limited
 
@@ -33,68 +37,29 @@ The Korean Study app is a single-user personal tool with a single shared-passwor
 
 ---
 
-### No input length limits on LLM-backed API routes
+### RSC paint-timing and interaction-jitter claims lack systematic browser verification *(new, v1.2)*
 
-**Issue:** `/api/gloss` accepts an arbitrary `word` string; `/api/tts` accepts an arbitrary `text` query param; `/api/generate` accepts an unbounded `cards` array. None of these routes enforce a maximum length/count before forwarding to Anthropic or ElevenLabs APIs.
+**Issue:** v1.2 introduced several success criteria that are runtime, human-observable properties — "no blank flash on first paint," "no perceptible jitter between grade tap and next card" — which cannot be checked by `tsc`, ESLint, or the Vitest suite. Of the 4 v1.2 phases, only 2 (Study, Home/Habits) got an actual live browser/UAT pass verifying these claims before milestone close; Phase 9 (skeletons) and Phase 10 (Cards RSC) shipped with these claims resting on static code analysis only.
 
-**Files:** `app/api/gloss/route.ts`, `app/api/tts/route.ts`, `app/api/generate/route.ts`
+**Files:** `app/cards/page.tsx`, `app/cards/loading.tsx` (Phase 9/10 — no live UAT run); see `.planning/milestones/v1.2-phases/10-cards-hydration-api-parallelization/10-VERIFICATION.md` for the specific unverified items.
 
-**Impact:** A crafted request could send a multi-MB text string to ElevenLabs or a massive card array to Claude, burning API credits and potentially timing out the Vercel function. Even as a personal app, this is a straightforward abuse vector if the auth gate fails (see concern above).
+**Impact:** Low — the code paths are confirmed present and correctly wired by static analysis, and the identical pattern was live-verified in Phases 11 and 12. But a genuine RSC hydration-order bug in `/cards` specifically would not have been caught before shipping.
 
-**Fix approach:** Add simple guards — e.g. `if (text.length > 500) return 400` for TTS, `if (word.length > 50)` for gloss, `if (!Array.isArray(cards) || cards.length > 100)` for generate.
-
----
-
-### No CSRF protection
-
-**Issue:** All state-mutating POST/PUT/DELETE API routes (review, activity, cards, settings, sync) are protected only by the session cookie, with no CSRF token or `SameSite=Strict` cookie attribute configured explicitly. The cookie SameSite behavior depends on the browser default (Lax on modern browsers, but not enforced by the app).
-
-**Files:** `lib/auth.ts` (cookie issuance), `app/api/login/route.ts`
-
-**Impact:** If a victim is logged in and visits a malicious page, cross-site form submissions could trigger state mutations. Low severity in a single-user personal app but worth noting.
-
-**Fix approach:** Set `SameSite=Strict` on the `ks_auth` cookie when it is issued in `app/api/login/route.ts`. This is a one-line fix.
+**Fix approach:** Run `npm run build && npm start`, open `/cards` with a hard reload and disabled cache, and confirm the real card list renders with no "No cards yet" flash and no console serialization errors — the two specific checks listed in `10-VERIFICATION.md`.
 
 ---
 
 ## Medium Priority
 
-### Deprecated DB columns still referenced in production code
+### `StudySession.tsx` monolith continues to grow
 
-**Issue:** `Card.clozeSentence`, `Card.clozeAnswer`, and `Card.clozeTranslation` are marked `// DEPRECATED — use Sentence rows` in `prisma/schema.prisma` but are still declared in the `CardWithReview` type in `app/study/page.tsx` and `components/StudySession.tsx`, and `StudySession.tsx` still contains branching logic (`hasCloze`) that falls back to them.
+**Issue:** `components/StudySession.tsx` was already the largest hand-written source file at 857 lines (as of the 2026-06-23 audit); v1.2's optimistic-grading rework (synchronous `submitReview`, client-side FSRS via `reviewCard()`, undo-snapshot handling) added to it rather than extracting a new module. It is now **964 lines**.
 
-**Files:**
-- `prisma/schema.prisma` lines 38–40
-- `app/study/page.tsx` lines 28–30
-- `components/StudySession.tsx` lines 30–32, 343–354
+**Files:** `components/StudySession.tsx`
 
-**Impact:** Dead code inflating the type surface and `StudySession` logic. If a stale card in the DB still has cloze data, the fallback path activates and bypasses the `Sentence`-based rendering pipeline, potentially producing incorrect UI. Maintenance burden when future changes touch the rendering logic.
+**Impact:** Same as previously noted — high cognitive load for future changes, increased regression risk. The gap between "largest file" and "next largest" has widened further.
 
-**Fix approach:** Migrate any remaining cards with cloze data to `Sentence` rows (one-off script), then drop the three columns and remove the fallback code from `StudySession.tsx`.
-
----
-
-### `@deprecated` export in `lib/settings.ts` still visible
-
-**Issue:** `lib/settings.ts` exports a deprecated constant with a JSDoc `@deprecated` tag directing callers to use `lib/palettes.ts` instead.
-
-**Files:** `lib/settings.ts` line 13
-
-**Impact:** Minor — any future callers may import the wrong module. No current bug.
-
-**Fix approach:** Remove the re-export from `lib/settings.ts` once all callers are confirmed to use `lib/palettes.ts`.
-
----
-
-### Zero automated test coverage
-
-**Issue:** There are no test files anywhere in the project (no `*.test.ts`, `*.spec.ts`, or any test runner configured). The pure utility modules (`lib/sequence.ts`, `lib/sentence-match.ts`, `lib/habit.ts`, `lib/card-key.ts`, `lib/fsrs.ts`, `lib/proficiency.ts`) are explicitly described as "pure, testable" in CLAUDE.md but have no tests.
-
-**Files:** Entire `lib/` and `components/` directory
-
-**Impact:** Changes to FSRS logic, the foundation-first sequencer, or sentence blanking rules have no regression protection. A bug in `normalizeFront()` or `sequenceCards()` would be silent until a user notices incorrect behavior.
-
-**Fix approach:** Add Vitest or Jest with at minimum unit tests for `lib/sequence.ts`, `lib/sentence-match.ts`, `lib/card-key.ts`, `lib/habit.ts`, and `lib/proficiency.ts`. These are all pure functions and trivial to test.
+**Fix approach:** Unchanged from the prior recommendation — extract per-mode sub-components (`FlashcardMode.tsx`, `MultipleChoiceMode.tsx`, `FillBlankMode.tsx`) and a `useStudyQueue` hook. Not urgent, but worth revisiting before the next feature that touches this file.
 
 ---
 
@@ -126,7 +91,7 @@ The Korean Study app is a single-user personal tool with a single shared-passwor
 
 **Issue:** `NEXT_PUBLIC_GOOGLE_DOC_ID` is a client-side environment variable, making the Google Doc ID visible in the browser bundle to any logged-in user.
 
-**Files:** `app/page.tsx` line 21, `components/SyncPanel.tsx` line 10
+**Files:** `components/HomeClient.tsx` (moved here from `app/page.tsx` during the v1.2 RSC conversion), `components/SyncPanel.tsx`
 
 **Impact:** The Doc ID alone is not a credential and does not grant access (the Doc must be shared to the service account separately). Low severity for a personal app. However, if the Doc is set to "anyone with link can view," the Doc ID in the bundle is sufficient for a third party to read the lesson notes.
 
@@ -160,27 +125,15 @@ The Korean Study app is a single-user personal tool with a single shared-passwor
 
 ## Low Priority
 
-### Swallowed errors in multiple catch blocks
+### Swallowed errors in some catch blocks
 
-**Issue:** Several `catch {}` blocks discard errors entirely with no logging: `proxy.ts:10`, `app/page.tsx:81`, `app/study/page.tsx:156`, `app/api/tts/route.ts:46`, `app/api/sync/route.ts:206`, `components/AudioButton.tsx:87`, `components/StudySession.tsx:240`, `lib/settings.ts:99`, `lib/settings.ts:118`, `lib/extract-cards.ts:180`, `lib/extract-cards.ts:192`, `lib/gloss.ts:34`.
+**Issue:** A number of `catch {}` / `catch (err) {}` blocks across the codebase discard errors with no `console.error` logging (e.g. `app/api/activity/route.ts`, `app/api/tts/route.ts`, `app/api/stats/route.ts`, `app/login/page.tsx`, `components/AudioButton.tsx`, `components/StudySession.tsx`). This is a broad pattern, not confined to any one file — re-scan with `grep -rn "} catch\s*{$\|} catch (.*) {$"` across `app/`, `components/`, `lib/` before acting rather than relying on a fixed line-number list (30+ files changed since this was last enumerated, and old file/line references had already gone stale by this pass).
 
-**Files:** As listed above
+**Files:** Broad — see grep pattern above rather than a stale list.
 
-**Impact:** Silent failures are difficult to debug. For example, `lib/extract-cards.ts` silently leaves `parsed` empty if JSON parsing fails — the sync route then detects 0 cards and skips persist with only a `console.warn`, making extraction failures hard to diagnose.
+**Impact:** Silent failures are difficult to debug. `lib/extract-cards.ts` is the clearest example: it silently leaves `parsed` empty if JSON parsing fails, and the sync route then detects 0 cards and skips persist with only a `console.warn`, making extraction failures hard to diagnose.
 
-**Fix approach:** Add `console.error` at minimum in every empty `catch` block. For user-visible flows, surface a meaningful error state rather than silently degrading.
-
----
-
-### `dev.db` SQLite file at repo root
-
-**Issue:** A `dev.db` file exists at the project root. This is likely the local development SQLite database.
-
-**Files:** `/dev.db`
-
-**Impact:** If accidentally committed (or already committed), local study data or test data ends up in git history. Check `.gitignore` ensures it is excluded.
-
-**Fix approach:** Verify `dev.db` is in `.gitignore`. If it has been committed historically, consider a `git rm --cached dev.db`.
+**Fix approach:** Add `console.error` at minimum in empty `catch` blocks that don't already degrade gracefully by design (some, like the TTS 503 fallback, are intentional silent degradation — those are fine as-is). For user-visible flows, surface a meaningful error state rather than silently degrading.
 
 ---
 
@@ -193,18 +146,6 @@ The Korean Study app is a single-user personal tool with a single shared-passwor
 **Impact:** Accidental re-run would attempt to re-create tables/indexes that already exist, failing with a SQL error. No data loss risk since the script would error before mutating, but the ambiguity in the scripts directory is a maintenance hazard.
 
 **Fix approach:** Add a comment at the top of one-time scripts: `// ONE-TIME: Do not re-run. Already applied to production.` Optionally rename to `scripts/one-time/`.
-
----
-
-### `StudySession.tsx` at 857 lines — monolithic component
-
-**Issue:** `components/StudySession.tsx` is the largest hand-written source file at 857 lines. It owns all three study modes (flashcard, multiple-choice, fill-blank), the REQUEUE_GAP logic, undo state, audio integration, and tap-to-gloss wiring in a single component.
-
-**Files:** `components/StudySession.tsx`
-
-**Impact:** High cognitive load for future changes. Adding a fourth study mode, changing the queue logic, or modifying FSRS grade handling all require navigating 857 lines of interleaved concerns. Increased risk of regressions.
-
-**Fix approach:** Extract study mode sub-components (e.g. `FlashcardMode.tsx`, `MultipleChoiceMode.tsx`, `FillBlankMode.tsx`) and a separate `useStudyQueue` hook.
 
 ---
 

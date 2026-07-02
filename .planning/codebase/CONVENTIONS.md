@@ -1,5 +1,5 @@
 # Coding Conventions
-_Last updated: 2026-06-23_
+_Last updated: 2026-07-01 (v1.2 Performance & Snappiness)_
 
 ## Summary
 
@@ -25,6 +25,13 @@ This is a Next.js 16 App Router project written in strict TypeScript with Tailwi
 - Server components (page.tsx files, API route handlers) have **no** `'use client'` directive and may call `prisma`, `lib/settings.ts`, or other server-only code directly.
 - `lib/` modules that are server-only (Prisma, Anthropic SDK calls) carry a comment: `// No 'use client' — this module runs server-side only.`
 - Modules shared across both environments must be pure (no Prisma, no Node builtins). Example: `lib/card-key.ts`, `lib/sequence.ts`, `lib/habit.ts`, `lib/palettes.ts`.
+
+### RSC page → client shell (v1.2)
+
+- Every main route's `page.tsx` is a **thin async server component**: no `'use client'`, no hooks, no event handlers. It fetches its initial data (via a shared `lib/` pipeline function, e.g. `getStudyCards()`, `getStats()`) and renders exactly one `*Client.tsx` component, passing the data as props.
+- The `*Client.tsx` component owns **all** interactivity for the route and initializes its state directly from props (`useState<CardDTO[]>(initialCards)`) — never an initial-load `useEffect` fetch. Examples: `CardsClient.tsx`, `StudyClient.tsx`, `HomeClient.tsx`, `HabitsClient.tsx`.
+- **DTO contract:** any data crossing the `page.tsx` → `*Client.tsx` prop boundary must be typed against `lib/dto.ts` — every Prisma `DateTime` field is `.toISOString()`'d before crossing (RSC-05). Passing a raw `Date` throws a Next.js serialization error at runtime, not a TypeScript error, so this is a discipline convention, not a compiler-enforced one.
+- When the same data is also needed by a client-side re-fetch (e.g. a filter change), the RSC page and the API route both call the same `lib/` pipeline function — do not duplicate the query logic inline in the route handler.
 
 ### Props Interfaces
 
@@ -150,7 +157,9 @@ Imports within a file follow this order (no enforced blank-line grouping, but co
 ## Async Patterns
 
 - `async/await` throughout — no `.then()` chains except in specific ESLint-safe scenarios (e.g., non-blocking cache writes).
-- `Promise.allSettled()` is used when processing a batch where individual failures should not abort the whole batch (e.g., `extractResults` in `app/api/sync/route.ts`).
+- `Promise.allSettled()` is used when processing a batch where individual failures should not abort the whole batch (e.g., `extractResults` in `app/api/sync/route.ts`), and when one query is critical and a second is a non-critical ranking/annotation signal that should degrade gracefully rather than fail the request (e.g. `lib/study-cards.ts` — pool-query rejection throws, known-lemmas rejection degrades to an empty `Set`).
+- `Promise.all()` is used when all queries are equally critical and independent (e.g. `lib/dashboard.ts:getStats()` — 5 parallel Prisma queries; `app/study/page.tsx` — `getStudyCards()` + `prisma.lesson.findMany()`).
+- Optimistic client updates: `components/StudySession.tsx:submitReview` computes the result synchronously (FSRS via `reviewCard()`) and updates state immediately; the persistence call (`fetch('/api/review', ...)`) is fire-and-forget (`.catch(() => {})`, never awaited) so the UI never waits on the network round-trip.
 - Non-blocking writes use `.catch(() => {})` or `.then(() => {})` patterns to avoid the ESLint `no-floating-promises` rule.
 - `fetch` in client components always uses `async/await` inside event handlers or `useEffect`, never bare in render.
 
@@ -214,3 +223,7 @@ The `eslint-config-next` `react-hooks/purity` rule enforces that render function
 8. **Pure modules shared between server and client:** `lib/card-key.ts`, `lib/sequence.ts`, `lib/habit.ts`, `lib/palettes.ts`, `lib/copy.ts`, `lib/proficiency.ts` must remain free of Prisma, Node.js builtins, and any server-only imports.
 
 9. **Lint must stay clean:** `npm run lint` must pass with zero errors before committing. The two rules that bite most often are `react-hooks/purity` and `react-hooks/set-state-in-effect`.
+
+10. **RSC serialization is a runtime error, not a compile error (v1.2):** Passing a raw Prisma `Date` object as a prop from a `page.tsx` RSC to a `'use client'` component throws "Only plain objects can be passed to Client Components" / "Date objects are not supported" — only visible in the browser console at runtime, not caught by `tsc` or ESLint. Always route DateTime fields through `lib/dto.ts` types and call `.toISOString()` before the boundary.
+
+11. **`loading.tsx` only covers client-side navigation:** it is Next.js's fallback while a destination route's RSC is loading during a `<Link>` transition — it does not run on first load (hard refresh / direct URL). First-load speed comes entirely from the RSC + client-shell hydration pattern. Test first-paint behavior with `npm run build && npm start`, not `next dev`.

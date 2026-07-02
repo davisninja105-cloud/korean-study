@@ -1,9 +1,9 @@
 # Technology Stack
-_Last updated: 2026-06-23_
+_Last updated: 2026-07-01 (v1.2 Performance & Snappiness)_
 
 ## Summary
 
-This is a Next.js 16 App Router application written in TypeScript 5, using React 19. Styling is done with Tailwind CSS v4 via PostCSS. The database layer uses Prisma 7 with a libSQL adapter targeting Turso (hosted SQLite) in production and a local `file:` SQLite in development. The app is deployed on Vercel (Hobby plan). There are no test frameworks — quality is enforced through strict ESLint (`eslint-config-next` with core-web-vitals + TypeScript rules).
+This is a Next.js 16 App Router application written in TypeScript 5, using React 19. Styling is done with Tailwind CSS v4 via PostCSS. The database layer uses Prisma 7 with a libSQL adapter targeting Turso (hosted SQLite) in production and a local `file:` SQLite in development. The app is deployed on Vercel (Hobby plan). Vitest covers the pure `lib/` functions (`npm test`); everything else (routes, components, RSC hydration behavior) is verified through strict ESLint (`eslint-config-next` with core-web-vitals + TypeScript rules) plus manual/browser verification. No new npm packages were added in v1.2 — the RSC + DTO hydration pattern, `loading.tsx` skeletons, and `Promise.allSettled` parallelization are all built into the existing Next.js 16 + React 19 stack.
 
 ---
 
@@ -128,10 +128,14 @@ File: `tsconfig.json`
 
 ## Testing
 
-No test framework is installed. There are no `*.test.*` or `*.spec.*` files. Quality assurance relies on:
+| Tool | Version | Notes |
+|------|---------|-------|
+| Vitest | ^4.1.9 | `npm test` → `vitest run`; config at `vitest.config.ts` |
+
+6 test files in `tests/` cover the pure `lib/` modules (`card-key`, `habit`, `known-words`, `proficiency`, `sentence-match`, `sequence`) — see `docs/TESTING.md` or `.planning/codebase/TESTING.md` for the full breakdown. Scope is deliberately narrow: no DB/API/component tests. Quality assurance beyond that relies on:
 1. Strict TypeScript
 2. Strict ESLint (`eslint-config-next`)
-3. Manual verification
+3. Manual / browser verification (RSC hydration and paint-timing behavior in particular cannot be unit tested)
 
 ---
 

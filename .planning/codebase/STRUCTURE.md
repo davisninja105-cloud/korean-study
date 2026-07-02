@@ -1,5 +1,5 @@
 # Codebase Structure
-_Last updated: 2026-06-23_
+_Last updated: 2026-07-01 (v1.2 Performance & Snappiness)_
 
 ## Summary
 
@@ -31,24 +31,33 @@ claude-test/                         # Project root
 │   │   └── tts/route.ts             # GET — TTS audio (Vercel Blob cache)
 │   ├── generated/                   # Auto-generated — DO NOT EDIT
 │   │   └── prisma/                  # Prisma client output (output = ../app/generated/prisma)
-│   ├── cards/page.tsx               # /cards — card library
-│   ├── habits/page.tsx              # /habits — full habit stats
+│   ├── cards/
+│   │   ├── page.tsx                 # /cards — async RSC, fetches cards+lessons, renders CardsClient
+│   │   └── loading.tsx              # Navigation skeleton (bg-surface-2 animate-pulse)
+│   ├── habits/
+│   │   ├── page.tsx                 # /habits — async RSC, fetches activity+masteredCount, renders HabitsClient
+│   │   └── loading.tsx              # Navigation skeleton
 │   ├── login/page.tsx               # /login — password gate
 │   ├── settings/page.tsx            # /settings — app configuration
-│   ├── study/page.tsx               # /study — active study session
+│   ├── study/
+│   │   ├── page.tsx                 # /study — async RSC, fetches CardDTO[]+lessons, renders StudyClient
+│   │   └── loading.tsx              # Navigation skeleton
 │   ├── wrapped/page.tsx             # /wrapped — "My Korean" summary
 │   ├── globals.css                  # Global styles + CSS token definitions
 │   ├── layout.tsx                   # Root layout (RSC): theme inject, GlossProvider, Nav
 │   ├── manifest.ts                  # PWA web app manifest
-│   ├── page.tsx                     # / — Home dashboard
+│   ├── page.tsx                     # / — async RSC, fetches StatsDTO+ActivityDTO, renders HomeClient
 │   └── favicon.ico
 ├── components/                      # Shared React components (client + RSC)
 │   ├── AudioButton.tsx
 │   ├── CardEditor.tsx
+│   ├── CardsClient.tsx              # 'use client' shell for /cards (v1.2)
 │   ├── GlossProvider.tsx
 │   ├── HabitHeatmap.tsx
+│   ├── HabitsClient.tsx             # 'use client' shell for /habits (v1.2)
 │   ├── HabitTracker.tsx
 │   ├── HighlightedSentence.tsx
+│   ├── HomeClient.tsx               # 'use client' shell for / (v1.2)
 │   ├── LessonRangeFilter.tsx
 │   ├── MilestoneCelebration.tsx
 │   ├── ModeSelector.tsx
@@ -57,6 +66,7 @@ claude-test/                         # Project root
 │   ├── ProgressRing.tsx
 │   ├── Sheet.tsx
 │   ├── StatsBar.tsx
+│   ├── StudyClient.tsx              # 'use client' shell for /study (v1.2)
 │   ├── StudySession.tsx
 │   ├── SwipeRow.tsx
 │   ├── SyncPanel.tsx
@@ -67,6 +77,8 @@ claude-test/                         # Project root
 │   ├── card-style.ts
 │   ├── color.ts
 │   ├── copy.ts
+│   ├── dashboard.ts                 # getStats() + getActivityData(), server-only (v1.2)
+│   ├── dto.ts                       # Shared server→client DTO types, ISO date contract (v1.2)
 │   ├── extract-cards.ts
 │   ├── fsrs.ts
 │   ├── generate-practice.ts
@@ -74,12 +86,14 @@ claude-test/                         # Project root
 │   ├── google-docs.ts
 │   ├── habit.ts
 │   ├── haptics.ts
+│   ├── known-words.ts
 │   ├── palettes.ts
 │   ├── prisma.ts
 │   ├── proficiency.ts
 │   ├── sentence-match.ts
 │   ├── sequence.ts
 │   ├── settings.ts
+│   ├── study-cards.ts               # getStudyCards() due-card pipeline, server-only (v1.2)
 │   ├── theme.ts
 │   ├── tts.ts
 │   └── usePullToRefresh.ts
@@ -106,6 +120,13 @@ claude-test/                         # Project root
 │   ├── P1-identity-retention.md
 │   ├── P2-polish-delight.md
 │   └── README.md
+├── tests/                           # Vitest unit tests — pure lib functions only, no DB/API
+│   ├── card-key.test.ts
+│   ├── habit.test.ts
+│   ├── known-words.test.ts
+│   ├── proficiency.test.ts
+│   ├── sentence-match.test.ts
+│   └── sequence.test.ts
 ├── .planning/                       # GSD planning artifacts
 │   └── codebase/                    # Codebase map documents (this file)
 ├── .claude/                         # Claude Code project settings
@@ -118,6 +139,7 @@ claude-test/                         # Project root
 ├── eslint.config.mjs                # ESLint (eslint-config-next 16, strict)
 ├── postcss.config.mjs               # PostCSS (Tailwind v4)
 ├── tsconfig.json                    # TypeScript config
+├── vitest.config.ts                 # Vitest config
 ├── package.json
 ├── package-lock.json
 ├── next-env.d.ts
@@ -131,7 +153,7 @@ claude-test/                         # Project root
 
 ### `app/`
 
-Next.js 16 App Router root. Each subdirectory containing `page.tsx` is a route; `api/` subdirectories with `route.ts` are serverless function handlers. Pages are React Server Components by default; they fetch data directly (Prisma, `lib/settings`) without going through the API layer.
+Next.js 16 App Router root. Each subdirectory containing `page.tsx` is a route; `api/` subdirectories with `route.ts` are serverless function handlers. Pages are React Server Components by default; they fetch data directly (Prisma, `lib/settings`) without going through the API layer. As of v1.2, the four main routes (`/`, `/study`, `/cards`, `/habits`) are thin async RSCs that fetch via a shared `lib/` pipeline function and render one `*Client.tsx` component from `components/` with the data as props; `loading.tsx` siblings provide the Next.js navigation-fallback skeleton for the same three routes (excluding `/`, which has no separate `loading.tsx`).
 
 ### `app/generated/prisma/`
 
@@ -161,15 +183,19 @@ Markdown design documents for past/current feature work. Not imported at runtime
 
 Static files served at `/`. Contains the PWA icon set generated by `scripts/gen-icons.mjs` from `public/icon.svg`.
 
+### `tests/`
+
+Vitest unit tests, one file per pure `lib/` module (`card-key`, `habit`, `known-words`, `proficiency`, `sentence-match`, `sequence`). `npm test` runs `vitest run`. Scope is deliberately narrow — pure functions with no DB/API dependency only; nothing exercises Prisma, Next.js routes, or React components.
+
 ---
 
 ## Key File Locations
 
 **Entry Points:**
 - `app/layout.tsx` — Root RSC layout: injects theme CSS vars, mounts `GlossProvider`, `ThemeWatcher`, `Nav`, pre-paint theme script
-- `app/page.tsx` — Home dashboard (default route)
-- `app/study/page.tsx` — Study session route
-- `middleware.ts` — Auth gate (compiled; source not present in root but active via `.next/server/middleware.js`)
+- `app/page.tsx` — Home dashboard (default route), async RSC → `components/HomeClient.tsx`
+- `app/study/page.tsx` — Study session route, async RSC → `components/StudyClient.tsx`
+- `middleware.ts` — Auth gate (present at project root; compiles to `.next/server/middleware.js`)
 
 **Schema & DB:**
 - `prisma/schema.prisma` — Single source of truth for all DB models
@@ -183,6 +209,8 @@ Static files served at `/`. Contains the PWA icon set generated by `scripts/gen-
 - `lib/card-key.ts` — `normalizeFront()` dedup key
 - `lib/settings.ts` — All DB-backed app settings getters/setters
 - `lib/tts.ts` — TTS provider abstraction
+- `lib/study-cards.ts` / `lib/dashboard.ts` — Shared server-only pipelines behind the RSC pages and the equivalent GET API routes (v1.2)
+- `lib/dto.ts` — Server→client DTO type contract; every `DateTime` field is `string` (ISO) (v1.2)
 
 **Styles:**
 - `app/globals.css` — CSS token definitions (`--surface-1/2/3`, `--reward`, `--button`, `--cat-*`, `--highlight-bg/fg`), Tailwind `@theme inline` utilities, dark mode variants, `prefers-reduced-motion` blocks
@@ -271,4 +299,4 @@ Static files served at `/`. Contains the PWA icon set generated by `scripts/gen-
 
 ---
 
-*Structure analysis: 2026-06-23*
+*Structure analysis: 2026-06-23 — updated 2026-07-01 for v1.2 (RSC page/client-shell split, loading.tsx skeletons, new lib/ pipeline modules); corrected middleware.ts and tests/ omissions*

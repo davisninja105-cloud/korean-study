@@ -1,9 +1,9 @@
 # Architecture
-_Last updated: 2026-06-23_
+_Last updated: 2026-07-01 (v1.2 Performance & Snappiness)_
 
 ## Summary
 
-Korean Study is a Next.js 16 App Router application for spaced-repetition Korean language learning. It is structured as a single-tenant PWA (one user behind a shared password) with server-side React components, a Next.js API layer, Prisma over libSQL/Turso as the database, and Claude (Anthropic) as the AI backbone for card extraction, practice generation, and tap-to-gloss. The architecture is request-driven with no background workers; all AI and sync operations are triggered by user actions and processed inside Vercel serverless functions.
+Korean Study is a Next.js 16 App Router application for spaced-repetition Korean language learning. It is structured as a single-tenant PWA (one user behind a shared password) with server-side React components, a Next.js API layer, Prisma over libSQL/Turso as the database, and Claude (Anthropic) as the AI backbone for card extraction, practice generation, and tap-to-gloss. The architecture is request-driven with no background workers; all AI and sync operations are triggered by user actions and processed inside Vercel serverless functions. As of v1.2, every main route (`/cards`, `/study`, `/`, `/habits`) follows an **RSC + client-shell + DTO** pattern: the `page.tsx` is a thin async server component that fetches initial data and hands it to exactly one `*Client.tsx` component as props, eliminating the empty-state/blank-loading flash that a `'use client'`-with-`useEffect` page would otherwise show on first paint.
 
 ---
 
@@ -76,17 +76,29 @@ User taps "sync" (pull-to-refresh on Home, or Settings ▸ Advanced)
 
 ```
 User opens /study
-  → GET /api/cards/due?scope=due&lessonFrom=&lessonTo=&sessionSize=N
-      → Prisma: cards WHERE nextReview <= now, filtered by lesson range
-      → Capped at sessionSize (default 20)
-      → Fetches CardDependency edges among selected card IDs
-      → lib/sequence.ts: sequenceCards() — blended depth+urgency sort
-      → Returns reordered card list with sentences and FSRS state
+  → app/study/page.tsx (async RSC, no 'use client')
+      → Promise.all([ getStudyCards({scope:'due',...}), prisma.lesson.findMany() ])
+      → renders <StudyClient initialCards initialLessons> — no loading phase
 
-  → components/StudySession.tsx renders cards in server-supplied order
-      → After each answer: POST /api/review  (runs FSRS, updates CardReview)
-      → POST /api/review/undo available to restore previous state
-      → POST /api/activity increments StudyDay.seconds / reviews
+  → lib/study-cards.ts: getStudyCards()
+      → Promise.allSettled([ pool fetch (cards WHERE nextReview <= now,
+          filtered by lesson range, take 1000), knownLemmas fetch (state >= 1) ])
+          pool reject → throw (500); knownLemmas reject → empty Set (degrade)
+      → CardDependency edges among pool IDs (sequential — depends on pool)
+      → selectSessionCards() — downward-closed prerequisite selection, capped
+      → lib/sequence.ts: sequenceCards() — blended depth+urgency sort
+      → lib/known-words.ts: annotate each sentence with unknownCount
+      → serialize: all Date fields → ISO strings (lib/dto.ts CardDTO contract)
+      → Returns reordered CardDTO[] with sentences and FSRS state
+
+  → components/StudyClient.tsx starts in 'select-mode' (props, not fetch)
+      → Lesson-range filter change re-calls GET /api/cards/due (delegates to
+          the same getStudyCards()) with isFilterLoading spinner, not a phase change
+      → components/StudySession.tsx renders cards in server-supplied order
+          → submitReview is synchronous: reviewCard() computes FSRS client-side,
+              queue advances immediately; POST /api/review fires fire-and-forget
+          → POST /api/review/undo available to restore previous state
+          → POST /api/activity increments StudyDay.seconds / reviews
 ```
 
 ### 3. Tap-to-Gloss
@@ -140,6 +152,8 @@ All modules in `lib/` are side-effect-free or explicitly named for their single 
 | `lib/card-style.ts` | `typeBadgeClass()` — card-type badge CSS source of truth |
 | `lib/color.ts` | `readableForeground()` — contrast color helper |
 | `lib/copy.ts` | Pure warm-copy string helpers; no side effects |
+| `lib/dashboard.ts` *(v1.2)* | Server-only: `getStats()` + `getActivityData()`, shared by RSC pages and GET API routes |
+| `lib/dto.ts` *(v1.2)* | Shared server→client DTO types; every `DateTime` field typed `string` (ISO) — the RSC serialization contract |
 | `lib/extract-cards.ts` | Claude Opus prompt for lesson → cards extraction |
 | `lib/fsrs.ts` | FSRS spaced-repetition algorithm (ts-fsrs wrapper) |
 | `lib/generate-practice.ts` | Claude prompt for ephemeral practice generation |
@@ -147,12 +161,14 @@ All modules in `lib/` are side-effect-free or explicitly named for their single 
 | `lib/google-docs.ts` | Google Docs API v1 fetch + emphasis capture |
 | `lib/habit.ts` | Pure streak/freeze/heatmap computation helpers |
 | `lib/haptics.ts` | `haptic()` — `navigator.vibrate` wrapper, no-op-safe |
+| `lib/known-words.ts` | `countUnknownWords()` — pure ranking signal for sentence selection |
 | `lib/palettes.ts` | Color palette data — pure, client+server safe |
 | `lib/prisma.ts` | Singleton Prisma client (libSQL adapter) |
 | `lib/proficiency.ts` | CEFR band mapper; `computeProficiency()` |
 | `lib/sentence-match.ts` | Korean substring match/blank safety rules |
 | `lib/sequence.ts` | `sequenceCards()` — foundation-first blended sort |
 | `lib/settings.ts` | Server-side DB getters/setters for all app settings |
+| `lib/study-cards.ts` *(v1.2)* | Server-only: `getStudyCards()` due-card pipeline, shared by the study RSC page and `GET /api/cards/due` |
 | `lib/theme.ts` | Theme toggle helpers (localStorage-based) |
 | `lib/tts.ts` | TTS provider abstraction + two provider implementations |
 | `lib/usePullToRefresh.ts` | Touch pull-to-refresh React hook |
@@ -165,7 +181,7 @@ Thin handlers: validate input, call `lib/` functions, query Prisma, return JSON.
 |-------|-----------|---------|
 | `/api/sync` | POST | Ingest new Google Doc lessons → extract cards |
 | `/api/cards` | GET, POST | List all cards; create a card |
-| `/api/cards/due` | GET | Due (or ahead-scope) cards, sequenced |
+| `/api/cards/due` | GET | Due (or ahead-scope) cards, sequenced — delegates to `lib/study-cards.ts:getStudyCards()` |
 | `/api/cards/[id]` | GET, PUT, DELETE | Single card CRUD |
 | `/api/review` | POST | Record FSRS review answer |
 | `/api/review/undo` | POST | Undo last review |
@@ -184,6 +200,7 @@ Components are `'use client'` unless they contain no interactivity. They import 
 
 Key component groups:
 
+- **Page shells (v1.2 RSC pattern):** `CardsClient.tsx`, `StudyClient.tsx`, `HomeClient.tsx`, `HabitsClient.tsx` — each owns all interactivity for its route, initialized from server-fetched props (no initial-load `useEffect`)
 - **Study:** `StudySession.tsx`, `ModeSelector.tsx`, `HighlightedSentence.tsx`, `AudioButton.tsx`
 - **Cards management:** `CardEditor.tsx`, `SwipeRow.tsx`, `LessonRangeFilter.tsx`
 - **Habit/stats:** `HabitTracker.tsx`, `HabitHeatmap.tsx`, `MilestoneCelebration.tsx`, `ProficiencyArc.tsx`, `ProgressRing.tsx`, `StatsBar.tsx`
@@ -191,17 +208,17 @@ Key component groups:
 
 ### `app/` — Page Routes (RSC)
 
-Pages are React Server Components by default. They fetch data directly (Prisma or `lib/settings`) and pass it to client components. They do not import from each other.
+Pages are React Server Components by default. As of v1.2, the four main routes (`/`, `/study`, `/cards`, `/habits`) are thin async RSCs: they fetch data directly (Prisma via `lib/dashboard.ts` / `lib/study-cards.ts`, or `lib/settings`) and render exactly one `*Client.tsx` component with the results as props — no hooks, no `'use client'`, no other logic. They do not import from each other. `app/*/loading.tsx` files (static server components, `bg-surface-2 animate-pulse`) are the Next.js fallback shown during client-side navigation to these routes.
 
-| Route | Page |
-|-------|------|
-| `/` | Home: hero + HabitTracker + StatsBar + ProficiencyArc |
-| `/study` | Study: mode selector + StudySession |
-| `/cards` | Cards: filterable list + CardEditor sheet |
-| `/habits` | Full habit stats: heatmap + streaks + ProficiencyArc |
-| `/settings` | App settings: theme + colors + goal + sync |
-| `/wrapped` | "My Korean" summary: CEFR arc + stats + share |
-| `/login` | Password login form |
+| Route | Page (RSC) | Client shell |
+|-------|-----------|--------------|
+| `/` | Home — fetches `StatsDTO` + `ActivityDTO` | `HomeClient.tsx`: hero + HabitTracker + StatsBar + ProficiencyArc |
+| `/study` | Study — fetches `CardDTO[]` + lessons | `StudyClient.tsx`: mode selector + StudySession, starts in `select-mode` |
+| `/cards` | Cards — fetches `CardDTO[]` + lessons | `CardsClient.tsx`: filterable list + CardEditor sheet |
+| `/habits` | Habits — fetches `ActivityDTO` + masteredCount | `HabitsClient.tsx`: heatmap + streaks + ProficiencyArc |
+| `/settings` | App settings: theme + colors + goal + sync | *(not yet RSC-converted)* |
+| `/wrapped` | "My Korean" summary: CEFR arc + stats + share | *(not yet RSC-converted)* |
+| `/login` | Password login form | — |
 
 ---
 
@@ -239,6 +256,10 @@ Setting     (key/value store; also holds gloss: cache entries)
 
 **Theme without flash:** A pre-paint inline `<script>` in `app/layout.tsx` reads `localStorage('theme')` and sets `data-theme` on `<html>` before first paint. Tailwind's `dark:` variant is rebound to `[data-theme="dark"]` via `@custom-variant dark`. The OS `@media` block stays as a no-JS fallback.
 
+**RSC + client-shell + DTO (v1.2):** Every main route's `page.tsx` is a thin async server component (no hooks, no `'use client'`) that fetches its data via a shared `lib/` pipeline function and renders exactly one `*Client.tsx` component with the result as props. This eliminates first-paint empty-state flashes without introducing per-page fetch logic duplication — the same `lib/` function (`getStudyCards`, `getStats`, `getActivityData`) also backs the legacy GET API route used for client-side re-fetches (e.g. the lesson-range filter). The DTO boundary (`lib/dto.ts`) is the enforcement point: every `DateTime` field must be `.toISOString()`'d before the prop crosses into the client component, or Next.js throws a serialization error at runtime.
+
+**Concurrent non-critical queries via `Promise.allSettled`:** Where a request has one critical query (must succeed or the request fails) and one non-critical query (a ranking/annotation signal), the two run concurrently via `Promise.allSettled` rather than `Promise.all` — a non-critical failure degrades gracefully (e.g. empty known-lemmas Set) instead of failing the whole request. Established in `lib/study-cards.ts`.
+
 ---
 
 ## Architectural Constraints
@@ -273,4 +294,4 @@ Setting     (key/value store; also holds gloss: cache entries)
 
 ---
 
-*Architecture analysis: 2026-06-23*
+*Architecture analysis: 2026-06-23 — updated 2026-07-01 for v1.2 (RSC + client-shell + DTO hydration pattern)*
