@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { normalizeFront } from '@/lib/card-key'
+import { Prisma } from '@/app/generated/prisma/client'
 
 const sentencesInclude = { orderBy: { orderIndex: 'asc' } } as const
 
@@ -52,6 +53,16 @@ export async function PUT(
 
     return NextResponse.json(card)
   } catch (e) {
+    // REVIEW-03: a normalizedFront collision (editing card A's front to a
+    // value that normalizes to card B's existing normalizedFront) raises
+    // Prisma P2002. Surface a friendly 400 instead of the generic 500 so
+    // the user knows the front already exists rather than seeing a crash.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      return NextResponse.json(
+        { error: 'This front already exists (as a different variant of another card)' },
+        { status: 400 },
+      )
+    }
     const message = e instanceof Error ? e.message : 'Unknown error'
     return NextResponse.json({ error: message }, { status: 500 })
   }
