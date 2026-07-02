@@ -291,8 +291,10 @@ export async function POST(req: NextRequest) {
       ...(remaining > 0 && { message: `${remaining} more lesson(s) remaining — sync again to continue.` }),
     })
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : 'Unknown error'
-    console.error('Sync error:', message)
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error('Sync error:', err)
+    return NextResponse.json(
+      { error: 'Sync failed — see server logs for details' },
+      { status: 500 }
+    )
   }
 }
