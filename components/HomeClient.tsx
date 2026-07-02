@@ -40,7 +40,13 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
   // band-up) AND inside loadStats after a pull-to-refresh refetch.
   const checkBandUp = useCallback((masteredCount: number) => {
     const { band } = computeProficiency(masteredCount)
-    const stored = localStorage.getItem('lastBand')
+    let stored: string | null = null
+    try {
+      stored = localStorage.getItem('lastBand')
+    } catch {
+      // localStorage unavailable (private browsing / disabled) — nothing to compare
+      return
+    }
     if (stored && stored !== band) {
       setBandUpMsg(bandUpMessage(band, masteredCount))
       // Confetti on band-up (lazy import, same pattern as MilestoneCelebration)
@@ -49,7 +55,11 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
         m.default({ particleCount: 80, spread: 60, origin: { y: 0.4 } })
       }).catch(() => {})
     }
-    localStorage.setItem('lastBand', band)
+    try {
+      localStorage.setItem('lastBand', band)
+    } catch {
+      // quota exceeded / private browsing — best-effort write, ignore
+    }
   }, [])
 
   // Post-sync refetch: called only from handleSync — NOT on mount (D-08, Pitfall 1).
