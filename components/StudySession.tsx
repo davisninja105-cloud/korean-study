@@ -585,7 +585,16 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       return
     }
 
-    // Restore queue, stats, and seen-card tracking snapshots captured before the last review.
+    // Restore queue, stats, and seen-card tracking snapshots captured before
+    // the last review. Guarded by isMountedRef so the entire restoration —
+    // including the unconditional seenCardIdsRef write — applies as ONE atomic
+    // unit or is fully skipped when the component unmounted between the awaited
+    // fetch resolving and the restore (REVIEW-05). React 18/19 auto-batches the
+    // setState calls into a single commit; the mount guard makes the ref write
+    // share the same all-or-nothing gate, so an interrupted undo can never leave
+    // the ref mutated while the setters silently no-op post-unmount.
+    if (!isMountedRef.current) return
+
     setStats(prevStats)
     setQueue(prevQueue)
     seenCardIdsRef.current = prevSeenCardIds
