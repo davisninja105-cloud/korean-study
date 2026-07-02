@@ -2,6 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { reviewCard, type Grade } from '@/lib/fsrs'
 
+// IN-01: named type guard instead of an unchecked `as Grade` cast, so the
+// compiler — not just the runtime check below — enforces the relationship.
+// If a future edit relaxes the range check, `reviewCard(cardReview, rating)`
+// stops compiling instead of silently keeping the invalid cast.
+function isGrade(n: unknown): n is Grade {
+  return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 4
+}
+
 export async function POST(req: NextRequest) {
   // WR-01: parse the body inside a try so malformed JSON returns a structured
   // 400 instead of an unhandled throw (Next.js would otherwise return a raw
@@ -30,12 +38,7 @@ export async function POST(req: NextRequest) {
   // REVIEW-02: reject any rating outside the valid FSRS grades {1,2,3,4}
   // before any DB read or FSRS computation, so reviewCard() is never reached
   // with an invalid rating (prevents undefined FSRS behavior / throws).
-  if (
-    typeof rating !== 'number' ||
-    !Number.isInteger(rating) ||
-    rating < 1 ||
-    rating > 4
-  ) {
+  if (!isGrade(rating)) {
     return NextResponse.json(
       { error: 'rating must be one of 1, 2, 3, 4' },
       { status: 400 },
@@ -52,7 +55,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Card review not found' }, { status: 404 })
     }
 
-    const updated = reviewCard(cardReview, rating as Grade)
+    const updated = reviewCard(cardReview, rating)
 
     const review = await prisma.cardReview.update({
       where: { cardId },
