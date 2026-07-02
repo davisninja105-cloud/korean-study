@@ -6,9 +6,9 @@ current_phase: 15
 current_phase_name: StudySession Refactor & Sentence-Selection Memoization
 status: executing
 stopped_at: "Phase 14 complete and verified (UAT 3/3, SECURITY threats_open:0, VALIDATION partial); ready to plan Phase 15"
-last_updated: "2026-07-02T23:42:46.017Z"
+last_updated: "2026-07-02T23:51:30.000Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 15 execution started
+last_activity_desc: Phase 15 Plan 02 — Tasks 1+2 committed (mode components + dispatch), Task 3 human-verify checkpoint pending
 progress:
   total_phases: 3
   completed_phases: 2
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 Phase: 15 (StudySession Refactor & Sentence-Selection Memoization) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
-Last activity: 2026-07-02 — Phase 15 execution started
+Status: Plan 15-02 — Tasks 1+2 committed (89c32b1, bc98179); Task 3 (blocking human-verify checkpoint) pending
+Last activity: 2026-07-02 — Plan 15-02 Tasks 1+2 done; awaiting human UAT verification
 
 Progress: [██████░░░░] 67% (milestone: 2 of 3 phases complete; 4 of 4 plans done)
 
@@ -125,8 +125,8 @@ Carried forward from v1.2 close (2026-07-01) — informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-02T23:42:23.440Z
-Stopped at: Phase 14 complete and verified (UAT 3/3, SECURITY + VALIDATION produced); ready to plan Phase 15
+Last session: 2026-07-02T23:51:30.000Z
+Stopped at: Plan 15-02 Tasks 1+2 committed (mode components created + StudySession slimmed to three-way dispatch); Task 3 blocking human-verify checkpoint pending — awaiting "approved" or regression report
 Resume file: None
 
 ## Operator Next Steps

@@ -111,7 +111,7 @@ See `.planning/milestones/v1.2-ROADMAP.md` for full phase details.
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 15-02-PLAN.md — Split StudySession into `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` sub-components + live UAT (REFACTOR-01)
+- [ ] 15-02-PLAN.md — Split StudySession into `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` sub-components + live UAT (REFACTOR-01) — Tasks 1+2 committed (89c32b1, bc98179); Task 3 human-verify checkpoint pending
 
 ## Progress
 
