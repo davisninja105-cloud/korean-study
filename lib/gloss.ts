@@ -56,6 +56,51 @@ export async function setCachedGloss(
   })
 }
 
+// ── Bulk preload reader ───────────────────────────────────────────────────
+
+// Bound on the preload payload. Fixed server-side (never client-controllable)
+// so the response size stays bounded even as the cache approaches
+// MAX_GLOSS_CACHE_ENTRIES (2000). See GET /api/gloss/preload.
+export const GLOSS_PRELOAD_LIMIT = 300
+
+/**
+ * Bulk-read previously-resolved gloss entries for the client mount-time
+ * preload (PERF-02).
+ *
+ * Returns up to `limit` { word, entry } pairs from the Setting table, scoped
+ * to `gloss:`-prefixed keys ONLY — the `startsWith: CACHE_KEY_PREFIX` filter
+ * guarantees app-config settings (buttonColor, dailyGoalSeconds,
+ * sessionSize, habitDayStartHour, …) are never read or serialized
+ * (threat T-14-05). The `take: limit` bound guarantees the payload can never
+ * grow unbounded (threat T-14-04).
+ *
+ * The Setting table has no timestamp column, so "recent" is the DB's natural
+ * key order; the limit is the only bound. Each row's `value` is JSON.parsed
+ * inside a try/catch that skips + warns malformed entries (mirroring
+ * getCachedGloss) — a corrupt cache row never crashes the preload
+ * (threat T-14-06). The recovered `word` is the normalized form (the part of
+ * the key after `gloss:`), which is the SAME key the client cache uses, so a
+ * preloaded entry is a hit on the next tap of that word.
+ */
+export async function getRecentGlosses(
+  limit: number = GLOSS_PRELOAD_LIMIT
+): Promise<{ word: string; entry: GlossResult }[]> {
+  const rows = await prisma.setting.findMany({
+    where: { key: { startsWith: CACHE_KEY_PREFIX } },
+    take: limit,
+  })
+  const out: { word: string; entry: GlossResult }[] = []
+  for (const row of rows) {
+    try {
+      const entry = JSON.parse(row.value) as GlossResult
+      out.push({ word: row.key.slice(CACHE_KEY_PREFIX.length), entry })
+    } catch (err) {
+      console.warn('Failed to parse cached gloss for', row.key, err)
+    }
+  }
+  return out
+}
+
 // ── LLM fallback ──────────────────────────────────────────────────────────
 
 export async function lookupViaLLM(word: string): Promise<{
