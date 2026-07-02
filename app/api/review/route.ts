@@ -3,7 +3,17 @@ import { prisma } from '@/lib/prisma'
 import { reviewCard, type Grade } from '@/lib/fsrs'
 
 export async function POST(req: NextRequest) {
-  const { cardId, rating } = await req.json()
+  // WR-01: parse the body inside a try so malformed JSON returns a structured
+  // 400 instead of an unhandled throw (Next.js would otherwise return a raw
+  // framework-level 500 that the client's retry wrapper isn't expecting).
+  let body
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
+  }
+  const { cardId, rating } = body ?? {}
+
   if (cardId === undefined || rating === undefined) {
     return NextResponse.json({ error: 'cardId and rating required' }, { status: 400 })
   }
