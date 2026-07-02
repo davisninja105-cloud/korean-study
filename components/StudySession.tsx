@@ -122,21 +122,27 @@ async function postReviewWithRetry(
 ): Promise<void> {
   const backoffMs = [500, 1500]
   for (let attempt = 0; attempt < 3; attempt++) {
+    const ctrl = new AbortController()
+    const timeoutId = setTimeout(() => ctrl.abort(), 8000)
     try {
-      const ctrl = new AbortController()
-      const timeoutId = setTimeout(() => ctrl.abort(), 8000)
       const res = await fetch(REVIEW_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cardId, rating }),
         signal: ctrl.signal,
       })
-      clearTimeout(timeoutId)
       if (res.ok) return
       // 4xx is a permanent failure — don't retry; go straight to exhausted.
       if (res.status >= 400 && res.status < 500) break
     } catch {
       // fetch rejected or aborted (timeout) — counts as a failed attempt; fall through to backoff/retry
+    } finally {
+      // IN-01: always clear the per-attempt timer, including when fetch
+      // rejects for a reason other than the abort firing (e.g. an immediate
+      // offline TypeError) — otherwise the stale timer fires ~8s later and
+      // aborts a controller whose fetch has already settled (harmless no-op,
+      // but an avoidable dangling timer).
+      clearTimeout(timeoutId)
     }
     if (attempt < 2) {
       await new Promise<void>((resolve) => setTimeout(resolve, backoffMs[attempt]))
