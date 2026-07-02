@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Reliability & Hardening
 current_phase: 14
-current_phase_name: Sync Failure Visibility & Caching Performance
+current_phase_name: sync-failure-visibility-caching-performance
 status: executing
-stopped_at: Phase 13 complete, transitioned to Phase 14; ready to plan
-last_updated: "2026-07-02T18:12:48.751Z"
+stopped_at: Phase 14 plan 01 complete (SYNC-01, PERF-01); plan 02 (PERF-02) next
+last_updated: "2026-07-02T18:42:31.855Z"
 last_activity: 2026-07-02
-last_activity_desc: Phase 13 complete, transitioned to Phase 14
+last_activity_desc: Phase 14 plan 01 complete
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 33
+  total_plans: 4
+  completed_plans: 3
+  percent: 75
 ---
 
 # Project State
@@ -24,31 +24,31 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 14 — Sync Failure Visibility & Caching Performance
+**Current focus:** Phase 14 — sync-failure-visibility-caching-performance
 
 ## Current Position
 
-Phase: 14 — Sync Failure Visibility & Caching Performance
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-02 — Phase 13 complete, transitioned to Phase 14
+Phase: 14 (sync-failure-visibility-caching-performance) — EXECUTING
+Plan: 2 of 2
+Status: Plan 14-01 complete; plan 14-02 next
+Last activity: 2026-07-02 — Phase 14 plan 01 complete
 
-Progress: [███░░░░░░░] 33% (milestone: 1 of 3 phases complete)
+Progress: [████████░░] 75% (milestone: 1 of 3 phases complete; 3 of 4 plans)
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed (v1.3): 2
-- Average duration: ~7.5 min
-- Total execution time: ~0.3 hours (v1.3)
+- Total plans completed (v1.3): 3
+- Average duration: ~7.7 min
+- Total execution time: ~0.4 hours (v1.3)
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 13 | 2/2 | ~15 min | ~7.5 min |
-| 14 | TBD | - | - |
+| 14 | 1/2 | ~8 min | ~8 min |
 | 15 | TBD | - | - |
 
 **Recent Trend:**
@@ -62,6 +62,7 @@ Progress: [███░░░░░░░] 33% (milestone: 1 of 3 phases complet
 |------|----------|-------|-------|
 | Phase 13 P01 | 5 min | 2 | 2 |
 | Phase 13 P02 | ~10 min | 3 | 2 |
+| Phase 14 P01 | ~8 min | 2 | 1 |
 
 ## Accumulated Context
 
@@ -82,6 +83,11 @@ Recent decisions affecting current work:
 - [Phase 13]: Plan 13-02: postReviewWithRetry uses 3 total attempts (1 initial + 2 retries) with ~500ms/~1500ms backoff, toast only on exhaustion (REVIEW-04) — Hard-bounded so a persistent failure can't spin an unbounded request loop (threat T-13-05); toast scoped to background-save failure path only, not handleUndo
 - [Phase 13]: Plan 13-02: atomic undo via mount-guard + React 18/19 auto-batched setState block (not useReducer) — isMountedRef gates the whole restoration incl. seenCardIdsRef write so it applies all-or-nothing (REVIEW-05); Phase 15 owns the larger StudySession refactor so this plan minimized churn
 - [Phase 13]: Plan 13-02: Toast dismiss callback held in a ref so auto-dismiss setTimeout is set up once on mount and survives parent re-renders; onDismiss fires inside the timeout (not the effect body) — satisfies react-hooks/set-state-in-effect; token-styled, no new npm dep
+- [Phase 14]: Plan 14-01: Kept where:{components:{not:null}} on the seed findMany (not broadened to all cards) — preserves existing CardDependency edge-creation semantics exactly; broadening would change which edges are created and is out of scope for a perf-preserving refactor (PERF-01)
+- [Phase 14]: Plan 14-01: Dropped `components` from the seed findMany select; component strings now come from the in-memory extraction result (card.components) instead of JSON.parse-ing a DB re-read — eliminates the parse-error path entirely and removes a DB column read (PERF-01)
+- [Phase 14]: Plan 14-01: linkTargets declared in the per-lesson try block (resets each lesson) and in scope for both the Promise.all callback (push) and the post-await linking loop (iterate); keyToId fully populated by link time so forward references within a lesson resolve (PERF-01)
+- [Phase 14]: Plan 14-01: lessonExcerpt returns the user's OWN Google Doc content (first non-empty line) — intentionally surfaced back to the sole authenticated owner (T-14-02 accepted); raw msg/dbMsg confined to server-side console.error/console.warn only (T-14-01 mitigated), mirroring Phase 13 T-13-02 (SYNC-01)
+- [Phase 14]: Plan 14-01: Response shape (failed/failures/remaining/newLessons/newCards) left unchanged so components/SyncPanel.tsx renders the new excerpt strings with zero client-side edit (SYNC-01)
 
 ### Pending Todos
 
@@ -91,7 +97,8 @@ None yet.
 
 - [Phase 13 → resolved] Phases 13 & 15 both touched `components/StudySession.tsx` — Phase 13 shipped first, so Phase 15's refactor must preserve the `postReviewWithRetry` wiring, `isMountedRef` mount-guard, `saveError`/`<Toast>` plumbing, and atomic `handleUndo` restoration.
 - Phase 15 is a behavior-preserving refactor — needs a live study-session UAT (flip/grade/undo/mode-switch) to confirm no regression; lint (`react-hooks/purity`) must stay clean.
-- Phase 14: PERF-01 & SYNC-01 both edit `app/api/sync/route.ts` — coordinate the two changes within the phase to avoid conflicts.
+- [Phase 14 → resolved] PERF-01 & SYNC-01 both edited `app/api/sync/route.ts` — landed together in plan 14-01 with no conflict (PERF-01 hoisted the map; SYNC-01 added the excerpt helper + rewrote failure strings; both tasks committed atomically).
+- [Phase 14 pending UAT] Optional end-of-phase UAT: a live sync against the tutor's Google Doc with a deliberately-failing/zero-card lesson would confirm the SyncPanel shows the excerpt (not `Lesson 1`, no raw error) and that CardDependency edges still form for a normal lesson.
 - [Phase 13 deferred] `app/api/review/undo/route.ts` has the same missing-try/catch shape as the hardened `/api/review` route but was out of scope for REVIEW-01..05 — left for a future hardening pass.
 
 ### Roadmap Evolution
@@ -109,10 +116,10 @@ Carried forward from v1.2 close (2026-07-01) — informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-02T17:31:00Z
-Stopped at: Phase 13 complete, ready to plan Phase 14
+Last session: 2026-07-02T18:41:28.280Z
+Stopped at: Phase 14 plan 01 complete (SYNC-01, PERF-01); plan 14-02 (PERF-02) next
 Resume file: None
 
 ## Operator Next Steps
 
-- Phase 13 verified & complete (2/2 plans; REVIEW-01..05 satisfied, UAT passed). Next: `/gsd-plan-phase 14` (sync visibility + caching) to continue the milestone.
+- Phase 14 plan 01 complete (2/2 tasks; SYNC-01 + PERF-01 satisfied, build+lint clean, both committed). Next: execute plan 14-02 (PERF-02 — preload tap-to-gloss cache from the DB `Setting` table on mount in `components/GlossProvider.tsx`/`lib/gloss.ts`). Optional end-of-phase UAT for the sync-route changes can run after 14-02 or at phase close.
