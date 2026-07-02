@@ -120,7 +120,11 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
 
   // Pull-to-refresh → sync the Google Doc (same call as the Settings Sync panel).
   const handleSync = useCallback(async () => {
-    if (!DOC_ID) return
+    if (!DOC_ID) {
+      // Sync not configured — surface feedback so the pull gesture isn't silent.
+      setSyncMsg('Sync not configured')
+      return
+    }
     haptic('impact-light')
     setSyncMsg(null)
     try {
