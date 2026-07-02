@@ -1,74 +1,52 @@
 ---
 phase: 13-review-api-hardening-save-reliability
-fixed_at: 2026-07-02T17:11:53Z
+fixed_at: 2026-07-02T18:20:00Z
 review_path: .planning/phases/13-review-api-hardening-save-reliability/13-REVIEW.md
 iteration: 1
-findings_in_scope: 8
-fixed: 8
+findings_in_scope: 4
+fixed: 4
 skipped: 0
 status: all_fixed
 ---
 
 # Phase 13: Code Review Fix Report
 
-**Fixed at:** 2026-07-02T17:11:53Z
+**Fixed at:** 2026-07-02T18:20:00Z
 **Source review:** .planning/phases/13-review-api-hardening-save-reliability/13-REVIEW.md
 **Iteration:** 1
 
 **Summary:**
-- Findings in scope: 8
-- Fixed: 8
+- Findings in scope: 4
+- Fixed: 4
 - Skipped: 0
 
 ## Fixed Issues
 
-### WR-01: `await req.json()` is outside the try/catch — malformed JSON throws unhandled, bypassing REVIEW-01's structured 500
-
-**Files modified:** `app/api/review/route.ts`
-**Commit:** dece898
-**Applied fix:** Moved body parsing inside its own `try`/`catch` at the top of the handler. Malformed JSON now returns a structured `400 { error: 'Invalid JSON body' }` instead of an unhandled throw / framework-level 500. `cardId`/`rating` are destructured from the parsed body (`body ?? {}`) after the parse succeeds, preserving the original loose typing so later checks (WR-05, IN-01) still narrow correctly.
-
-### WR-02: PUT `/api/cards/[id]` 500 leaks raw `e.message` to the client (info disclosure)
-
-**Files modified:** `app/api/cards/[id]/route.ts`
-**Commit:** 6ca85e5
-**Applied fix:** The generic-error catch branch now logs the raw error server-side via `console.error` and returns a fixed generic message (`'Failed to update card'`), matching the disclosure posture already established for `/api/review` (T-13-02). Also added a `data === null || typeof data !== 'object'` guard immediately after `req.json()` returning a `400` before the field-spread, closing the reachable `TypeError` path the reviewer flagged (a `null` body previously threw inside the spread and would have hit the now-fixed catch anyway, but the explicit guard makes the 400 intentional and immediate).
-
-### WR-03: `prisma.card.update` and the sentence-replacement `$transaction` are not atomic — partial state on mid-flow failure
-
-**Files modified:** `app/api/cards/[id]/route.ts`
-**Commit:** af98b5a
-**Applied fix:** Both operations are now built as `PrismaPromise` values (`cardUpdate`, `sentenceOps`) without awaiting them individually, then passed together into a single `prisma.$transaction([cardUpdate, ...sentenceOps])` call. A mid-flow DB failure can no longer leave the card with a new `front` but stale `sentences` — either both commit or neither does.
-
-### WR-04: `postReviewWithRetry` retries non-transient failures (4xx) and has no per-attempt timeout
+### CR-01: Undo can silently revert the wrong card's FSRS state once a practice card has been graded after a real card
 
 **Files modified:** `components/StudySession.tsx`
-**Commit:** 6e5b659
-**Applied fix:** Each fetch attempt now runs under an `AbortController` with an 8s timeout (`clearTimeout` on success), so a hung connection can no longer stall the loop and starve `onExhausted` from ever firing. After a response is received, `res.status >= 400 && res.status < 500` breaks out of the retry loop immediately (goes straight to `onExhausted()`) instead of burning ~2s of pointless backoff on a permanent (non-transient) failure. Applied exactly as the reviewer's suggested fix, with an updated doc comment explaining both changes.
+**Commit:** 0b22b2c
+**Applied fix:** Added an `else` branch to the `if (current.kind === 'real')` block in `submitReview` that clears `undoRef.current` and calls `setCanUndo(false)` whenever the graded item is a practice card. This invalidates any pending undo pointer as soon as a practice card is graded, so the "Undo last rating" button can no longer fire against a stale real card's pre-grade snapshot after intervening practice cards were graded. Verified via project-scoped `tsc --noEmit` (no new errors in the file).
 
-### WR-05: `/api/review` does not validate `cardId` is a string
+**Note:** This is a logic/state-handling fix, not just a syntax change. Both tiers of automated verification only confirm the code is syntactically sound and the fix text is present — they cannot confirm the undo flow behaves correctly end-to-end. Recommend a manual check (grade a real card, then grade one or more practice cards, then confirm the Undo button is disabled/no-op) before treating this as fully verified. **Status: fixed — requires human verification.**
 
-**Files modified:** `app/api/review/route.ts`
-**Commit:** a3e4cab
-**Applied fix:** Added `if (typeof cardId !== 'string' || cardId === '') return 400` immediately after the existing `undefined` check, matching the sibling `/api/review/undo` route's input contract (`!cardId || typeof cardId !== 'string'`). A non-string or empty `cardId` is now rejected with a clear `400` instead of reaching `findUnique` and producing a misleading `404` or an unnecessary `500`.
+### WR-01: `DELETE /api/cards/[id]` still leaks raw internal error messages to the client
 
-### IN-01: `rating as Grade` is an unchecked type assertion
+**Files modified:** `app/api/cards/[id]/route.ts`
+**Commit:** e70ff4e
+**Applied fix:** Replaced the raw `e instanceof Error ? e.message : 'Delete failed'` passthrough with a `console.error` (server-side only) and a generic `'Failed to delete card'` message, matching the disclosure posture already applied to the `PUT` handler in this file. Also added a Prisma `P2025` ("record not found") check that returns `404` instead of a generic `500`, per the review's suggestion, matching the not-found semantics used by `/api/review`. Verified via project-scoped `tsc --noEmit` (no new errors in the file; required symlinking the gitignored `app/generated/prisma` client into the worktree to resolve `Prisma.PrismaClientKnownRequestError`).
 
-**Files modified:** `app/api/review/route.ts`
-**Commit:** f6c8f4c
-**Applied fix:** Added a module-level `isGrade(n: unknown): n is Grade` type guard (`typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 4`) and replaced the REVIEW-02 range-check `if` block with `if (!isGrade(rating))`. The subsequent `reviewCard(cardReview, rating)` call no longer needs the `as Grade` cast — TypeScript's control-flow narrowing carries the `Grade` type through from the guard, so if a future edit relaxes the check, the call site stops compiling instead of silently keeping an invalid cast. Verified via `tsc --noEmit` that narrowing works correctly on the (loosely-typed) `rating` variable.
+### WR-02: `PUT /api/cards/[id]` still performs no runtime validation of individual field types/shapes
 
-### IN-02: `handleUndo` failure path is not mount-guarded, inconsistent with the success path
+**Files modified:** `app/api/cards/[id]/route.ts`
+**Commit:** 9d27c16
+**Applied fix:** Added explicit 400-returning validation for `front` (non-empty string), `back` (string), `notes` (string or null — confirmed nullable in `prisma/schema.prisma`), `type` (must be one of `vocabulary`/`grammar`/`phrase`), and `sentences` (array of objects), applied only when the corresponding key is present in the payload (preserving the existing partial-update semantics). This runs before the Prisma update/transaction, so malformed input now returns a clear `400` instead of falling through to `normalizeFront()`/`.map()` and surfacing as an opaque `500`. Verified via project-scoped `tsc --noEmit` (no new errors in the file).
+
+### IN-01: `postReviewWithRetry`'s per-attempt timeout timer is not cleared when `fetch` rejects outright
 
 **Files modified:** `components/StudySession.tsx`
-**Commit:** 50c2b82
-**Applied fix:** Added `if (!isMountedRef.current) return` as the first line of the `catch` block in `handleUndo`, before the `undoRef.current` write and `setCanUndo(true)` call — mirroring the guard already present on the success path two lines below (REVIEW-05's atomic-undo pattern). Purely a symmetry/readability fix (React 18/19 already makes the unguarded version harmless), with a comment explaining the intent so a future reader doesn't mistake the omission for a deliberate choice.
-
-### IN-03: Toast auto-dismiss timer does not reset when `message` changes
-
-**Files modified:** `components/Toast.tsx`
-**Commit:** f565f5d
-**Applied fix:** Added `message` to the auto-dismiss `useEffect` dependency array (`[duration, message]`). The `dismissRef` indirection is unchanged, so unrelated parent re-renders still do not reset the timer — only a genuine `duration` or `message` change does. Added a comment noting the current sole caller (`StudySession.tsx`) always unmounts/remounts the Toast rather than reusing it with a new message, so this is footgun-prevention for future reuse, not an observed bug fix.
+**Commit:** 4d6d7ba
+**Applied fix:** Moved `AbortController`/`setTimeout` construction outside the `try` block and moved `clearTimeout(timeoutId)` into a `finally` clause, so every attempt path (success, 4xx `break`, or any thrown error) clears its own timer, not just the immediate-success path. Verified via project-scoped `tsc --noEmit` (no new errors in the file).
 
 ## Skipped Issues
 
@@ -76,6 +54,6 @@ None — all findings were fixed.
 
 ---
 
-_Fixed: 2026-07-02T17:11:53Z_
+_Fixed: 2026-07-02T18:20:00Z_
 _Fixer: Claude (gsd-code-fixer)_
 _Iteration: 1_
