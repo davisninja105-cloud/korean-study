@@ -3,6 +3,7 @@ import { createHash } from 'crypto'
 import { fetchGoogleDoc } from '@/lib/google-docs'
 import { extractCardsFromNotes } from '@/lib/extract-cards'
 import { normalizeFront } from '@/lib/card-key'
+import { lessonExcerpt } from '@/lib/lesson-excerpt'
 import { prisma } from '@/lib/prisma'
 
 // Each new lesson triggers a Claude call (30-90s with opus + exhaustive output).
@@ -16,24 +17,6 @@ export const maxDuration = 300
 // Opus + exhaustive extraction is slower than the old prompt (~60-120s/lesson),
 // so process 1 lesson per request to stay safely under the function timeout.
 const MAX_LESSONS_PER_SYNC = 1
-
-/**
- * Pure helper — produce a short, searchable excerpt of a lesson body so sync
- * failures can name the specific lesson the user can find in their Google Doc.
- * Returns the first non-empty line, whitespace-collapsed, truncated to ~48
- * chars with a trailing `…`; falls back to `(untitled lesson)` when there's
- * no usable text. The excerpt is the user's OWN doc content (intentionally
- * surfaced back to them — see threat T-14-02; raw error text never leaks).
- */
-function lessonExcerpt(text: string): string {
-  const firstLine = text
-    .split('\n')
-    .map((l) => l.trim().replace(/\s+/g, ' '))
-    .find((l) => l.length > 0)
-  if (!firstLine) return '(untitled lesson)'
-  const MAX = 48
-  return firstLine.length > MAX ? `${firstLine.slice(0, MAX)}…` : firstLine
-}
 
 export async function POST(req: NextRequest) {
   try {
