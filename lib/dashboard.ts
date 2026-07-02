@@ -28,16 +28,19 @@ export async function getStats(): Promise<StatsDTO> {
 }
 
 /**
- * Fetches recent day records + current settings needed by the Habits page
+ * Fetches all day records + current settings needed by the Habits page
  * and GET /api/activity. Runs 3 Prisma queries in parallel via Promise.all.
  * StudyDay.date is a String column (YYYY-MM-DD) — no .toISOString() needed.
- * Throws on DB error — callers wrap in try/catch.
+ * No `take` cap: the "All-time totals" section (HabitsClient) sums over the
+ * full history, and the heatmap self-caps rendering at 26 weeks regardless of
+ * input size. StudyDay rows are small (date + seconds + reviews), so payload
+ * stays modest even for long-time users. Throws on DB error — callers wrap in
+ * try/catch.
  */
 export async function getActivityData(): Promise<ActivityDTO> {
   const [days, dailyGoalSeconds, dayStartHour] = await Promise.all([
     prisma.studyDay.findMany({
       orderBy: { date: 'desc' },
-      take: 400,
       select: { date: true, seconds: true, reviews: true },
     }),
     getDailyGoalSeconds(),
