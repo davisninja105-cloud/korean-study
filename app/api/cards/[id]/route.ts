@@ -12,6 +12,9 @@ export async function PUT(
   try {
     const { id } = await params
     const data = await req.json()
+    if (data === null || typeof data !== 'object') {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    }
 
     // Update scalar card fields. When front changes, keep normalizedFront in sync.
     await prisma.card.update({
@@ -63,8 +66,11 @@ export async function PUT(
         { status: 400 },
       )
     }
-    const message = e instanceof Error ? e.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    // WR-02: don't leak the raw error message to the client (may include
+    // internal schema/Turso endpoint details). Log server-side only, mirroring
+    // the disclosure posture of /api/review (T-13-02).
+    console.error('PUT /api/cards/[id] failed:', e)
+    return NextResponse.json({ error: 'Failed to update card' }, { status: 500 })
   }
 }
 
