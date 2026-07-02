@@ -11,6 +11,7 @@ import { previewIntervalLabels, reviewCard, type Grade } from '@/lib/fsrs'
 import { haptic } from '@/lib/haptics'
 import { typeBadgeClass } from '@/lib/card-style'
 import ProgressRing from './ProgressRing'
+import Toast from './Toast'
 
 interface Sentence {
   id: string
@@ -92,6 +93,44 @@ function hashStr(s: string): number {
   return (h >>> 0) || 1
 }
 
+// Background review-save endpoint (REVIEW-04). Kept as a module constant so the
+// retry wrapper can issue the POST without reintroducing a bare inline
+// `fetch('/api/review', …)` at the submitReview call site.
+const REVIEW_ENDPOINT = '/api/review'
+
+// Bounded silent-retry wrapper for the background review save (REVIEW-04).
+// Makes up to 3 total attempts (1 initial + 2 retries) of POST /api/review.
+// An attempt counts as failed when the fetch rejects OR `res.ok` is false.
+// Between attempts it awaits a short backoff (~500ms then ~1500ms). On any
+// success it returns immediately WITHOUT invoking onExhausted; only after all
+// attempts fail does it call onExhausted once.
+//
+// Runs from an event-handler flow (submitReview), never during render, so the
+// setTimeout usage is purity-safe (react-hooks/purity).
+async function postReviewWithRetry(
+  cardId: string,
+  rating: number,
+  onExhausted: () => void,
+): Promise<void> {
+  const backoffMs = [500, 1500]
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(REVIEW_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cardId, rating }),
+      })
+      if (res.ok) return
+    } catch {
+      // fetch rejected — counts as a failed attempt; fall through to backoff/retry
+    }
+    if (attempt < 2) {
+      await new Promise<void>((resolve) => setTimeout(resolve, backoffMs[attempt]))
+    }
+  }
+  onExhausted()
+}
+
 type StudyItem =
   | { kind: 'real'; card: Card }
   | { kind: 'practice'; card: PracticeCard }
@@ -160,6 +199,20 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   // counter stays honest when cards are requeued and reviewed multiple times.
   const seenCardIdsRef = useRef(new Set<string>())
   const [seenCount, setSeenCount] = useState(0)
+
+  // ── REVIEW-04/05: save-failure toast + mount guard ──────────────────────
+  // saveError holds a background-review-save failure message; when set, the
+  // Toast (components/Toast.tsx) renders and self-dismisses. Cleared on dismiss.
+  const [saveError, setSaveError] = useState<string | null>(null)
+  // isMountedRef gates async callbacks (retry exhaustion in submitReview, and
+  // the undo restore in handleUndo) so a setState/ref-write fired after
+  // unmount is skipped. Ref writes in an effect body are allowed (not
+  // setState); the guards themselves run in event/async flows.
+  const isMountedRef = useRef(true)
+  useEffect(() => {
+    isMountedRef.current = true
+    return () => { isMountedRef.current = false }
+  }, [])
 
   // Day-start hour for habit attribution (default until settings load).
   const dayStartHourRef = useRef(DEFAULT_DAY_START_HOUR)
@@ -470,12 +523,15 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       undoRef.current = { cardId, prevState, prevQueue: queue, prevStats, prevSeenCount, prevSeenCardIds }
       setCanUndo(true)
 
-      // 4. Fire background save — NOT awaited; silent failure is accepted (D-09).
-      fetch('/api/review', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cardId, rating }),
-      }).catch(() => {})
+      // 4. Fire background save — NOT awaited; bounded silent retry (REVIEW-04).
+      // A toast surfaces only after all retries are exhausted (via onExhausted),
+      // guarded by isMountedRef so a setState fired after unmount is skipped.
+      // `void` marks the promise as intentionally fire-and-forget.
+      void postReviewWithRetry(cardId, rating, () => {
+        if (isMountedRef.current) {
+          setSaveError("Couldn't save your last review — check your connection.")
+        }
+      })
     }
 
     const rest = queue.slice(1)
@@ -597,6 +653,13 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       onKeyDown={handleKeyDown}
       className="flex flex-col items-center gap-6 px-4 pt-4 pb-[max(1rem,var(--sab,0px))] w-full max-w-xl mx-auto outline-none"
     >
+      {/* REVIEW-04: save-failure toast — fixed-position, self-dismissing */}
+      {saveError && (
+        <Toast
+          message={saveError}
+          onDismiss={() => setSaveError(null)}
+        />
+      )}
       {/* Header: mode label + controls */}
       <div className="flex justify-between items-center w-full text-sm text-muted">
         <span className="capitalize">
