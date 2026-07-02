@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getRecentGlosses } from '@/lib/gloss'
+import { getGlossCacheEntries } from '@/lib/gloss'
 
 /**
  * GET /api/gloss/preload
@@ -21,7 +21,7 @@ import { getRecentGlosses } from '@/lib/gloss'
  */
 export async function GET() {
   try {
-    const entries = await getRecentGlosses()
+    const entries = await getGlossCacheEntries()
     return NextResponse.json({ entries })
   } catch (err) {
     console.error('Failed to preload gloss cache', err)

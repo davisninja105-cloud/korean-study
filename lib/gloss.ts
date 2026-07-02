@@ -74,15 +74,16 @@ export const GLOSS_PRELOAD_LIMIT = 300
  * (threat T-14-05). The `take: limit` bound guarantees the payload can never
  * grow unbounded (threat T-14-04).
  *
- * The Setting table has no timestamp column, so "recent" is the DB's natural
- * key order; the limit is the only bound. Each row's `value` is JSON.parsed
+ * The Setting table has no timestamp column, so rows are returned in the DB's
+ * natural (insertion) order — NOT recency order; the limit is the only bound.
+ * Each row's `value` is JSON.parsed
  * inside a try/catch that skips + warns malformed entries (mirroring
  * getCachedGloss) — a corrupt cache row never crashes the preload
  * (threat T-14-06). The recovered `word` is the normalized form (the part of
  * the key after `gloss:`), which is the SAME key the client cache uses, so a
  * preloaded entry is a hit on the next tap of that word.
  */
-export async function getRecentGlosses(
+export async function getGlossCacheEntries(
   limit: number = GLOSS_PRELOAD_LIMIT
 ): Promise<{ word: string; entry: GlossResult }[]> {
   const rows = await prisma.setting.findMany({
