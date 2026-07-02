@@ -28,7 +28,7 @@ status: all_fixed
 **Commit:** 0b22b2c
 **Applied fix:** Added an `else` branch to the `if (current.kind === 'real')` block in `submitReview` that clears `undoRef.current` and calls `setCanUndo(false)` whenever the graded item is a practice card. This invalidates any pending undo pointer as soon as a practice card is graded, so the "Undo last rating" button can no longer fire against a stale real card's pre-grade snapshot after intervening practice cards were graded. Verified via project-scoped `tsc --noEmit` (no new errors in the file).
 
-**Note:** This is a logic/state-handling fix, not just a syntax change. Both tiers of automated verification only confirm the code is syntactically sound and the fix text is present — they cannot confirm the undo flow behaves correctly end-to-end. Recommend a manual check (grade a real card, then grade one or more practice cards, then confirm the Undo button is disabled/no-op) before treating this as fully verified. **Status: fixed — requires human verification.**
+**Note:** This is a logic/state-handling fix, not just a syntax change. Automated verification (`tsc --noEmit`) only confirms the code is syntactically sound; it cannot confirm the undo flow behaves correctly end-to-end. The manual check (grade a real card, then a practice card, then confirm Undo is disabled/no-op) was not run — the operator accepted the fix as verified by code inspection alone. **Status: fixed — verified (operator-accepted, no manual runtime test performed).**
 
 ### WR-01: `DELETE /api/cards/[id]` still leaks raw internal error messages to the client
 
