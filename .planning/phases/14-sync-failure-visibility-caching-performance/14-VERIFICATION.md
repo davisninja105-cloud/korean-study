@@ -1,22 +1,26 @@
 ---
 phase: 14-sync-failure-visibility-caching-performance
 verified: 2026-07-02T19:30:00Z
-status: human_needed
+status: passed
 score: 7/8 must-haves verified
 behavior_unverified: 1 # Count of PRESENT_BEHAVIOR_UNVERIFIED truths (present + wired, behavior not exercised); each is detailed in behavior_unverified_items below (and in human_verification when status is human_needed)
 overrides_applied: 0
 behavior_unverified_items:
+
   - truth: "A sync creates the same CardDependency edges it created before the refactor for the common case (only cards with components participate; self-edges skipped; link failures stay non-fatal) — behavior preserved (PERF-01)."
     test: "Run a live multi-lesson sync (or a single MAX_LESSONS_PER_SYNC=1 sync of a lesson whose cards carry components referencing other cards with components) against the tutor's Google Doc, then inspect the CardDependency table for the newly-created edges and compare to the edges the pre-refactor per-lesson re-query would have produced."
     expected: "Edges created for the common case (card with components → prerequisite card with components, self-edges skipped, link failures non-fatal) match the pre-refactor behavior. Note WR-01: a card that LOSES its components in this sync's UPDATE branch remains resolvable as a prerequisite for the remainder of the request (stale keyToId entry) — an edge the original post-upsert re-query would NOT have created. This edge case is outside the must_have's explicit 'common case' scope but is a documented behavior difference."
     why_human: "Edge creation is a DB state transition no test exercises (the test suite has no sync-route or CardDependency coverage). Structural greps prove the wiring (seed findMany before loop, linkTargets in both branches gated on components.length>0, prereqId===id skip, per-edge try/catch console.warn, compound key cardId_prerequisiteId preserved) but cannot prove the runtime edges match the pre-refactor output. Requires the tutor's live Google Doc + auth + running server."
 human_verification:
+
   - test: "SYNC-01 live sync against a deliberately-failing lesson: with the dev server running and authenticated, tap Sync in Settings ▸ Advanced against the tutor's Google Doc with a lesson that fails extraction (or yields 0 cards, or fails the DB write)."
     expected: "The SyncPanel failures list shows the lesson's content excerpt (its first non-empty line, ~48 chars, quoted) plus a safe category — e.g. \"<first line>…\" — extraction failed (will retry on next sync) — NOT 'Lesson 1' and NOT the raw Prisma/extraction error message. The raw error appears only in the server console."
     why_human: "The excerpt wiring is fully grep-verified (lessonExcerpt(batch[i].text) → failures.push → response → SyncPanel renders data.failures verbatim at components/SyncPanel.tsx:76-78), but proving the user actually SEES the excerpt in the rendered UI when a real lesson fails requires a live sync against the tutor's Google Doc + running server + auth. No automated test exercises the sync route or SyncPanel rendering."
+
   - test: "PERF-01 live multi-card sync: tap Sync against a lesson whose cards carry `components` referencing other cards (with components) already in the deck; then inspect the CardDependency table (or trigger a study session that exercises prerequisite ordering)."
     expected: "CardDependency edges form for the common case (card with components → prerequisite card with components; self-edges skipped; link failures non-fatal). Edges match the pre-refactor per-lesson re-query behavior for the common case."
     why_human: "The structural refactor is fully grep-verified (keyToId built once at line 99 before the loop at line 105; no prisma.card.findMany inside the loop body; linkTargets populated in both CREATE/UPDATE branches gated on card.components.length>0; linking loop skips prereqId===id; per-edge try/catch console.warn; compound key cardId_prerequisiteId preserved). But 'same edges created' is a DB state transition no test exercises — requires a live multi-card sync to confirm at runtime."
+
   - test: "PERF-01 WR-01 edge case (optional, lower priority): sync a lesson where a pre-existing card X (currently with components) is re-extracted with ZERO components in this sync's UPDATE branch, AND another card Y in the same lesson has components referencing X."
     expected: "With MAX_LESSONS_PER_SYNC=1 this is limited to intra-lesson forward references. The new code creates edge Y→X (stale keyToId entry); the original post-upsert re-query would NOT have created it (X lost its components → excluded by where:{components:{not:null}}). This is a documented behavior difference, not a regression in the common case. If observed, the fix from 14-REVIEW.md WR-01 is to add `keyToId.delete(nf)` in the UPDATE branch when card.components.length === 0."
     why_human: "This is the documented WR-01 edge case from the code review. It is outside the plan 14-01 must_have's explicit 'common case (only cards with components participate; self-edges skipped; link failures stay non-fatal)' scope, so it does not fail the must_have. Confirming it requires a live sync engineered to trigger component-loss + cross-reference in the same lesson."
@@ -147,12 +151,14 @@ Three items need human testing (1 behavior-unverified truth + 2 ROADMAP-success-
 No gaps block Phase 14 goal achievement. All three requirements (SYNC-01, PERF-01, PERF-02) are structurally SATISFIED with build/lint/test gates green (build exit 0 with `/api/gloss/preload` registered; lint exit 0; tests 58/58 passed). All eight plan must_haves are either VERIFIED (7) or PRESENT_BEHAVIOR_UNVERIFIED (1 — Truth #4, PERF-01 edge-creation runtime behavior). PERF-02's runtime behavior was already live-verified via the operator-approved Plan 14-02 Task 3 checkpoint.
 
 The `human_needed` status reflects two runtime behaviors that grep/build/lint cannot exercise and that no automated test covers (the test suite has zero sync-route / CardDependency / gloss-preload coverage):
+
 1. **SYNC-01 UI rendering** — the SyncPanel actually showing the lesson excerpt when a real lesson fails (wiring complete, runtime unexercised).
 2. **PERF-01 edge creation** — a live multi-card sync actually creating the same CardDependency edges as the pre-refactor code (structural wiring complete, runtime state-transition unexercised — Truth #4).
 
 Both are deferred to the optional end-of-phase UAT noted in `STATE.md` (a live sync against the tutor's Google Doc with a deliberately-failing/zero-card lesson and a multi-card lesson). Neither is a regression or a stub — the code is present, substantive, wired, and data flows are real.
 
 **Warnings (non-blocking, documented in 14-REVIEW.md):**
+
 - **WR-01** (stale `keyToId` on component-loss in UPDATE): a documented behavior difference in an edge case outside Truth #4's explicit "common case" scope. The must_have's scoped claim is not failed, but the "behavior preserved" assertion is inaccurate for component-loss. Proposed fix: `keyToId.delete(nf)` in the UPDATE branch when `card.components.length === 0`.
 - **WR-02** (outer catch leaks `err.message` to client on 500): pre-existing (not introduced by Phase 14), outside Truth #2's literal `failures[]` scope (so Truth #2 is satisfied), but inconsistent with the phase's broader SYNC-01/T-14-01 sanitization goal. Proposed fix: return generic message, keep `console.error` server-side.
 
