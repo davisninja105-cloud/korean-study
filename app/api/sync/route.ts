@@ -71,6 +71,19 @@ export async function POST(req: NextRequest) {
     let created = 0 // tracks how many lessons were actually persisted (for orderIndex)
     const failures: string[] = []
 
+    // Build the normalizedFront → cardId map ONCE per request so the per-lesson
+    // dependency-linking step doesn't re-query the full deck each iteration.
+    // Kept scoped to `components: { not: null }` to preserve existing edge
+    // semantics (only cards that have components are resolvable as prerequisites).
+    // `select` drops `components` — component strings now come from the in-memory
+    // extraction result, not a DB re-read. Augmented incrementally during upserts.
+    const keyToId = new Map<string, string>()
+    const seedCards = await prisma.card.findMany({
+      select: { id: true, normalizedFront: true },
+      where: { components: { not: null } },
+    })
+    for (const c of seedCards) keyToId.set(c.normalizedFront, c.id)
+
     for (let i = 0; i < extractResults.length; i++) {
       const result = extractResults[i]
 
@@ -107,7 +120,9 @@ export async function POST(req: NextRequest) {
         //   UPDATE: already known → preserve lessonId (first-introduced) and FSRS review.
         //           Refresh components/sentences only if they were empty (backfill safety).
         let createdThisLesson = 0
-        const upsertedIds: string[] = []
+        // Per-lesson collector of cards that carry components — feeds the
+        // dependency-linking step after Promise.all resolves. Resets each lesson.
+        const linkTargets: { id: string; components: string[] }[] = []
 
         await Promise.all(
           cards.map(async (card) => {
@@ -148,7 +163,10 @@ export async function POST(req: NextRequest) {
                   review: { create: {} },
                 },
               })
-              upsertedIds.push(created.id)
+              if (card.components.length > 0) {
+                keyToId.set(nf, created.id)
+                linkTargets.push({ id: created.id, components: card.components })
+              }
               createdThisLesson++
             } else {
               // UPDATE: card exists — preserve lessonId + review; refresh components +
@@ -179,7 +197,10 @@ export async function POST(req: NextRequest) {
                 where: { id: existing.id },
                 data:  updateData,
               })
-              upsertedIds.push(existing.id)
+              if (card.components.length > 0) {
+                keyToId.set(nf, existing.id)
+                linkTargets.push({ id: existing.id, components: card.components })
+              }
             }
           })
         )
@@ -188,45 +209,30 @@ export async function POST(req: NextRequest) {
         //    After all cards in the batch are upserted, resolve component strings →
         //    card IDs and create CardDependency edges. Running after the upserts means
         //    forward references within the same sync batch can be resolved.
-        if (upsertedIds.length > 0) {
-          // Build normalizedFront → cardId lookup from the DB for the full deck.
-          const allCards = await prisma.card.findMany({
-            select: { id: true, normalizedFront: true, components: true },
-            where: { components: { not: null } },
-          })
-          const keyToId = new Map(allCards.map((c) => [c.normalizedFront, c.id]))
-
-          // Only create edges for the cards we just upserted (avoid re-linking the world).
-          const upsertedSet = new Set(upsertedIds)
-          for (const dbCard of allCards) {
-            if (!upsertedSet.has(dbCard.id)) continue
-            if (!dbCard.components) continue
-
-            let comps: string[] = []
-            try { comps = JSON.parse(dbCard.components) as string[] } catch (err) { console.error('Failed to parse components for card:', dbCard.id, err); continue }
-
-            for (const comp of comps) {
-              if (!comp) continue
-              const prereqId = keyToId.get(normalizeFront(comp))
-              if (!prereqId || prereqId === dbCard.id) continue
-              try {
-                await prisma.cardDependency.upsert({
-                  where: {
-                    cardId_prerequisiteId: {
-                      cardId:         dbCard.id,
-                      prerequisiteId: prereqId,
-                    },
-                  },
-                  create: {
-                    cardId:         dbCard.id,
+        //    `keyToId` was built once before the per-lesson loop and augmented above
+        //    as each card was upserted — no per-lesson full-deck findMany here.
+        for (const { id, components } of linkTargets) {
+          for (const comp of components) {
+            if (!comp) continue
+            const prereqId = keyToId.get(normalizeFront(comp))
+            if (!prereqId || prereqId === id) continue
+            try {
+              await prisma.cardDependency.upsert({
+                where: {
+                  cardId_prerequisiteId: {
+                    cardId:         id,
                     prerequisiteId: prereqId,
                   },
-                  update: {}, // no-op — just ensure it exists
-                })
-              } catch (linkErr) {
-                // Link failures are non-fatal — card still usable, just unlinked.
-                console.warn(`CardDependency link failed (${dbCard.id} → ${prereqId}):`, linkErr)
-              }
+                },
+                create: {
+                  cardId:         id,
+                  prerequisiteId: prereqId,
+                },
+                update: {}, // no-op — just ensure it exists
+              })
+            } catch (linkErr) {
+              // Link failures are non-fatal — card still usable, just unlinked.
+              console.warn(`CardDependency link failed (${id} → ${prereqId}):`, linkErr)
             }
           }
         }
