@@ -221,6 +221,11 @@ export async function POST(req: NextRequest) {
               if (card.components.length > 0) {
                 keyToId.set(nf, existing.id)
                 linkTargets.push({ id: existing.id, components: card.components })
+              } else {
+                // Card is losing its components — remove from the lookup map so it's
+                // no longer resolvable as a prerequisite (matches the original
+                // post-upsert re-query's `where: { components: { not: null } }`).
+                keyToId.delete(nf)
               }
             }
           })
