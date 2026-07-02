@@ -3,7 +3,7 @@ status: complete
 phase: 14-sync-failure-visibility-caching-performance
 source: [14-VERIFICATION.md]
 started: 2026-07-02T19:35:00Z
-updated: "2026-07-02T21:05:36Z"
+updated: "2026-07-02T22:42:56Z"
 ---
 
 ## Current Test
@@ -24,8 +24,7 @@ result: pass
 Tap Sync against a lesson whose cards carry `components` referencing other cards (with components) already in the deck; then inspect the CardDependency table (or trigger a study session that exercises prerequisite ordering).
 
 expected: CardDependency edges form for the common case (card with components → prerequisite card with components; self-edges skipped; link failures non-fatal). Edges match the pre-refactor per-lesson re-query behavior for the common case. (This is the ⚠️ PRESENT_BEHAVIOR_UNVERIFIED truth #4 — structurally wired, DB state transition not exercised by any test.)
-result: skipped
-reason: "user opted to skip live multi-card sync test"
+result: pass
 
 ### 3. PERF-01 WR-01 edge case (optional, lower priority)
 
@@ -37,10 +36,10 @@ result: pass
 ## Summary
 
 total: 3
-passed: 2
+passed: 3
 issues: 0
 pending: 0
-skipped: 1
+skipped: 0
 blocked: 0
 
 ## Gaps
