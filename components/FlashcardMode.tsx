@@ -23,10 +23,10 @@ import HighlightedSentence from './HighlightedSentence'
 import AudioButton from './AudioButton'
 import { useWordTap } from './GlossProvider'
 import { type FlashcardSubMode } from './ModeSelector'
-import { type Card, type Sentence } from './StudySession'
+import { type Card, type PracticeCard, type Sentence } from './StudySession'
 
 interface Props {
-  card: Card
+  card: Card | PracticeCard
   typeBadgeColor: string
   revealed: boolean
   cardHeight: number

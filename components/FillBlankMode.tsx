@@ -16,10 +16,10 @@
  * Each mode owns its full sticky action-bar wrapper (RESEARCH Pitfall 3).
  */
 import AudioButton from './AudioButton'
-import { type Card, type Sentence } from './StudySession'
+import { type Card, type PracticeCard, type Sentence } from './StudySession'
 
 interface Props {
-  card: Card
+  card: Card | PracticeCard
   typeBadgeColor: string
   cursor: number
   fillSentence: string | null

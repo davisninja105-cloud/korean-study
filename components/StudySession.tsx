@@ -3,9 +3,9 @@
 import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react'
 import { StudyMode, FlashcardSubMode } from './ModeSelector'
 import { habitDateStr, DEFAULT_DAY_START_HOUR, nextHabitDayStart } from '@/lib/habit'
-import HighlightedSentence from './HighlightedSentence'
-import { useWordTap } from './GlossProvider'
-import AudioButton from './AudioButton'
+import FlashcardMode from './FlashcardMode'
+import MultipleChoiceMode from './MultipleChoiceMode'
+import FillBlankMode from './FillBlankMode'
 import { sentenceMatch, blankSentence } from '@/lib/sentence-match'
 import { selectSentence, hashStr } from '@/lib/sentence-selection'
 import { previewIntervalLabels, reviewCard, type Grade } from '@/lib/fsrs'
@@ -43,7 +43,7 @@ export interface Card {
   } | null
 }
 
-interface PracticeCard {
+export interface PracticeCard {
   type: string
   front: string
   back: string
@@ -152,9 +152,6 @@ interface Props {
 }
 
 export default function StudySession({ cards, extraPractice, mode, flashcardSubMode = 'exposure', onComplete }: Props) {
-  // Tap-to-gloss callback (undefined when GlossProvider not mounted — safe)
-  const onWordTap = useWordTap()
-
   // Deterministic seed derived from the due-card set. Pure (no impure call in
   // render), and naturally varies between sessions because the set of due
   // cards differs each time.
@@ -609,6 +606,14 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
   const mcRating = mcSelected === currentCard.back ? 3 : 1
 
+  // Multiple-choice option select: set selected, then arm the auto-advance
+  // timer. The parent owns advanceTimer, MC_ADVANCE_MS, and advanceMc so the
+  // timer lifecycle (clear on manual Next / unmount) stays in one place.
+  const handleMcSelect = (opt: string) => {
+    setMcSelected(opt)
+    advanceTimer.current = setTimeout(() => advanceMc(opt === currentCard.back ? 3 : 1), MC_ADVANCE_MS)
+  }
+
   const handleReveal = () => {
     setRevealed(true)
     haptic('selection')
@@ -710,330 +715,59 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
         </p>
       </div>
 
-      {/* Card — flashcard mode uses 3D flip */}
-      <div key={cursor} className="animate-card-in w-full">
+      {/* ── Mode dispatch (REFACTOR-01) ──
+          Each mode sub-component renders its own card face + sticky action bar.
+          Session state, both useMemos, and the Phase 13 review/undo pipeline
+          stay in this parent (RESEARCH Pitfall 4). */}
       {mode === 'flashcard' ? (
-        <div className="card-flip-container w-full">
-          <div className={`card-flip-inner ${revealed ? 'flipped' : ''}`} style={{ height: cardHeight }}>
-            {/* ── Front face ── */}
-            <div ref={frontRef} className="card-flip-front w-full bg-surface-1 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
-              <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
-                {currentCard.type}
-              </span>
-              {showBareFront ? (
-                // New card whose context words aren't all known yet: bare word on front.
-                <div className="flex items-center justify-center gap-2">
-                  <p className="hangul text-5xl font-bold text-foreground text-center">{currentCard.front}</p>
-                  <AudioButton text={currentCard.front} aria-label={`Play: ${currentCard.front}`} size="sm" />
-                </div>
-              ) : chosenSentence ? (
-                // Matured card (state 2/3) or Recall mode: existing sentence-on-front logic unchanged.
-                flashcardSubMode === 'recall' && recallBlanked ? (
-                  <>
-                    <p className="hangul-sentence text-foreground font-medium text-center text-2xl">
-                      {recallBlanked}
-                    </p>
-                    <p className="text-xs text-muted text-center">Recall the missing word</p>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-start justify-center gap-1">
-                      <HighlightedSentence
-                        korean={chosenSentence.korean}
-                        targetForm={chosenSentence.targetForm}
-                        cardType={currentCard.type}
-                        className="font-medium text-center text-2xl text-foreground"
-                        onWordTap={onWordTap}
-                      />
-                      <AudioButton
-                        text={chosenSentence.korean}
-                        aria-label={`Play sentence: ${chosenSentence.korean}`}
-                        size="sm"
-                      />
-                    </div>
-                    <p className="text-xs text-muted text-center">Recall the meaning of the highlighted part</p>
-                  </>
-                )
-              ) : (
-                // No sentences at all: bare-word block unchanged.
-                <div className="flex items-center justify-center gap-2">
-                  <p className="hangul text-5xl font-bold text-foreground text-center">{currentCard.front}</p>
-                  <AudioButton
-                    text={currentCard.front}
-                    aria-label={`Play: ${currentCard.front}`}
-                    size="sm"
-                  />
-                </div>
-              )}
-            </div>
-
-            {/* ── Back face ── */}
-            <div ref={backRef} className="card-flip-back w-full bg-surface-1 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
-              <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
-                {currentCard.type}
-              </span>
-              {chosenSentence ? (
-                <div className="flex flex-col items-center gap-4 w-full">
-                  {displayedSentence && (
-                    <div className="flex items-start justify-center gap-1">
-                      <HighlightedSentence
-                        korean={displayedSentence.korean}
-                        targetForm={displayedSentence.targetForm}
-                        cardType={currentCard.type}
-                        className="text-xl text-muted-foreground text-center"
-                        onWordTap={onWordTap}
-                      />
-                      <AudioButton
-                        text={displayedSentence.korean}
-                        aria-label={`Play sentence: ${displayedSentence.korean}`}
-                        size="sm"
-                      />
-                    </div>
-                  )}
-                  <hr className="w-full border-border" />
-                  <div className="flex items-center justify-center gap-2">
-                    <p className="hangul text-3xl font-bold text-foreground text-center">{currentCard.front}</p>
-                    <AudioButton
-                      text={currentCard.front}
-                      aria-label={`Play: ${currentCard.front}`}
-                      size="sm"
-                    />
-                  </div>
-                  <p className="text-xl text-muted-foreground text-center">{currentCard.back}</p>
-                  {displayedSentence?.translation && (
-                    <p className="text-sm text-muted text-center italic hangul-gloss">
-                      &ldquo;{displayedSentence.translation}&rdquo;
-                    </p>
-                  )}
-                  {currentCard.notes && (
-                    <p className="text-sm text-muted text-center italic">{currentCard.notes}</p>
-                  )}
-                  {cardSentences.length > 1 && (
-                    <button
-                      onClick={() => setExampleOffset((o) => o + 1)}
-                      className="text-xs text-button hover:text-button-hover hover:underline mt-1"
-                    >
-                      See another example →
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-4 w-full">
-                  <div className="flex items-center justify-center gap-2">
-                    <p className="hangul text-5xl font-bold text-foreground text-center">{currentCard.front}</p>
-                    <AudioButton
-                      text={currentCard.front}
-                      aria-label={`Play: ${currentCard.front}`}
-                      size="sm"
-                    />
-                  </div>
-                  <hr className="w-full border-border" />
-                  <p className="text-xl text-muted-foreground text-center">{currentCard.back}</p>
-                  {currentCard.notes && (
-                    <p className="text-sm text-muted text-center italic">{currentCard.notes}</p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        <FlashcardMode
+          card={currentCard}
+          typeBadgeColor={typeBadgeColor}
+          revealed={revealed}
+          cardHeight={cardHeight}
+          frontRef={frontRef}
+          backRef={backRef}
+          againBtnRef={againBtnRef}
+          cursor={cursor}
+          flashcardSubMode={flashcardSubMode}
+          showBareFront={showBareFront}
+          chosenSentence={chosenSentence}
+          displayedSentence={displayedSentence}
+          recallBlanked={recallBlanked}
+          hasMultipleSentences={cardSentences.length > 1}
+          hints={hints}
+          onReveal={handleReveal}
+          onGrade={submitReview}
+          onCycleExample={() => setExampleOffset((o) => o + 1)}
+        />
+      ) : mode === 'multiple-choice' ? (
+        <MultipleChoiceMode
+          card={currentCard}
+          typeBadgeColor={typeBadgeColor}
+          cursor={cursor}
+          options={mcOptions}
+          selected={mcSelected}
+          onSelect={handleMcSelect}
+          onAdvance={() => advanceMc(mcRating)}
+        />
       ) : (
-        /* Non-flashcard modes — no flip */
-        <div className="w-full bg-surface-1 rounded-2xl shadow-md p-8 min-h-[220px] flex flex-col items-center justify-center gap-4">
-          <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
-            {currentCard.type}
-          </span>
-
-        {/* ── Multiple choice mode ── */}
-        {mode === 'multiple-choice' && (
-          <>
-            <div className="flex items-center justify-center gap-2">
-              <p className="hangul text-4xl font-bold text-foreground text-center">{currentCard.front}</p>
-              <AudioButton text={currentCard.front} aria-label={`Play: ${currentCard.front}`} size="sm" />
-            </div>
-            <div className="grid grid-cols-2 gap-3 w-full mt-4">
-              {mcOptions.map((opt, i) => {
-                const isCorrect = opt === currentCard.back
-                const isSelected = mcSelected === opt
-                const hasAnswered = mcSelected !== null
-
-                let btnClass = 'border-2 rounded-xl p-3 min-h-11 text-sm font-medium transition-colors text-left'
-                if (!hasAnswered) {
-                  btnClass += ' border-border text-muted-foreground hover:border-button hover:bg-button-soft'
-                } else if (isCorrect) {
-                  btnClass += ' border-green-500 bg-green-50 text-green-700 dark:bg-green-500/15 dark:text-green-300'
-                } else if (isSelected) {
-                  btnClass += ' border-red-500 bg-red-50 text-red-700 dark:bg-red-500/15 dark:text-red-300'
-                } else {
-                  btnClass += ' border-border text-muted-foreground opacity-50'
-                }
-
-                return (
-                  <button
-                    key={i}
-                    disabled={hasAnswered}
-                    onClick={() => {
-                      setMcSelected(opt)
-                      const rating = isCorrect ? 3 : 1
-                      advanceTimer.current = setTimeout(() => advanceMc(rating), MC_ADVANCE_MS)
-                    }}
-                    className={`relative ${btnClass}`}
-                  >
-                    {!hasAnswered && (
-                      <span className="absolute top-1 left-1.5 text-[10px] text-muted font-mono leading-none select-none">
-                        {i + 1}
-                      </span>
-                    )}
-                    {opt}
-                  </button>
-                )
-              })}
-            </div>
-            {mcSelected && currentCard.notes && (
-              <p className="text-sm text-muted text-center italic mt-2">{currentCard.notes}</p>
-            )}
-          </>
-        )}
-
-        {/* ── Fill in the blank mode ── */}
-        {mode === 'fill-blank' && (
-          <>
-            {fillSentence !== null ? (
-              <>
-                <p className="hangul-sentence text-foreground font-medium text-center">
-                  {fillSentence}
-                </p>
-                {fillTranslation && (
-                  <p className="text-sm text-muted text-center italic">{fillTranslation}</p>
-                )}
-                <p className="text-xs text-muted text-center">Fill in the blank (___)</p>
-              </>
-            ) : (
-              <>
-                <p className="text-xl text-muted-foreground text-center">Type the Korean for:</p>
-                <p className="text-lg text-foreground font-medium text-center">{currentCard.back}</p>
-              </>
-            )}
-            <input
-              type="text"
-              value={fillInput}
-              onChange={(e) => setFillInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !revealed) handleReveal() }}
-              placeholder="한국어로 입력하세요..."
-              className="w-full border border-border bg-surface-1 text-foreground rounded-lg px-4 py-2 text-center text-xl focus:outline-none focus:ring-2 focus:ring-button/50"
-              disabled={revealed}
-              autoFocus
-            />
-            {revealed && (
-              <div className="text-center animate-reveal">
-                <p className={`text-sm font-medium ${fillCorrect ? 'text-green-600 dark:text-green-400' : 'text-orange-500 dark:text-orange-400'}`}>
-                  Correct answer: {fillAnswer}
-                </p>
-                {chosenSentence && (
-                  <div className="mt-2 flex items-center justify-center gap-1">
-                    <AudioButton
-                      text={chosenSentence.korean}
-                      aria-label={`Play sentence: ${chosenSentence.korean}`}
-                      size="sm"
-                    />
-                    <span className="text-xs text-muted">Hear it</span>
-                  </div>
-                )}
-                {currentCard.notes && (
-                  <p className="text-sm text-muted mt-1">{currentCard.notes}</p>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+        <FillBlankMode
+          card={currentCard}
+          typeBadgeColor={typeBadgeColor}
+          cursor={cursor}
+          fillSentence={fillSentence}
+          fillTranslation={fillTranslation}
+          fillAnswer={fillAnswer}
+          fillInput={fillInput}
+          fillCorrect={fillCorrect}
+          revealed={revealed}
+          chosenSentence={chosenSentence}
+          hints={hints}
+          onInputChange={setFillInput}
+          onReveal={handleReveal}
+          onGrade={submitReview}
+        />
       )}
-      </div>
-
-      {/* ── Action bar (sticky above bottom nav on mobile) ── */}
-      <div className="sticky bottom-[calc(4.5rem+var(--sab,0px))] sm:bottom-2 bg-surface-1/95 backdrop-blur-md saturate-150 -mx-4 px-4 pt-2 pb-2 w-[calc(100%+2rem)]">
-        {mode === 'flashcard' && !revealed && (
-          <button
-            onClick={handleReveal}
-            className="w-full min-h-11 bg-button text-button-foreground px-8 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors"
-          >
-            Show Answer
-          </button>
-        )}
-
-        {mode === 'flashcard' && revealed && (
-          <div className="flex gap-2 w-full animate-reveal">
-            {/* Again — softer warning */}
-            <button
-              ref={againBtnRef}
-              onClick={() => submitReview(1)}
-              aria-label={hints ? `Again, review again in ${hints[0].short}` : 'Again'}
-              className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex flex-col items-center justify-center gap-0.5"
-            >
-              <span className="font-semibold">Again</span>
-              {hints && <span className="text-[10px] opacity-60 text-center leading-tight">{hints[0].short}</span>}
-            </button>
-            {/* Hard — tertiary */}
-            <button
-              onClick={() => submitReview(2)}
-              aria-label={hints ? `Hard, review again in ${hints[1].short}` : 'Hard'}
-              className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-surface-3 text-muted hover:bg-surface-3 transition-colors flex flex-col items-center justify-center gap-0.5"
-            >
-              <span className="font-semibold">Hard</span>
-              {hints && <span className="text-[10px] opacity-60 text-center leading-tight">{hints[1].short}</span>}
-            </button>
-            {/* Good — primary */}
-            <button
-              onClick={() => submitReview(3)}
-              aria-label={hints ? `Good, ${hints[2].mastery}` : 'Good'}
-              className="flex-[1.5] min-h-14 py-2 px-2 rounded-xl font-semibold text-sm bg-green-600 text-white hover:bg-green-700 transition-colors flex flex-col items-center justify-center gap-0.5 shadow-sm"
-            >
-              <span>Good</span>
-              {hints && <span className="text-[10px] font-normal opacity-80 text-center leading-tight">{hints[2].mastery}</span>}
-            </button>
-            {/* Easy — warm reward token */}
-            <button
-              onClick={() => submitReview(4)}
-              aria-label={hints ? `Easy, review again in ${hints[3].short}` : 'Easy'}
-              className="flex-1 min-h-14 py-2 px-1 rounded-xl font-medium text-xs bg-reward-soft text-reward hover:opacity-90 transition-colors flex flex-col items-center justify-center gap-0.5"
-            >
-              <span className="font-semibold">Easy</span>
-              {hints && <span className="text-[10px] opacity-60 text-center leading-tight">{hints[3].short}</span>}
-            </button>
-          </div>
-        )}
-
-        {mode === 'multiple-choice' && mcSelected && (
-          <button
-            onClick={() => advanceMc(mcRating)}
-            className="w-full min-h-11 bg-button text-button-foreground px-8 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors"
-          >
-            Next →
-          </button>
-        )}
-
-        {mode === 'fill-blank' && !revealed && (
-          <button
-            onClick={handleReveal}
-            className="w-full min-h-11 bg-button text-button-foreground px-8 py-3 rounded-xl font-medium hover:bg-button-hover transition-colors"
-          >
-            Check Answer
-          </button>
-        )}
-
-        {mode === 'fill-blank' && revealed && (
-          <div className="flex gap-3 w-full animate-reveal">
-            <button onClick={() => submitReview(1)} aria-label={hints ? `Wrong, review again in ${hints[0].short}` : 'Wrong'} className="flex-1 min-h-14 py-2 rounded-xl font-medium text-sm bg-red-50 text-red-500 dark:bg-red-500/10 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-500/20 transition-colors flex flex-col items-center justify-center gap-0.5">
-              <span className="font-semibold">Wrong</span>
-              {hints && <span className="text-[10px] opacity-60">{hints[0].short}</span>}
-            </button>
-            <button onClick={() => submitReview(3)} aria-label={hints ? `Correct, ${hints[2].mastery}` : 'Correct'} className="flex-[1.5] min-h-14 py-2 rounded-xl font-semibold text-sm bg-green-600 text-white hover:bg-green-700 transition-colors flex flex-col items-center justify-center gap-0.5 shadow-sm">
-              <span>Correct</span>
-              {hints && <span className="text-[10px] font-normal opacity-80">{hints[2].mastery}</span>}
-            </button>
-          </div>
-        )}
-      </div>
     </div>
   )
 }
