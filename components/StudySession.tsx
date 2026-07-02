@@ -14,7 +14,7 @@ import { typeBadgeClass } from '@/lib/card-style'
 import ProgressRing from './ProgressRing'
 import Toast from './Toast'
 
-interface Sentence {
+export interface Sentence {
   id: string
   korean: string
   targetForm: string
@@ -22,7 +22,7 @@ interface Sentence {
   unknownCount?: number
 }
 
-interface Card {
+export interface Card {
   id: string
   type: string
   front: string
