@@ -2,6 +2,7 @@
 created: 2026-07-02T22:40:26.445Z
 title: Fix spurious components in card extraction
 area: general
+resolves_phase: 16
 files:
   - lib/extract-cards.ts:110-117
   - app/api/sync/route.ts:240-264
