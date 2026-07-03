@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Reliability & Hardening
-current_phase: 15
-status: completed
-stopped_at: Completed 15-02-PLAN.md — Phase 15 complete, ready for verification
-last_updated: "2026-07-03T01:00:23.302Z"
+current_phase: 3
+status: Awaiting next milestone
+stopped_at: Phase 15 complete and verified — v1.3 (Reliability & Hardening) milestone execution done, ready for /gsd-complete-milestone v1.3
+last_updated: "2026-07-03T01:07:13.336Z"
 last_activity: 2026-07-03
-last_activity_desc: Phase 15 complete
+last_activity_desc: Milestone v1.3 completed and archived
 progress:
   total_phases: 3
   completed_phases: 3
@@ -28,12 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-03)
 
 ## Current Position
 
-Phase: 15 — COMPLETE (last phase of v1.3)
-Plan: 2/2 complete
-Status: Phase 15 fully verified — UAT 4/4 passed (0 issues), SECURITY threats_open:0, goal-backward VERIFICATION passed (7/7 must-haves)
-Last activity: 2026-07-03 — Phase 15 verification complete, v1.3 milestone execution done
-
-Progress: [██████████] 100% (milestone: 3 of 3 phases complete; 6 of 6 plans done)
+Phase: Milestone v1.3 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-03 — Milestone v1.3 completed and archived
 
 ## Performance Metrics
 
@@ -124,6 +122,12 @@ Carried forward from v1.2 close (2026-07-01) — informational only:
 | verification | Phase 10/11 `human_needed` RSC paint-timing checks | Resolved in practice via Phase 11 live UAT; low risk |
 | hardening | `app/api/review/undo/route.ts` missing try/catch (deferred in Phase 13) | Open — future hardening pass |
 
+Items acknowledged and deferred at milestone close on 2026-07-03:
+
+| Category | Item | Status |
+|----------|------|--------|
+| todo | 2026-07-02-fix-spurious-components-in-card-extraction.md | Open — future work, out of v1.3 scope |
+
 ## Session Continuity
 
 Last session: 2026-07-03T01:00:23.302Z
@@ -132,4 +136,4 @@ Resume file: None
 
 ## Operator Next Steps
 
-- v1.3 (Reliability & Hardening) is fully shipped: Phase 13 (review API hardening), Phase 14 (sync visibility + caching), Phase 15 (StudySession refactor + sentence-selection memoization) all complete and verified (UAT + SECURITY + goal-backward VERIFICATION passing on every phase). Next: `/gsd-complete-milestone v1.3` to archive and prepare for the next milestone. A pending todo was captured during Phase 14 UAT: spurious `components` in Claude extraction creating wrong CardDependency edges (lib/extract-cards.ts) — future work, not blocking milestone close.
+- Start the next milestone with /gsd-new-milestone

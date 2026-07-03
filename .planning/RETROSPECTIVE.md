@@ -146,6 +146,57 @@
 
 ---
 
+## Milestone: v1.3 — Reliability & Hardening
+
+**Shipped:** 2026-07-03
+**Phases:** 3 (Phases 13–15) | **Plans:** 6 | **Tasks:** 15
+
+### What Was Built
+
+- `/api/review` hardened: rating range guard (400, zero DB/FSRS work) + try/catch generic 500 on DB/FSRS failure; `PUT /api/cards/[id]` maps Prisma P2002 collisions to a friendly 400
+- Bounded silent-retry wrapper (`postReviewWithRetry`, 3 attempts, ~500ms/~1500ms backoff) for the background review save, with a hand-rolled token-styled `Toast` shown only on exhaustion
+- Mount-guarded atomic undo restoration — queue/stats/seen-card set/cursor/revealed apply as one all-or-nothing unit
+- Sync failures name the specific failed lesson via a content excerpt (`lessonExcerpt`, extracted to `lib/lesson-excerpt.ts` for testability); raw errors confined to server-side logs
+- Request-scoped `keyToId` map (`normalizedFront → cardId`) built once per sync request instead of a per-lesson full-deck `findMany`
+- Bounded `getRecentGlosses` + `GET /api/gloss/preload` — mount-time DB→ref cache preload in `GlossProvider`, keyed by `normalizeFront` to match the server's DB key
+- Pure, unit-tested `lib/sentence-selection.ts` (`selectSentence` + single-source `hashStr`, 8 Vitest cases) memoized via `useMemo` in `StudySession`
+- `StudySession.tsx`'s 300-line per-mode conditional split into `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` presentational components
+
+### What Worked
+
+- **Audit-sourced milestone, zero research phase:** every fix approach was already specified in `.planning/codebase/CONCERNS.md` (written at v1.2 close), so v1.3 skipped straight to planning. This was the fastest milestone yet (~89 commits across 2 days, 3 phases) precisely because there was no ambiguity to research.
+- **Risk-ordered phase sequencing:** server-side correctness first (Phase 13), then sync visibility/caching (Phase 14), then the StudySession structural refactor last (Phase 15) — sequencing the refactor after the behavior-changing fixes meant Phase 15 only had to *preserve* already-verified behavior (retry wrapper, atomic undo) instead of reworking it mid-refactor.
+- **Extract-then-split ordering within Phase 15:** pulling `lib/sentence-selection.ts` out and memoizing it (REFACTOR-02 + PERF-03) *before* splitting into mode sub-components (REFACTOR-01) avoided restructuring the selection logic twice — the mode split just imported the already-stable module.
+- **Live UAT on the structural refactor:** Phase 15's human UAT (flip/grade/undo/mode-switch across all 3 modes) was the load-bearing check for "behavior preserved exactly" — no static check (TypeScript, lint, unit tests) can confirm a big-bang component split didn't change runtime behavior.
+- **UAT was clean across all 3 phases:** 2/2, 3/3, 4/4 passed with 0 issues found — the first milestone where every phase's UAT passed on the first pass with no diagnosed bugs to fix before close.
+
+### What Was Inefficient
+
+- **`app/api/review/undo/route.ts` deferred, not fixed:** it has the identical missing-try/catch shape that Phase 13 hardened in `/api/review` and `/api/cards/[id]`, but was explicitly out of scope for REVIEW-01..05. A corpus-wide grep for "routes missing try/catch" at Phase 13 planning time (the same lesson from v1.1's NAV-01 straggler) would have caught this sibling route before it became a carried-forward deferred item.
+- **A pending todo surfaced mid-milestone stayed open through close:** Phase 14 UAT surfaced spurious `components` in Claude's card extraction (unrelated grammar patterns attached to sentences, creating wrong `CardDependency` edges) — correctly filed as a todo rather than scope-crept into Phase 14, but it sat as an open item the pre-close audit had to surface and the operator had to explicitly acknowledge rather than being triaged into or out of v1.3 scope at the time it was found.
+
+### Patterns Established
+
+- **Validate before try, fail generically inside it:** untrusted numeric/body-field validation happens as pure guards before any `try` block (zero DB/engine work on bad input); once inside the try, DB/engine failures return a generic message (raw error `console.error`'d server-side only) — established across `/api/review` and reused verbatim by the sync route's error handling.
+- **P2002-catch over pre-write existence check:** unique-constraint collisions are handled by catching Prisma's `P2002` in the write's own try/catch, not a separate `findUnique` pre-check — matches the codebase's existing catch-based idiom and avoids an extra query per write.
+- **Ref-only mount-time cache preload:** bulk-preloading a cache into a `useRef` Map inside a `useEffect(..., [])` with no `setState` in the effect body is the standard shape for warming a client cache from the DB on mount (`react-hooks/set-state-in-effect` safe, StrictMode-safe via idempotent `Map.set`) — used by the gloss preload, reusable for any future mount-time cache warm.
+- **Extract-and-memoize before decomposing:** when a component needs both a pure-module extraction and a structural split, do the extraction + memoization first as its own plan, then decompose using the now-stable extracted module — avoids touching the same logic twice.
+
+### Key Lessons
+
+1. When hardening a route for a specific requirement (REVIEW-01..05), grep for structurally identical sibling routes (same missing try/catch, same validation gap) at planning time and either fold them in or explicitly log them as a deferred item immediately — don't let them surface as a surprise at a later phase's UAT or at milestone close.
+2. A bug-fix/hardening milestone sourced directly from a prior milestone's audit doc (`CONCERNS.md`) can skip the research phase entirely and still ship cleanly — the audit already did the research. This is a repeatable milestone shape worth reusing whenever a `CONCERNS.md`-style audit exists.
+3. Sequencing a structural refactor (Phase 15) after the behavior-changing fixes that touch the same file (Phase 13) — rather than interleaving them — meant the refactor's only job was "preserve," not "preserve and also change." This is a generalizable rule for any milestone that both fixes behavior and restructures code in the same file.
+4. Todos filed mid-milestone from UAT findings (like the spurious-components extraction bug) need an explicit triage decision (fold in / new milestone / backlog) at the time they're filed, not just at the next milestone-close audit — reduces the "acknowledge and defer" ceremony at close.
+
+### Cost Observations
+
+- Model mix: Sonnet (main session model throughout)
+- Sessions: spanning 2026-07-01 to 2026-07-02 (~2 days, fastest milestone to date)
+- Notable: zero research phase (audit-sourced), all 6 plans totaled ~53 minutes of measured execution time — the lowest total-time milestone so far, consistent with "fix approaches already specified" removing design/research overhead entirely.
+
+---
+
 ## Cross-Milestone Trends
 
 | Milestone | Phases | Plans | Key Pattern | Main Pitfall |
@@ -153,3 +204,4 @@
 | v1.0 Foundation-First Study | 2 | 3 | Pure functions + TDD RED→GREEN | Fixture shape mismatch hid a field-shape bug |
 | v1.1 UI/UX Polish | 7 | 12 | Dependency-driven phase order + code-only audit | Scope didn't grep corpus-wide first (NAV-01 straggler) |
 | v1.2 Performance & Snappiness | 4 | 9 | RSC + client-shell + DTO pattern, established once and reused | Paint-timing/jitter claims left unverified in a browser for 2 of 4 phases; REQUIREMENTS.md checkboxes unticked again |
+| v1.3 Reliability & Hardening | 3 | 6 | Audit-sourced milestone (zero research phase) + risk-ordered phasing (behavior fixes before structural refactor) | Sibling route with the identical gap (`api/review/undo`) not grepped-for and deferred instead of fixed — same "scope corpus-wide" pitfall as v1.1's NAV-01 |

@@ -1,5 +1,20 @@
 # Milestones
 
+## v1.3 Reliability & Hardening (Shipped: 2026-07-03)
+
+**Phases completed:** 3 phases, 6 plans, 15 tasks
+
+**Key accomplishments:**
+
+- Hardened POST /api/review with a rating range guard (400) + try/catch generic 500, and mapped PUT /api/cards/[id] Prisma P2002 collisions to a friendly 400 — no unhandled throws or raw schema leaks on the two authenticated write routes.
+- Bounded silent-retry wrapper for the background POST /api/review with a hand-rolled token-styled toast only on exhaustion, plus a mount-guarded atomic undo restoration — live-verified across offline-grade, undo-during-flux, and dark-mode checks.
+- Hoisted the sync dependency-resolution map to once-per-request and named failed lessons by a content excerpt with raw error text confined to server-side logs.
+- Mount-time preload of the persistent DB gloss cache into GlossProvider's in-memory map (keyed by `normalizeFront` to match the DB key) so previously-glossed words resolve instantly on a fresh load with no LLM round-trip.
+- Pure `lib/sentence-selection.ts` (selectSentence + single-source hashStr) with 8 Vitest cases, and a memoized `chosenIdx` `useMemo` in StudySession — behavior preserved, Phase 13 hardening untouched
+- Three presentational `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` client components carved out of `StudySession.tsx`'s 300-line inline conditional; parent slimmed to header + progress + a three-way mode dispatch — human-verified with zero behavior regression
+
+---
+
 ## v1.2 Performance & Snappiness (Shipped: 2026-07-01)
 
 **Phases completed:** 4 phases, 9 plans, 12 tasks

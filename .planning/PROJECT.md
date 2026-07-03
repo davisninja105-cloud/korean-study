@@ -2,35 +2,19 @@
 
 ## What This Is
 
-A personal Korean spaced-repetition study app (Next.js + Prisma/Turso, Claude-powered card extraction from a tutor's Google Doc, FSRS scheduling, sentence-centric study, TTS, tap-to-gloss, habit tracking). The app's "foundation-first" promise is real — a learner is never quizzed on a word before its building blocks, and new words are introduced bare before sentence context. The UI has been systematically audited and polished: a warm, encouraging study loop, a three-state home hero, a complete semantic design-system token layer, and full accessibility baseline. The app now also feels instant: every main route shows a content-shaped skeleton on navigation, the cards/study/home/habits pages hydrate with real data on first server-rendered paint (no empty-state flash), `/api/cards/due` runs its queries concurrently, and grading a card during study advances the queue with no perceptible delay.
+A personal Korean spaced-repetition study app (Next.js + Prisma/Turso, Claude-powered card extraction from a tutor's Google Doc, FSRS scheduling, sentence-centric study, TTS, tap-to-gloss, habit tracking). The app's "foundation-first" promise is real — a learner is never quizzed on a word before its building blocks, and new words are introduced bare before sentence context. The UI has been systematically audited and polished: a warm, encouraging study loop, a three-state home hero, a complete semantic design-system token layer, and full accessibility baseline. The app now also feels instant: every main route shows a content-shaped skeleton on navigation, the cards/study/home/habits pages hydrate with real data on first server-rendered paint (no empty-state flash), `/api/cards/due` runs its queries concurrently, and grading a card during study advances the queue with no perceptible delay. The app is also hardened against failure: the two authenticated write routes never throw unhandled 500s, background review saves retry silently before surfacing a toast, undo restoration is atomic, sync failures name the specific lesson that broke, and `StudySession.tsx` is decomposed into focused, independently-testable mode components with memoized sentence selection.
 
 ## Core Value
 
 When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context. If everything else fails, this must hold.
 
-## Current Milestone: v1.3 Reliability & Hardening
-
-**Goal:** Fix the most pressing correctness/reliability findings from the `.planning/codebase/CONCERNS.md` audit, plus targeted performance and maintainability cleanup.
-
-**Target features:**
-- Review API hardening — `try/catch` in `/api/review`, validate rating ∈ [1,2,3,4]
-- Card front collision handling — friendly error (not raw 500) when an edit's normalized front collides with an existing card
-- Review save reliability — silent retry on background `POST /api/review` failure, toast only if retries exhausted; fix incomplete undo state restoration
-- Sync failure visibility — persist + surface which lesson(s) failed in the SyncPanel, not just a generic "remaining" count
-- Performance — cache the `normalizedFront → cardId` map during sync, preload `GlossProvider` cache from DB on mount, memoize `StudySession`'s sentence-selection calc
-- `StudySession.tsx` refactor — split into `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` sub-components, extract sentence logic into a pure hook
-
-Explicitly deferred: security hardening (rate limiting, time-bound auth tokens) — `CONCERNS.md` itself flags these low-priority for a single-user app.
-
 ## Current State
 
-**Shipped:** v1.2 Performance & Snappiness (2026-07-01)
+**Shipped:** v1.3 Reliability & Hardening (2026-07-03)
 
-The app is deployed and fully functional. v1.2 eliminated the blank/empty-state flash across every main route: skeleton loading screens on navigation (Phase 9), RSC + DTO server-side hydration for cards, study, home, and habits pages (Phases 10–12), concurrent Prisma queries in `/api/cards/due` (Phase 10), and an optimistic client-side FSRS flow that removes grade-button jitter during study (Phase 11). v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — design-system tokens, warm study-loop copy, and accessibility baseline remain in place underneath this milestone's work.
+The app is deployed and fully functional. v1.3 fixed the most pressing correctness/reliability findings from the `.planning/codebase/CONCERNS.md` audit: Phase 13 hardened the two authenticated write routes (`/api/review`, `/api/cards/[id]`) to fail with structured responses instead of unhandled 500s, made the background review save retry silently before surfacing a single toast, and made undo restoration mount-guarded/atomic. Phase 14 shipped sync failure visibility (lessons named by content excerpt, not "Lesson 1" or raw errors), the `keyToId` performance refactor (map built once per request, not per-lesson), and gloss cache preloading from the DB on mount. Phase 15 extracted sentence-selection logic into a pure, unit-tested `lib/sentence-selection.ts` module, memoized it in `StudySession`, and split the 300-line per-mode conditional into dedicated `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` components — behavior confirmed identical via live UAT. v1.2 (shipped 2026-07-01) eliminated the blank/empty-state flash across every main route; v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — both remain in place underneath this milestone's work.
 
-v1.3 opened with Phase 13: the two authenticated write routes (`/api/review`, `/api/cards/[id]`) now fail with structured responses instead of unhandled 500s, the background review save retries silently before surfacing a single toast, and undo restoration is mount-guarded/atomic. Phase 14 shipped sync failure visibility (lessons named by content excerpt, not 'Lesson 1' or raw errors), the `keyToId` performance refactor (map built once per request, not per-lesson), and gloss cache preloading from the DB on mount. Phase 15 closed it out: sentence-selection logic now lives in a pure, unit-tested `lib/sentence-selection.ts` module and is memoized in `StudySession` (`useMemo` over `[cardSentences, realCard?.id, realCard?.review?.reps, needsBlank]`), and the 300-line per-mode conditional was split into dedicated `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` components — behavior confirmed identical via live UAT.
-
-**Next:** v1.3 (Reliability & Hardening) is complete — all 3 phases shipped. Ready for milestone close / next-milestone planning.
+**Next:** Planning next milestone (run `/gsd-new-milestone`)
 
 ## Requirements
 
@@ -77,12 +61,14 @@ v1.3 opened with Phase 13: the two authenticated write routes (`/api/review`, `/
 
 ### Active
 
-None — v1.3 (Reliability & Hardening) is fully shipped; all 3 phases (13, 14, 15) validated.
+(None yet — run `/gsd-new-milestone` to define the next milestone's requirements)
 
-**Deferred performance candidates** (raised during v1.2, not committed to any milestone):
+**Deferred candidates** (raised during v1.2/v1.3, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
 - Cross-request `unstable_cache` for DB results (staleness risk outweighed gain for this single-user app at v1.2 scale — revisit only if that tradeoff changes)
 - Move `buttonColor`/`rewardColor` fetch out of `app/layout.tsx` (would require re-architecting pre-paint CSS injection)
+- `app/api/review/undo/route.ts` missing try/catch — same shape as the routes hardened in Phase 13, but out of scope for REVIEW-01..05 (deferred at Phase 13 close)
+- Spurious `components` in Claude card extraction (e.g. an unrelated grammar pattern attached to a sentence) create wrong `CardDependency` edges — `lib/extract-cards.ts:110-117`, `app/api/sync/route.ts:240-264` (captured as a todo during Phase 14 UAT, 2026-07-02)
 
 ### Out of Scope
 
@@ -99,6 +85,7 @@ None — v1.3 (Reliability & Hardening) is fully shipped; all 3 phases (13, 14, 
 - v1.0 shipped 2026-06-26: ~431 lines added across `lib/sequence.ts`, `lib/known-words.ts`, `tests/sequence.test.ts`, `tests/known-words.test.ts`, `app/api/cards/due/route.ts`, `components/StudySession.tsx`, `CLAUDE.md`.
 - v1.1 shipped 2026-06-29: 20 commits across 7 phases. Major files touched: `app/globals.css`, `components/StudySession.tsx`, `components/Nav.tsx`, `app/layout.tsx`, `app/page.tsx`, `components/Sheet.tsx`, `components/GlossProvider.tsx`, `components/AudioButton.tsx`, `app/cards/page.tsx`, `app/habits/page.tsx`, `app/settings/page.tsx`.
 - v1.2 shipped 2026-07-01: 50 commits across 4 phases (9 plans), 2026-06-29 → 2026-07-01. Source-only diff: 24 files, +2143/-1689 lines. Established the RSC + client-shell + DTO pattern (`app/*/page.tsx` async server components → `*Client.tsx` shells) reused across cards, study, home, and habits. New shared modules: `lib/dto.ts` (CardDTO/SentenceDTO/ReviewDTO/LessonDTO/StatsDTO/ActivityDTO), `lib/study-cards.ts` (`getStudyCards`), `lib/dashboard.ts` (`getStats`/`getActivityData`) — all single sources of truth reused by both the RSC pages and the legacy API routes they used to power exclusively.
+- v1.3 shipped 2026-07-03: 89 commits across 3 phases (6 plans, 15 tasks), 2026-07-01 → 2026-07-02. Source-only diff: 21 files, +1481/-491 lines. Sourced directly from the `.planning/codebase/CONCERNS.md` audit — no research phase. New modules: `lib/sentence-selection.ts` (pure, unit-tested sentence-selection + `hashStr`), `components/FlashcardMode.tsx`/`MultipleChoiceMode.tsx`/`FillBlankMode.tsx` (StudySession mode split), `lib/lesson-excerpt.ts` (sync failure naming), `GET /api/gloss/preload` + `getRecentGlosses` (gloss cache bootstrap).
 - Key fix discovered during Phase 1 (v1.0): `card.nextReview` was `undefined` for real cards because the route uses `include: { review: true }` — due-date lived at `card.review.nextReview`. Added `nextReviewMs()` helper.
 - Known-word threshold is state ≥ 1 (seen at least once), not ≥ 2. One prior review unlocks in-context presentation.
 - Design-system token pattern established in v1.1: every new token must appear in 3 globals.css blocks; validate with grep == 3 hits.
@@ -163,4 +150,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-03 after Phase 15*
+*Last updated: 2026-07-03 after v1.3 Reliability & Hardening milestone*
