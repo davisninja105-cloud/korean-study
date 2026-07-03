@@ -3,35 +3,35 @@ gsd_state_version: 1.0
 milestone: v1.3
 milestone_name: Reliability & Hardening
 current_phase: 15
-current_phase_name: StudySession Refactor & Sentence-Selection Memoization
-status: ready_for_verification
-stopped_at: "Phase 15 complete (15-01, 15-02 both done; Task 3 live UAT approved by human); v1.3 milestone all 3 phases executed, ready for phase-level verification / milestone close"
-last_updated: "2026-07-03T00:51:12.932Z"
+status: completed
+stopped_at: Completed 15-02-PLAN.md — Phase 15 complete, ready for verification
+last_updated: "2026-07-03T01:00:23.302Z"
 last_activity: 2026-07-03
-last_activity_desc: Plan 15-02 Task 3 human UAT approved; Phase 15 and v1.3 milestone execution complete
+last_activity_desc: Phase 15 complete
 progress:
   total_phases: 3
   completed_phases: 3
   total_plans: 6
   completed_plans: 6
   percent: 100
+current_phase_name: StudySession Refactor & Sentence-Selection Memoization
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-02)
+See: .planning/PROJECT.md (updated 2026-07-03)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 15 — StudySession Refactor & Sentence-Selection Memoization (execution complete, ready for verification)
+**Current focus:** v1.3 (Reliability & Hardening) complete — all 3 phases (13, 14, 15) shipped and verified; ready for milestone close
 
 ## Current Position
 
-Phase: 15 (StudySession Refactor & Sentence-Selection Memoization) — COMPLETE
-Plan: 2 of 2
-Status: Plan 15-02 complete — Tasks 1+2 committed (89c32b1, bc98179); Task 3 live UAT approved by human
-Last activity: 2026-07-03 — Plan 15-02 Task 3 approved; Phase 15 done; v1.3 milestone (3/3 phases) execution complete
+Phase: 15 — COMPLETE (last phase of v1.3)
+Plan: 2/2 complete
+Status: Phase 15 fully verified — UAT 4/4 passed (0 issues), SECURITY threats_open:0, goal-backward VERIFICATION passed (7/7 must-haves)
+Last activity: 2026-07-03 — Phase 15 verification complete, v1.3 milestone execution done
 
 Progress: [██████████] 100% (milestone: 3 of 3 phases complete; 6 of 6 plans done)
 
@@ -49,7 +49,7 @@ Progress: [██████████] 100% (milestone: 3 of 3 phases comple
 |-------|-------|-------|----------|
 | 13 | 2/2 | ~15 min | ~7.5 min |
 | 14 | 2 | - | - |
-| 15 | TBD | - | - |
+| 15 | 2 | - | - |
 
 **Recent Trend:**
 
@@ -106,7 +106,7 @@ Recent decisions affecting current work:
 ### Blockers/Concerns
 
 - [Phase 13 → resolved] Phases 13 & 15 both touched `components/StudySession.tsx` — Phase 13 shipped first, so Phase 15's refactor must preserve the `postReviewWithRetry` wiring, `isMountedRef` mount-guard, `saveError`/`<Toast>` plumbing, and atomic `handleUndo` restoration.
-- Phase 15 is a behavior-preserving refactor — needs a live study-session UAT (flip/grade/undo/mode-switch) to confirm no regression; lint (`react-hooks/purity`) must stay clean.
+- [Phase 15 → resolved] Behavior-preserving refactor confirmed via live study-session UAT (flip/grade/undo/mode-switch, all 3 modes) — human typed "approved"; lint stayed clean (0 errors) throughout.
 - [Phase 14 → resolved] PERF-01 & SYNC-01 both edited `app/api/sync/route.ts` — landed together in plan 14-01 with no conflict (PERF-01 hoisted the map; SYNC-01 added the excerpt helper + rewrote failure strings; both tasks committed atomically).
 - [Phase 14 → resolved] UAT complete (3/3 passed, 0 issues): SYNC-01 excerpt rendering confirmed, PERF-01 CardDependency edge creation confirmed (2095 edges, 0 self-edges, edges connect cards with components to prereq cards with components), PERF-02 live-verified at plan level. Security: threats_open:0 (8 threats, all closed). Nyquist: partial (lessonExcerpt unit-tested, sync route + gloss preload manual-only).
 - [Phase 13 deferred] `app/api/review/undo/route.ts` has the same missing-try/catch shape as the hardened `/api/review` route but was out of scope for REVIEW-01..05 — left for a future hardening pass.
@@ -126,10 +126,10 @@ Carried forward from v1.2 close (2026-07-01) — informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-03T00:51:12.926Z
-Stopped at: Completed 15-02-PLAN.md — Phase 15 complete, ready for verification
+Last session: 2026-07-03T01:00:23.302Z
+Stopped at: Phase 15 complete and verified — v1.3 (Reliability & Hardening) milestone execution done, ready for /gsd-complete-milestone v1.3
 Resume file: None
 
 ## Operator Next Steps
 
-- Phase 14 complete and verified (UAT 3/3 passed, 0 issues; SECURITY threats_open:0; VALIDATION partial with lessonExcerpt unit test). Next: plan Phase 15 (StudySession refactor & sentence-selection memoization — REFACTOR-02, PERF-03, REFACTOR-01). A pending todo was captured during UAT: spurious `components` in Claude extraction creating wrong CardDependency edges (lib/extract-cards.ts) — future work, not blocking Phase 15.
+- v1.3 (Reliability & Hardening) is fully shipped: Phase 13 (review API hardening), Phase 14 (sync visibility + caching), Phase 15 (StudySession refactor + sentence-selection memoization) all complete and verified (UAT + SECURITY + goal-backward VERIFICATION passing on every phase). Next: `/gsd-complete-milestone v1.3` to archive and prepare for the next milestone. A pending todo was captured during Phase 14 UAT: spurious `components` in Claude extraction creating wrong CardDependency edges (lib/extract-cards.ts) — future work, not blocking milestone close.

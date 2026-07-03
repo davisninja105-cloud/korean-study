@@ -28,9 +28,9 @@ Explicitly deferred: security hardening (rate limiting, time-bound auth tokens) 
 
 The app is deployed and fully functional. v1.2 eliminated the blank/empty-state flash across every main route: skeleton loading screens on navigation (Phase 9), RSC + DTO server-side hydration for cards, study, home, and habits pages (Phases 10–12), concurrent Prisma queries in `/api/cards/due` (Phase 10), and an optimistic client-side FSRS flow that removes grade-button jitter during study (Phase 11). v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — design-system tokens, warm study-loop copy, and accessibility baseline remain in place underneath this milestone's work.
 
-v1.3 (in progress) opened with Phase 13: the two authenticated write routes (`/api/review`, `/api/cards/[id]`) now fail with structured responses instead of unhandled 500s, the background review save retries silently before surfacing a single toast, and undo restoration is mount-guarded/atomic. Phase 14 shipped sync failure visibility (lessons named by content excerpt, not 'Lesson 1' or raw errors), the `keyToId` performance refactor (map built once per request, not per-lesson), and gloss cache preloading from the DB on mount. Phase 15 (StudySession refactor) remains.
+v1.3 opened with Phase 13: the two authenticated write routes (`/api/review`, `/api/cards/[id]`) now fail with structured responses instead of unhandled 500s, the background review save retries silently before surfacing a single toast, and undo restoration is mount-guarded/atomic. Phase 14 shipped sync failure visibility (lessons named by content excerpt, not 'Lesson 1' or raw errors), the `keyToId` performance refactor (map built once per request, not per-lesson), and gloss cache preloading from the DB on mount. Phase 15 closed it out: sentence-selection logic now lives in a pure, unit-tested `lib/sentence-selection.ts` module and is memoized in `StudySession` (`useMemo` over `[cardSentences, realCard?.id, realCard?.review?.reps, needsBlank]`), and the 300-line per-mode conditional was split into dedicated `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` components — behavior confirmed identical via live UAT.
 
-**Next:** Phase 15 — StudySession Refactor & Sentence Selection Memoization (v1.3 in progress: 2 of 3 phases complete)
+**Next:** v1.3 (Reliability & Hardening) is complete — all 3 phases shipped. Ready for milestone close / next-milestone planning.
 
 ## Requirements
 
@@ -52,6 +52,9 @@ v1.3 (in progress) opened with Phase 13: the two authenticated write routes (`/a
 - ✓ Card-front collision returns a friendly 400 (not raw 500) on normalizedFront collision (REVIEW-03) — Phase 13
 - ✓ Background POST /api/review save retries silently (3 bounded attempts); toast only after retries exhausted (REVIEW-04) — Phase 13
 - ✓ Undo restoration is mount-guarded + atomic; an interrupted undo leaves no partially-restored state (REVIEW-05) — Phase 13
+- ✓ Sentence-selection logic in a pure, unit-tested module importable without rendering StudySession (REFACTOR-02) — Phase 15
+- ✓ Sentence selection memoized — recomputes only on input change, not every render (PERF-03) — Phase 15
+- ✓ StudySession split into FlashcardMode/MultipleChoiceMode/FillBlankMode sub-components (REFACTOR-01) — Phase 15
 - ✓ Full UI/UX audit: 27 findings across 7 screens × 6 dimensions, P0/P1/P2 classified — v1.1
 - ✓ Complete design-system token sweep: `--muted`, `--border`, fixed dark highlight; zero gray-* utilities — v1.1
 - ✓ Study session polish: "Card N of Total" counter, warm haptic grade differentiation, Korean line-height 1.7, smooth inter-card fade — v1.1
@@ -74,9 +77,7 @@ v1.3 (in progress) opened with Phase 13: the two authenticated write routes (`/a
 
 ### Active
 
-- [ ] Sentence-selection logic in a pure, unit-tested module importable without rendering StudySession (REFACTOR-02) — Phase 15
-- [ ] Sentence selection memoized — recomputes only on input change, not every render (PERF-03) — Phase 15
-- [ ] StudySession split into FlashcardMode/MultipleChoiceMode/FillBlankMode sub-components (REFACTOR-01) — Phase 15
+None — v1.3 (Reliability & Hardening) is fully shipped; all 3 phases (13, 14, 15) validated.
 
 **Deferred performance candidates** (raised during v1.2, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
@@ -162,4 +163,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-02 after Phase 14*
+*Last updated: 2026-07-03 after Phase 15*

@@ -135,4 +135,4 @@ Phases execute in numeric order: 13 → 14 → 15
 | 12. Home & Habits Hydration | v1.2 | 3/3 | Complete | 2026-07-01 |
 | 13. Review API Hardening & Save Reliability | v1.3 | 2/2 | Complete    | 2026-07-02 |
 | 14. Sync Failure Visibility & Caching Performance | v1.3 | 2/2 | Complete    | 2026-07-02 |
-| 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 2/2 | Complete   | 2026-07-03 |
+| 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 2/2 | Complete    | 2026-07-03 |
