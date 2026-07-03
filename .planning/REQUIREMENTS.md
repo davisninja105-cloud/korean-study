@@ -9,8 +9,8 @@ Requirements for the "Knowledge Graph Quality & History" milestone. Each maps to
 
 ### Knowledge Graph Quality
 
-- [ ] **GRAPH-01**: Extraction prompt explicitly instructs Claude to only list a component if it's a real prerequisite the card's content actually depends on (prompt tightening)
-- [ ] **GRAPH-02**: Claude's extraction response is structurally validated immediately after receipt (type-checked, malformed/truncated output rejected) — matches the existing LLM-response-validation convention (e.g. `lib/gloss.ts`)
+- [x] **GRAPH-01**: Extraction prompt explicitly instructs Claude to only list a component if it's a real prerequisite the card's content actually depends on (prompt tightening)
+- [x] **GRAPH-02**: Claude's extraction response is structurally validated immediately after receipt (type-checked, malformed/truncated output rejected) — matches the existing LLM-response-validation convention (e.g. `lib/gloss.ts`)
 - [x] **GRAPH-03**: A `components[]` entry is kept only if it resolves to a real card via `normalizeFront()` deck-lookup — not literal sentence-text containment, which would gut abstract grammar-pattern notation (e.g. `~(으)면`) that never appears verbatim in conjugated sentences
 - [x] **GRAPH-04**: The filter is a pure, unit-tested `lib/` module reusing the two-phase resolution pattern already proven in `lib/known-words.ts` (direct `normalizeFront` match, then stem fallback)
 - [x] **GRAPH-05**: Filter is dry-run validated against the real corpus (no writes) with drop-rate reported separately for `grammar`- vs `vocabulary`-type components, before being wired into the sync write path
@@ -61,8 +61,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GRAPH-01 | Phase 16 | Pending |
-| GRAPH-02 | Phase 16 | Pending |
+| GRAPH-01 | Phase 16 | Complete |
+| GRAPH-02 | Phase 16 | Complete |
 | GRAPH-03 | Phase 16 | Complete |
 | GRAPH-04 | Phase 16 | Complete |
 | GRAPH-05 | Phase 16 | Complete |
