@@ -62,7 +62,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 
 **Milestone Goal:** Clean up hallucinated prerequisite edges, add a persistent review history with a browsable view page, and automate daily sync so the deck never goes stale. Every phase either raises the trustworthiness of the knowledge graph, makes review history durable and visible, or keeps the deck fresh unattended — reusing existing conventions (pure `lib/` helpers, RSC + DTO + client-shell pages, manual Turso DDL, shared pipeline modules) with zero new npm dependencies.
 
-- [ ] **Phase 16: Components[] Filter Fix** - Extraction only keeps prerequisite components that resolve to a real card via `normalizeFront()` deck-lookup, dry-run validated before it touches the write path
+- [x] **Phase 16: Components[] Filter Fix** - Extraction only keeps prerequisite components that resolve to a real card via `normalizeFront()` deck-lookup, dry-run validated before it touches the write path (completed 2026-07-03)
 - [ ] **Phase 17: ReviewLog Schema & Idempotent Write Path** - Every review writes an append-only `ReviewLog` row via an idempotency-keyed single transaction; undo cancels in-flight retries
 - [ ] **Phase 18: Review History Page** - A reverse-chronological, per-card-filterable, cursor-paginated history view reachable from an existing surface (RSC + DTO hydration)
 - [ ] **Phase 19: Vercel Cron Auto-Sync** - A daily cron syncs 1 lesson via a `CRON_SECRET`-authenticated route, with a "last auto-synced" timestamp in Settings ▸ Advanced
@@ -82,7 +82,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   3. Abstract grammar-pattern components that never appear verbatim in conjugated sentences are correctly retained (resolution is by deck-lookup, not literal containment).
   4. Before the filter is wired into the write path, a dry run against the real corpus reports its drop rate separately for grammar- vs vocabulary-type components, confirming grammar edges are not disproportionately dropped.
 
-**Plans**: 3/4 plans executed; 16-04 Tasks 1-2 done, paused at blocking-human checkpoint (Task 3)
+**Plans**: 4/4 plans complete
 **Wave 1**
 
 - [x] 16-01-PLAN.md — Pure deck-lookup filter module (`lib/filter-components.ts`) + read-only corpus dry-run + human-reviewed drop-rate gate (GRAPH-03/04/05)
@@ -94,7 +94,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 16-04-PLAN.md — Retroactive corpus cleanup: dry-run-first developer-run script re-filters `Card.components` + reconciles `CardDependency` edges (user-locked retroactive cleanup) — script built + documented (Tasks 1-2); PAUSED at Task 3 blocking-human checkpoint pending developer-run dry-run/--apply against production
+- [x] 16-04-PLAN.md — Retroactive corpus cleanup: dry-run-first developer-run script re-filters `Card.components` + reconciles `CardDependency` edges (user-locked retroactive cleanup) — checkpoint approved, production cleanup applied and verified (511 cards changed, 2 edges pruned, 4 edges added, 2133 total edges, confirmed idempotent)
 
 ### Phase 17: ReviewLog Schema & Idempotent Write Path
 
@@ -163,7 +163,7 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 13. Review API Hardening & Save Reliability | v1.3 | 2/2 | Complete | 2026-07-02 |
 | 14. Sync Failure Visibility & Caching Performance | v1.3 | 2/2 | Complete | 2026-07-02 |
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 2/2 | Complete | 2026-07-03 |
-| 16. Components[] Filter Fix | v1.4 | 3/4 | In Progress|  |
+| 16. Components[] Filter Fix | v1.4 | 4/4 | Complete   | 2026-07-03 |
 | 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 0/TBD | Not started | - |
 | 18. Review History Page | v1.4 | 0/TBD | Not started | - |
 | 19. Vercel Cron Auto-Sync | v1.4 | 0/TBD | Not started | - |

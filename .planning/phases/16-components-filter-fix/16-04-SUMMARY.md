@@ -13,6 +13,7 @@ requires:
 provides:
   - "scripts/retro-filter-cleanup.mts — dry-run-by-default corpus cleanup: re-filters every persisted Card.components row via filterComponents(), reconciles CardDependency edges (prune stale, add newly-valid), gated behind --apply"
   - "CLAUDE.md Scripts section entry documenting the new script"
+  - "Production corpus cleaned: 511 cards rewritten, 2 stale edges pruned, 4 newly-valid edges added; live corpus now at 1039 cards / 2133 CardDependency edges, confirmed idempotent"
 affects: []
 
 # Tech tracking
@@ -30,14 +31,15 @@ key-files:
 
 key-decisions:
   - "Script loads ALL cards with no where clause for both the deck Set and the keyToId map (RESEARCH.md Pitfall 1 / mirrors the 16-03 fix) — a card with no components of its own remains a valid, resolvable prerequisite target."
-  - "Desired CardDependency edge set is computed from CLEANED (post-filter) components, not the raw persisted values — this is what makes the edge reconciliation correctly prune edges that only existed because of a now-dropped spurious component."
+  - "Desired CardDependency edge set is computed from CLEANED (post-filter) components, not raw persisted values — this is what makes the edge reconciliation correctly prune edges that only existed because of a now-dropped spurious component."
   - "Writes are fully gated behind an explicit --apply CLI flag; the reporting section (per-type before/after, baseline comparison, prune/add counts) runs identically in both modes so a developer can review the exact effect before ever committing to a write."
-  - "Task 3 (production execution) is a blocking-human checkpoint per the plan's threat model (T-16-08, T-16-09) — this executor did NOT run the dry-run or --apply itself, and did not fabricate approval. The actual developer must run the script, compare output to the 16-01 baseline, and explicitly approve before any production write happens."
+  - "Production execution was a blocking-human checkpoint (T-16-08, T-16-09). The orchestrator ran the dry-run, cross-checked its per-type drop counts against the plan 16-01 baseline (exact match: grammar 8.0%/27/337, vocabulary 24.9%/539/2169, phrase 21.5%/53/246, whole 22.5%/619/2752), inspected the actual to-be-pruned/to-be-added edges for plausibility, surfaced one known-acceptable anomaly (see below), and the user responded \"apply as is\" — only then was --apply run against the live Turso corpus."
+  - "One accepted known-limitation edge: 화나다 → 화 (episode counter) is a homonym collision (화 as 'anger' resolves against a same-spelled 화 that is actually a TV-episode counter card). This is a pre-existing data-ambiguity issue in the deck-lookup resolution mechanism itself (normalizeFront string match has no sense-disambiguation), not something this filter-fix milestone's scope (GRAPH-01/03/04) covers — the filter only answers 'does this component resolve to SOME real card,' never 'is it the CORRECT sense.' Explicitly flagged to and accepted by the user; out of scope for this phase, a candidate for a future card-sense-disambiguation effort if it recurs."
 
 patterns-established:
   - "Pattern: retroactive data-cleanup scripts that both read AND write should report identically in dry-run and --apply modes, and should express their write plan as a diff against a freshly-computed 'desired state' (not an imperative sequence of raw JSON edits) — makes the human-review step meaningful and keeps the operation idempotent."
 
-requirements-completed: []
+requirements-completed: [GRAPH-03]
 
 coverage:
   - id: D1
@@ -60,88 +62,112 @@ coverage:
         status: pass
     human_judgment: false
   - id: D3
-    description: "Production execution: developer runs the dry-run, compares to the 16-01 baseline, sanity-checks prune-set plausibility, applies, and confirms idempotent re-run (0 further changes) — this closes GRAPH-03 Success Criterion 1 against the EXISTING corpus"
+    description: "Production execution: developer (orchestrator + user) ran the dry-run, compared to the 16-01 baseline (exact match), sanity-checked prune-set plausibility (one accepted homonym-collision edge), applied, and confirmed idempotent re-run (0 further changes) — this closes GRAPH-03 Success Criterion 1 against the EXISTING corpus"
     requirement: "GRAPH-03"
-    verification: []
+    verification:
+      - kind: other
+        ref: "npx tsx scripts/retro-filter-cleanup.mts --apply → cards changed 511, edges pruned 2, edges added 4, total edges after 2133; re-run dry-run afterward → 0 cards to change / 0 edges to prune / 0 edges to add (idempotent); this continuation session independently re-ran the dry-run and confirmed the same 0/0/0 state against 1039 cards / 2133 edges"
+        status: pass
+      - kind: manual
+        ref: "User reviewed dry-run output against the 16-01 baseline and the 화나다 → 화 (episode counter) homonym-collision flag, responded \"apply as is\""
+        status: pass
     human_judgment: true
-    rationale: "This is a blocking-human, hard-to-reverse production data mutation (T-16-08/T-16-09 in the plan's threat model). The executing agent is explicitly instructed NOT to run the script (dry-run or --apply) itself and not to fabricate approval — only a human developer reviewing real output against the 16-01 baseline can authorize the write."
+    rationale: "This was a blocking-human, hard-to-reverse production data mutation (T-16-08/T-16-09 in the plan's threat model). The prior executing agent explicitly did not run the script itself; the orchestrator ran it after receiving user approval. This continuation session independently re-verified the resulting DB state rather than trusting the prior session's report."
 
 # Metrics
-duration: ~15min (Tasks 1-2 only; Task 3 pending human action)
+duration: ~20min (Tasks 1-2 in prior session ~15min; this continuation session verification + bookkeeping ~5min)
 completed: 2026-07-03
-status: paused
+status: complete
 ---
 
-# Phase 16 Plan 04: Retroactive Corpus Cleanup Script — Task 1-2 Summary (Checkpoint Pending)
+# Phase 16 Plan 04: Retroactive Corpus Cleanup Script — Summary
 
-**Dry-run-by-default `scripts/retro-filter-cleanup.mts` that re-filters every persisted `Card.components` row and reconciles `CardDependency` edges using an all-cards `keyToId` — writes gated behind `--apply`, execution against production deferred to a blocking-human checkpoint.**
+**Dry-run-by-default `scripts/retro-filter-cleanup.mts` re-filtered every persisted `Card.components` row and reconciled `CardDependency` edges using an all-cards `keyToId`; the human-approved production run rewrote 511 cards, pruned 2 stale edges, and added 4 newly-valid edges, closing GRAPH-03 Success Criterion 1 against the existing corpus.**
 
 ## Performance
 
-- **Duration:** ~15 min (Tasks 1-2)
+- **Duration:** ~20 min total (Tasks 1-2 ~15 min in the initial session; this continuation session's independent verification + bookkeeping ~5 min)
 - **Started:** 2026-07-03 (session continuation from plan 16-03)
-- **Completed:** Tasks 1-2 complete; Task 3 (blocking-human checkpoint) reached and PAUSED
-- **Tasks:** 2 of 3 complete (Task 3 is a blocking-human checkpoint, not auto-executable)
+- **Completed:** 2026-07-03 — all tasks complete, checkpoint approved, production cleanup applied and verified
+- **Tasks:** 3 of 3 complete
 - **Files modified:** 2
 
 ## Accomplishments
 - Created `scripts/retro-filter-cleanup.mts` — dry-run-by-default, mirrors `local-resync.mts`'s dotenv-first dynamic-import pattern so it can import the TypeScript `lib/filter-components.ts` directly
 - Loads ALL cards (no where clause) to build both the deck-lookup Set and the edge-reconciliation `keyToId` map, matching the plan 16-03 scoping fix
-- Re-filters every persisted `Card.components` row via `filterComponents()`, tallies per-`Card.type` before/after/dropped counts, and prints a comparison against the human-approved plan 16-01 baseline (grammar 8.0% / vocabulary 24.9% / phrase 21.5% / whole-corpus 22.5%)
+- Re-filters every persisted `Card.components` row via `filterComponents()`, tallies per-`Card.type` before/after/dropped counts, and prints a comparison against the human-approved plan 16-01 baseline
 - Computes a desired `CardDependency` edge set from the CLEANED components, diffs it against existing rows to get precise prune/add deltas (not a blind delete-and-recreate)
-- All writes (`Card.components` batch update via chunked `$transaction`, `CardDependency` prune via chunked `deleteMany`, edge creation via idempotent `upsert`) are gated behind an explicit `--apply` flag; dry-run mode performs the identical read/report path and writes nothing
+- All writes (`Card.components` batch update via chunked `$transaction`, `CardDependency` prune via chunked `deleteMany`, edge creation via idempotent upsert) are gated behind an explicit `--apply` flag; dry-run mode performs the identical read/report path and writes nothing
 - Never touches `Card` or `Lesson` delete paths — only `Card.components` values and `CardDependency` rows
 - Documented the script in `CLAUDE.md`'s Scripts section (dry-run-first, `--apply` gate, developer-run-only, never in the `/api/sync` request path)
 - `npm run lint` clean (1 pre-existing unrelated warning); `npx tsc --noEmit` clean
+- **Production cleanup executed and verified:** dry-run matched the plan 16-01 baseline exactly (grammar 8.0%/27/337, vocabulary 24.9%/539/2169, phrase 21.5%/53/246, whole 22.5%/619/2752); one known-acceptable homonym-collision edge (화나다 → 화 (episode counter)) was flagged and explicitly accepted by the user as a pre-existing, out-of-scope data ambiguity; `--apply` ran against the live Turso corpus (511 cards changed, 2 edges pruned, 4 edges added, 2133 total edges after); a follow-up dry-run confirmed idempotency (0/0/0); this continuation session independently re-ran the dry-run and confirmed the same steady state (1039 cards, 2133 edges, 0 pending changes)
 
 ## Task Commits
 
 1. **Task 1: Create scripts/retro-filter-cleanup.mts** - `16b4507` (feat)
 2. **Task 2: Document the cleanup script in CLAUDE.md Scripts section** - `f39f2af` (docs)
-
-**Task 3 (checkpoint:human-verify, gate="blocking-human"): PAUSED — awaiting developer action.**
+3. **Task 3 (checkpoint:human-verify, gate="blocking-human"): APPROVED** — dry-run reviewed against the 16-01 baseline (exact match), one homonym-collision edge flagged and accepted, user responded "apply as is"; `npx tsx scripts/retro-filter-cleanup.mts --apply` run against production (511 cards changed, 2 edges pruned, 4 edges added, 2133 total edges); idempotency confirmed by a follow-up dry-run and independently re-confirmed by this continuation session
 
 ## Files Created/Modified
 - `scripts/retro-filter-cleanup.mts` - NEW. Dry-run-default corpus cleanup: re-filters `Card.components`, reconciles `CardDependency` edges, `--apply`-gated writes, before/after reporting against the 16-01 baseline
 - `CLAUDE.md` - Added one bullet to the Scripts section documenting the new script
 
+## Production Cleanup Results
+
+| Metric | Value |
+|---|---|
+| Cards changed | 511 |
+| Edges pruned | 2 |
+| Edges added | 4 |
+| Total cards in DB (after) | 1039 |
+| Total CardDependency edges in DB (after) | 2133 |
+| Idempotency re-run | 0 cards to change / 0 edges to prune / 0 edges to add |
+
+**Comparison to plan 16-01 dry-run baseline** (exact match — confirms the retroactive-cleanup script's filter logic and deck-set scope are consistent with the earlier read-only diagnostic):
+
+| Card type | 16-01 baseline (dropped/total, %) | 16-04 dry-run (pre-apply) |
+|---|---|---|
+| grammar | 27/337, 8.0% | 27/337, 8.0% |
+| vocabulary | 539/2169, 24.9% | 539/2169, 24.9% |
+| phrase | 53/246, 21.5% | 53/246, 21.5% |
+| whole corpus | 619/2752, 22.5% | 619/2752, 22.5% |
+
+**Known accepted limitation:** one pruned/re-resolved edge involves a homonym collision — 화나다 ("to get angry") had a component 화 that resolved via `normalizeFront()` string match to an unrelated 화 (TV-episode counter) card, rather than the correct sense. This is a pre-existing ambiguity in the deck-lookup resolution mechanism itself (it matches on surface string only, with no sense-disambiguation) — not a defect introduced by this phase's filter, and outside GRAPH-01/03/04's scope (which only guarantee "resolves to a real card," not "resolves to the correct sense of that card"). Flagged during human review and explicitly accepted by the user as an out-of-scope, pre-existing data issue. If homonym collisions like this recur, they are a candidate for a future card-sense-disambiguation initiative — not a Phase 16 defect.
+
 ## Decisions Made
 - Loaded ALL cards (no `where` clause) for both the deck Set (Phase A) and the `keyToId` map (Phase C) — mirrors RESEARCH.md Pitfall 1 and the plan 16-03 scoping fix. A leaf-node card without its own components remains a valid, resolvable prerequisite target for other cards.
 - The desired edge set is computed from CLEANED (post-filter) components, not raw persisted values, so edges that only existed because of a now-dropped spurious component are correctly identified as stale and pruned.
 - Reporting runs identically in dry-run and `--apply` modes (same per-type table, same baseline comparison, same prune/add counts) so a developer reviews the exact effect before ever triggering a write.
-- Per the plan's `sequential_execution` instructions and threat model (T-16-08 unsafe/partial production mutation, T-16-09 over-pruning), this executor did NOT run the dry-run or `--apply` itself and did not fabricate approval — Task 3 is a genuine blocking-human checkpoint.
+- Production execution was a genuine blocking-human checkpoint (T-16-08 unsafe/partial production mutation, T-16-09 over-pruning): the executing agent that built the script did not run it; the orchestrator ran the dry-run, brought results to the user for review (including the one homonym-collision anomaly), and only ran `--apply` after explicit approval ("apply as is").
+- The 화나다 → 화 (episode counter) homonym collision is accepted as out of scope for this phase — the deck-lookup filter's contract is "resolves to a real card," never "resolves to the correct sense," and fixing sense-disambiguation is a separate, larger initiative not currently on the roadmap.
 
 ## Deviations from Plan
 
-None - plan executed exactly as written for Tasks 1-2. Task 3's blocking-human checkpoint was reached and this executor stopped as instructed, without running the script.
+None - plan executed exactly as written across all three tasks. Task 3's blocking-human checkpoint was genuinely gated on human approval; approval was obtained and the production write was executed and independently re-verified in this continuation session.
 
 ## Issues Encountered
 
-None. Both `npm run lint` and `npx tsc --noEmit` are clean.
+None. `npm run lint` and `npx tsc --noEmit` were clean at Task 1-2 completion. Production apply and the two independent dry-run confirmations (orchestrator's post-apply check, and this continuation session's fresh check) all returned consistent, expected results.
 
 ## User Setup Required
 
-**Action required — blocking-human checkpoint (Task 3).** The developer must:
-1. Dry run: `npx tsx scripts/retro-filter-cleanup.mts` (writes NOTHING). Review the per-type report.
-2. Compare its dropped-component totals (grammar % / vocabulary % / phrase %) against the plan 16-01 baseline (grammar 8.0%, vocabulary 24.9%, phrase 21.5%, whole-corpus 22.5%) recorded in `16-01-SUMMARY.md`. A wildly different grammar drop rate is a red flag — investigate before applying.
-3. Sanity-check the edges-to-prune count/sample: they should look plausibly spurious, not obviously-correct prerequisite links.
-4. If the dry run looks right: apply with `npx tsx scripts/retro-filter-cleanup.mts --apply`.
-5. Confirm the final report (cards changed, edges pruned, edges added, total edges after). Optionally cross-check with `node scripts/check-edges.mjs`.
-6. Re-run the dry run once more — it should report 0 cards to change and 0 edges to prune/add (idempotency proof).
-7. Report back with "approved" and the recorded before/after counts, or describe any anomaly.
+None further — the one piece of user setup required by this plan (running/approving the production cleanup) has been completed. No ongoing service configuration is needed; the script is a one-off developer tool, safe to re-run in dry-run mode at any time for a sanity check (it will report 0/0/0 unless new spurious components enter the corpus via a regression).
 
 ## Next Phase Readiness
 
-**PAUSED at Task 3 (blocking-human checkpoint).** Tasks 1-2 are complete and committed. GRAPH-03 Success Criterion 1 will not be closed against the EXISTING corpus until the developer runs the cleanup script per the steps above and this plan is resumed with the approved counts recorded. This is the final plan in Phase 16 — the phase cannot be marked complete until this checkpoint resolves.
+**COMPLETE.** All three tasks are done and committed. GRAPH-03 Success Criterion 1 is now closed against the EXISTING corpus (not just future syncs) — the production Turso database has been cleaned (511 cards rewritten, 2 stale edges pruned, 4 newly-valid edges added) and confirmed idempotent by two independent dry-run checks. This is the final plan in Phase 16 — **Phase 16 (Components[] Filter Fix) is now fully complete: 4/4 plans, all 5 requirements (GRAPH-01 through GRAPH-05) satisfied.** Phase 17 (ReviewLog Schema & Idempotent Write Path) may now proceed per the roadmap's dependency ordering.
 
 ---
 *Phase: 16-components-filter-fix*
-*Completed: 2026-07-03 (Tasks 1-2; Task 3 pending)*
+*Completed: 2026-07-03*
 
 ## Self-Check: PASSED
 
 - FOUND: scripts/retro-filter-cleanup.mts
 - FOUND commit: 16b4507 (feat: add retro-filter-cleanup.mts dry-run corpus cleanup script)
 - FOUND commit: f39f2af (docs: document retro-filter-cleanup.mts in CLAUDE.md Scripts section)
+- FOUND: CLAUDE.md documents retro-filter-cleanup.mts (grep confirms 1 match)
+- Independently re-ran `npx tsx scripts/retro-filter-cleanup.mts` (dry-run) in this continuation session: reported 1039 cards loaded, deck set size 1039, 0 cards to change, 0 edges to prune, 0 edges to add, existing edge total 2133 — matches the prior session's reported post-apply state exactly
 - `npm run lint`: clean (1 pre-existing unrelated warning)
 - `npx tsc --noEmit`: clean
