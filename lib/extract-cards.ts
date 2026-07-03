@@ -2,8 +2,6 @@ import Anthropic from '@anthropic-ai/sdk'
 import { sentenceMatch } from './sentence-match'
 import { normalizeFront } from './card-key'
 
-const anthropic = new Anthropic()
-
 export interface ExtractedSentence {
   korean:      string   // full sentence, no blank — targetForm appears verbatim
   targetForm:  string   // exact surface form in the sentence (inflected for grammar)
@@ -32,6 +30,8 @@ export async function extractCardsFromNotes(
   existingNormalizedFronts: string[] = [],
   emphasized: string[] = []
 ): Promise<ExtractedCard[]> {
+  const anthropic = new Anthropic()
+
   const existingList =
     existingNormalizedFronts.length > 0
       ? existingNormalizedFronts.map((f) => `- ${f}`).join('\n')
@@ -168,6 +168,41 @@ ${notes}`,
 
   const text = content.text.trim()
 
+  return parseExtractionResponse(text)
+}
+
+const VALID_CARD_TYPES = ['vocabulary', 'grammar', 'phrase'] as const
+
+/**
+ * Structural validation guard (GRAPH-02) — mirrors lib/gloss.ts's LLM-response
+ * shape-check convention. Keeps a parsed card object only when it has a
+ * non-empty `front`/`back` string and either no `type` (tolerated — defaults
+ * to 'vocabulary' below) or a `type` that is one of the three valid values.
+ * A present-but-invalid type (e.g. "noun") is rejected, never coerced.
+ */
+function isValidExtractedCard(c: unknown): c is Partial<ExtractedCard> {
+  if (typeof c !== 'object' || c === null) return false
+  const candidate = c as Partial<ExtractedCard>
+  if (typeof candidate.front !== 'string' || candidate.front.trim().length === 0) return false
+  if (typeof candidate.back !== 'string' || candidate.back.trim().length === 0) return false
+  if (
+    candidate.type !== undefined &&
+    !(VALID_CARD_TYPES as readonly string[]).includes(candidate.type)
+  ) {
+    return false
+  }
+  return true
+}
+
+/**
+ * Pure parser for Claude's raw extraction response text. Runs the tolerant
+ * JSON salvage parser (unchanged from prior behavior — a dense/truncated
+ * lesson still yields the cards that did complete) THEN per-card structural
+ * validation (GRAPH-02: a malformed card object is dropped, never coerced
+ * into an empty-string card) BEFORE the existing normalization step. No
+ * Anthropic call inside — safe to unit test in isolation.
+ */
+export function parseExtractionResponse(text: string): ExtractedCard[] {
   // Tolerant JSON parser: if the full parse fails (e.g. truncated output), trim back
   // to the last complete object before the array closes so a dense lesson still
   // yields the cards that did complete rather than losing them all.
@@ -206,8 +241,12 @@ ${notes}`,
     }
   }
 
+  // Structural validation (GRAPH-02): drop cards that are missing/empty
+  // front/back or carry a present-but-invalid type, BEFORE normalization.
+  const validCards = parsed.filter(isValidExtractedCard)
+
   // Defensively normalize so a malformed field from the model can't break sync.
-  return parsed.map((c) => {
+  return validCards.map((c) => {
     const front = c.front ?? ''
     const myKey = normalizeFront(front)
 
