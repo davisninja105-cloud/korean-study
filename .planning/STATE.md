@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Knowledge Graph Quality & History
 current_phase: 16
-current_phase_name: Components[] Filter Fix
+current_phase_name: components-filter-fix
 status: executing
-stopped_at: ROADMAP.md + STATE.md written, REQUIREMENTS.md traceability filled (15/15 mapped)
-last_updated: "2026-07-03T16:35:16.803Z"
-last_activity: 2026-07-02
-last_activity_desc: Roadmap created; 4 phases (16–19), 15/15 requirements mapped
+stopped_at: "Phase 16 plan 01 paused at Task 3 checkpoint:human-verify (blocking) — Tasks 1-2 committed (filterComponents + tests, dry-run-filter.mjs)"
+last_updated: "2026-07-03T21:40:51.129Z"
+last_activity: 2026-07-03
+last_activity_desc: Phase 16 execution started
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_plans: 4
+  completed_plans: 1
   percent: 0
 ---
 
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** v1.4 Knowledge Graph Quality & History — Phase 16 (Components[] Filter Fix)
+**Current focus:** Phase 16 — components-filter-fix
 
 ## Current Position
 
-Phase: 16 of 19 (Components[] Filter Fix) — first phase of the v1.4 milestone
-Plan: — of TBD
-Status: Ready to execute
-Last activity: 2026-07-02 — Roadmap created; 4 phases (16–19), 15/15 requirements mapped
+Phase: 16 (components-filter-fix) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 16
+Last activity: 2026-07-03 — Phase 16 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -78,6 +78,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 - [Phase 17 → research flag] The idempotency-key mechanism + its interaction with `handleUndo`'s in-flight retry is a genuine design decision, not a copy-paste. Recommend a focused discuss/research pass on the idempotency/undo interaction before planning (see research SUMMARY.md Research Flags).
 - [Phase 19 → research flag] The Vercel Cron auth pattern (middleware bearer-token branch alongside the existing cookie gate) is architecturally new for this codebase (MEDIUM confidence). Worth a final direct-docs check at plan time.
 - [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch (same shape as the Phase 13-hardened routes) — out of scope; may be touched incidentally by Phase 17's undo work.
+- Phase 16 plan 01: paused at Task 3 checkpoint:human-verify (gate=blocking) - run node scripts/dry-run-filter.mjs and review the grammar-vs-vocabulary drop-rate report before approving write-path wiring (plan 16-03).
 
 ### Roadmap Evolution
 
@@ -96,9 +97,9 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-02 — v1.4 roadmap created
-Stopped at: ROADMAP.md + STATE.md written, REQUIREMENTS.md traceability filled (15/15 mapped)
-Resume file: None
+Last session: 2026-07-03T21:40:51.123Z
+Stopped at: Phase 16 plan 01 paused at Task 3 checkpoint:human-verify (blocking) — Tasks 1-2 committed (filterComponents + tests, dry-run-filter.mjs)
+Resume file: .planning/phases/16-components-filter-fix/16-01-PLAN.md
 
 ## Operator Next Steps
 
