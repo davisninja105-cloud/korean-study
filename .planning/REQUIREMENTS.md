@@ -11,9 +11,9 @@ Requirements for the "Knowledge Graph Quality & History" milestone. Each maps to
 
 - [ ] **GRAPH-01**: Extraction prompt explicitly instructs Claude to only list a component if it's a real prerequisite the card's content actually depends on (prompt tightening)
 - [ ] **GRAPH-02**: Claude's extraction response is structurally validated immediately after receipt (type-checked, malformed/truncated output rejected) — matches the existing LLM-response-validation convention (e.g. `lib/gloss.ts`)
-- [ ] **GRAPH-03**: A `components[]` entry is kept only if it resolves to a real card via `normalizeFront()` deck-lookup — not literal sentence-text containment, which would gut abstract grammar-pattern notation (e.g. `~(으)면`) that never appears verbatim in conjugated sentences
-- [ ] **GRAPH-04**: The filter is a pure, unit-tested `lib/` module reusing the two-phase resolution pattern already proven in `lib/known-words.ts` (direct `normalizeFront` match, then stem fallback)
-- [ ] **GRAPH-05**: Filter is dry-run validated against the real corpus (no writes) with drop-rate reported separately for `grammar`- vs `vocabulary`-type components, before being wired into the sync write path
+- [x] **GRAPH-03**: A `components[]` entry is kept only if it resolves to a real card via `normalizeFront()` deck-lookup — not literal sentence-text containment, which would gut abstract grammar-pattern notation (e.g. `~(으)면`) that never appears verbatim in conjugated sentences
+- [x] **GRAPH-04**: The filter is a pure, unit-tested `lib/` module reusing the two-phase resolution pattern already proven in `lib/known-words.ts` (direct `normalizeFront` match, then stem fallback)
+- [x] **GRAPH-05**: Filter is dry-run validated against the real corpus (no writes) with drop-rate reported separately for `grammar`- vs `vocabulary`-type components, before being wired into the sync write path
 
 ### Review History
 
@@ -63,9 +63,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | GRAPH-01 | Phase 16 | Pending |
 | GRAPH-02 | Phase 16 | Pending |
-| GRAPH-03 | Phase 16 | Pending |
-| GRAPH-04 | Phase 16 | Pending |
-| GRAPH-05 | Phase 16 | Pending |
+| GRAPH-03 | Phase 16 | Complete |
+| GRAPH-04 | Phase 16 | Complete |
+| GRAPH-05 | Phase 16 | Complete |
 | HIST-01 | Phase 17 | Pending |
 | HIST-02 | Phase 17 | Pending |
 | HIST-03 | Phase 17 | Pending |
@@ -78,6 +78,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | SYNC-04 | Phase 19 | Pending |
 
 **Coverage:**
+
 - v1.4 requirements: 15 total
 - Mapped to phases: 15 ✓ (Phase 16: 5 · Phase 17: 3 · Phase 18: 4 · Phase 19: 3)
 - Unmapped: 0

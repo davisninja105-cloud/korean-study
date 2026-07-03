@@ -82,10 +82,10 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   3. Abstract grammar-pattern components that never appear verbatim in conjugated sentences are correctly retained (resolution is by deck-lookup, not literal containment).
   4. Before the filter is wired into the write path, a dry run against the real corpus reports its drop rate separately for grammar- vs vocabulary-type components, confirming grammar edges are not disproportionately dropped.
 
-**Plans**: 4 plans
+**Plans**: 1/4 plans executed
 **Wave 1**
 
-- [ ] 16-01-PLAN.md — Pure deck-lookup filter module (`lib/filter-components.ts`) + read-only corpus dry-run + human-reviewed drop-rate gate (GRAPH-03/04/05)
+- [x] 16-01-PLAN.md — Pure deck-lookup filter module (`lib/filter-components.ts`) + read-only corpus dry-run + human-reviewed drop-rate gate (GRAPH-03/04/05)
 - [ ] 16-02-PLAN.md — Extraction prompt tightening + per-card LLM-response structural validation, salvage-preserving (GRAPH-01/02)
 
 **Wave 2** *(blocked on Wave 1 completion)*
@@ -163,7 +163,7 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 13. Review API Hardening & Save Reliability | v1.3 | 2/2 | Complete | 2026-07-02 |
 | 14. Sync Failure Visibility & Caching Performance | v1.3 | 2/2 | Complete | 2026-07-02 |
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 2/2 | Complete | 2026-07-03 |
-| 16. Components[] Filter Fix | v1.4 | 0/4 | Not started | - |
+| 16. Components[] Filter Fix | v1.4 | 1/4 | In Progress|  |
 | 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 0/TBD | Not started | - |
 | 18. Review History Page | v1.4 | 0/TBD | Not started | - |
 | 19. Vercel Cron Auto-Sync | v1.4 | 0/TBD | Not started | - |

@@ -5,16 +5,16 @@ milestone_name: Knowledge Graph Quality & History
 current_phase: 16
 current_phase_name: components-filter-fix
 status: executing
-stopped_at: "Phase 16 plan 01 paused at Task 3 checkpoint:human-verify (blocking) — Tasks 1-2 committed (filterComponents + tests, dry-run-filter.mjs)"
-last_updated: "2026-07-03T21:40:51.129Z"
+stopped_at: "Phase 16 plan 01 complete (checkpoint approved) — ready to execute plan 02"
+last_updated: "2026-07-03T22:29:53.650Z"
 last_activity: 2026-07-03
-last_activity_desc: Phase 16 execution started
+last_activity_desc: Phase 16 plan 01 complete (checkpoint approved)
 progress:
   total_phases: 4
   completed_phases: 0
   total_plans: 4
   completed_plans: 1
-  percent: 0
+  percent: 25
 ---
 
 # Project State
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 16 (components-filter-fix) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 16
+Plan: 2 of 4
+Status: Ready to execute
 Last activity: 2026-07-03 — Phase 16 execution started
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███░░░░░░░] 25%
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 16 P01 | 35min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 - Filter (GRAPH-03/04) resolves components by `normalizeFront()` deck-lookup, NOT literal sentence-text containment — research Reconciliation #2: substring matching would gut abstract grammar-pattern edges, the opposite of the milestone's intent. Dry-run the corpus (GRAPH-05) before wiring into the write path.
 - ReviewLog idempotency (HIST-02) is core scope, not a stretch — client-generated key + `prisma.$transaction([cardReview.update, reviewLog.create])` (array form, sidesteps Turso interactive-transaction uncertainty). Undo cancels in-flight retries (HIST-03); ReviewLog stays append-only, undo never mutates rows (HIST-06).
 - Zero new npm dependencies expected — all three features build on platform config (Vercel Cron + `vercel.json` + `CRON_SECRET`), one Prisma model via the manual Turso-DDL workaround, and reuse of existing pure `lib/` helpers.
+- [Phase 16]: filterComponents retains components purely by deck-lookup (normalizeFront direct match or splitParticle stem fallback), never by sentence-text containment, so abstract grammar patterns like ~(으)면 are preserved (GRAPH-03)
+- [Phase 16]: Human-approved corpus drop-rate baseline: grammar 8.0% (27/337), vocabulary 24.9% (539/2169), phrase 21.5% (53/246), whole-corpus 22.5% (619/2752) — grammar's low drop rate confirms no Pitfall 4 anomaly; plan 16-04 will compare its cleanup counts against this baseline
 
 ### Pending Todos
 
@@ -78,7 +81,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 - [Phase 17 → research flag] The idempotency-key mechanism + its interaction with `handleUndo`'s in-flight retry is a genuine design decision, not a copy-paste. Recommend a focused discuss/research pass on the idempotency/undo interaction before planning (see research SUMMARY.md Research Flags).
 - [Phase 19 → research flag] The Vercel Cron auth pattern (middleware bearer-token branch alongside the existing cookie gate) is architecturally new for this codebase (MEDIUM confidence). Worth a final direct-docs check at plan time.
 - [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch (same shape as the Phase 13-hardened routes) — out of scope; may be touched incidentally by Phase 17's undo work.
-- Phase 16 plan 01: paused at Task 3 checkpoint:human-verify (gate=blocking) - run node scripts/dry-run-filter.mjs and review the grammar-vs-vocabulary drop-rate report before approving write-path wiring (plan 16-03).
 
 ### Roadmap Evolution
 
@@ -97,10 +99,10 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-03T21:40:51.123Z
-Stopped at: Phase 16 plan 01 paused at Task 3 checkpoint:human-verify (blocking) — Tasks 1-2 committed (filterComponents + tests, dry-run-filter.mjs)
-Resume file: .planning/phases/16-components-filter-fix/16-01-PLAN.md
+Last session: 2026-07-03T22:28:26.876Z
+Stopped at: Completed 16-01-PLAN.md (checkpoint approved) — plan 01 of 4 complete in Phase 16
+Resume file: .planning/phases/16-components-filter-fix/16-02-PLAN.md
 
 ## Operator Next Steps
 
-- Plan the first phase with `/gsd-plan-phase 16`
+- Plan 16-01 complete. Continue Phase 16 with plan 02 (`/gsd-execute-phase 16` or equivalent).
