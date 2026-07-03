@@ -8,6 +8,17 @@ A personal Korean spaced-repetition study app (Next.js + Prisma/Turso, Claude-po
 
 When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context. If everything else fails, this must hold.
 
+## Current Milestone: v1.4 Knowledge Graph Quality & History
+
+**Goal:** Clean up hallucinated prerequisite edges, add a persistent review history with a view page, and automate daily sync so the deck never goes stale.
+
+**Target features:**
+- Fix spurious `components[]` hallucinations in card extraction (prompt tightening + deterministic post-extraction filter + Claude self-verification step) — resolves the pending todo from Phase 14 UAT
+- `ReviewLog` table logging every individual review (timestamp, cardId, rating, new FSRS state) + a view/history page to browse it
+- Vercel Cron job for daily automatic sync (1 lesson/day via the existing `MAX_LESSONS_PER_SYNC = 1` path)
+
+**Deferred:** Card retirement/mastery flag — raised in the same CONCERNS.md scan, still out of scope this milestone (belongs in a future features milestone).
+
 ## Current State
 
 **Shipped:** v1.3 Reliability & Hardening (2026-07-03)
@@ -61,14 +72,14 @@ The app is deployed and fully functional. v1.3 fixed the most pressing correctne
 
 ### Active
 
-(None yet — run `/gsd-new-milestone` to define the next milestone's requirements)
+(Defined via `/gsd-new-milestone` v1.4 — see `.planning/REQUIREMENTS.md` for REQ-IDs once written)
 
 **Deferred candidates** (raised during v1.2/v1.3, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
 - Cross-request `unstable_cache` for DB results (staleness risk outweighed gain for this single-user app at v1.2 scale — revisit only if that tradeoff changes)
 - Move `buttonColor`/`rewardColor` fetch out of `app/layout.tsx` (would require re-architecting pre-paint CSS injection)
 - `app/api/review/undo/route.ts` missing try/catch — same shape as the routes hardened in Phase 13, but out of scope for REVIEW-01..05 (deferred at Phase 13 close)
-- Spurious `components` in Claude card extraction (e.g. an unrelated grammar pattern attached to a sentence) create wrong `CardDependency` edges — `lib/extract-cards.ts:110-117`, `app/api/sync/route.ts:240-264` (captured as a todo during Phase 14 UAT, 2026-07-02)
+- Card retirement/mastery flag — considered for v1.4, deferred again (belongs in a future features milestone)
 
 ### Out of Scope
 
@@ -150,4 +161,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-03 after v1.3 Reliability & Hardening milestone*
+*Last updated: 2026-07-02 after starting v1.4 Knowledge Graph Quality & History milestone*
