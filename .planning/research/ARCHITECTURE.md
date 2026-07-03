@@ -1,519 +1,350 @@
 # Architecture Research
 
-**Domain:** RSC + client shell pattern for Next.js 16 App Router — converting useEffect-fetched pages to server-hydrated pages with interactive client shells
-**Researched:** 2026-06-29
-**Confidence:** HIGH
+**Domain:** Integration architecture for 3 new v1.4 features into an existing Next.js 16 App Router app (Korean Study)
+**Researched:** 2026-07-02
+**Confidence:** HIGH (codebase-grounded; one external pattern — Vercel Cron auth — is MEDIUM, cross-verified against official docs)
+
+This file supersedes the stale 2026-06-29 ARCHITECTURE.md (that one documented the RSC/client-shell conversion from v1.2 — a different milestone). It is scoped only to the 3 target features: cron-triggered sync, `ReviewLog` history, and a deterministic `components[]` post-extraction filter.
 
 ---
 
 ## Standard Architecture
 
-### System Overview
+### System Overview — where the 3 features attach
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│  Next.js 16 App Router — Page Route                                  │
-│                                                                       │
-│  app/cards/page.tsx (Server Component — async, no 'use client')      │
-│       │  calls prisma directly, passes data as props                 │
-│       ↓                                                              │
-│  <CardsPageClient initialCards={cards} initialLessons={lessons} />   │
-│  (components/CardsPageClient.tsx — 'use client' at top)             │
-│       │  manages search/filter/edit state                            │
-│       ↓                                                              │
-│  <CardEditor /> <SwipeRow /> <Sheet />  (already 'use client')      │
-└──────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│ FEATURE 1: Cron-triggered sync                                             │
+│                                                                              │
+│  Vercel Cron (vercel.json "crons")                                         │
+│       │ GET, once/day, Authorization: Bearer $CRON_SECRET  (auto-injected) │
+│       ▼                                                                     │
+│  middleware.ts  ── NEW: bearer-token branch for /api/cron/*                │
+│       │ (bypasses the cookie check; still fails closed if no match)        │
+│       ▼                                                                     │
+│  app/api/cron/sync/route.ts  (NEW — GET handler)                           │
+│       │ reads NEXT_PUBLIC_GOOGLE_DOC_ID server-side (no client body)       │
+│       ▼                                                                     │
+│  lib/sync.ts :: runSync(documentId)   (NEW — extracted from route body)    │
+│       │ same code POST /api/sync already runs                              │
+│       ▼                                                                     │
+│  lib/google-docs.ts → lib/extract-cards.ts (+ FEATURE 3 filter) → prisma   │
+└────────────────────────────────────────────────────────────────────────────┘
 
-┌──────────────────────────────────────────────────────────────────────┐
-│  app/cards/loading.tsx (Suspense skeleton)                           │
-│  — rendered by Next.js while the server component awaits Prisma      │
-│  — Next.js wraps the page in an implicit <Suspense> boundary         │
-│  — no manual Suspense wrappers needed in page.tsx                   │
-└──────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│ FEATURE 3: Deterministic components[] filter (runs inside the same path)   │
+│                                                                              │
+│  lib/extract-cards.ts :: extractCardsFromNotes()                           │
+│       │ Claude returns cards with raw components[]                         │
+│       ▼                                                                     │
+│  lib/filter-components.ts :: filterHallucinatedComponents()  (NEW, pure)   │
+│       │ drops components[] entries not attested in this card's own         │
+│       │ sentences[].korean / notes text                                    │
+│       ▼                                                                     │
+│  returned ExtractedCard[] — sync route persists the FILTERED components    │
+│  (both POST /api/sync and the new cron path go through the same function, │
+│   so no duplication)                                                       │
+└────────────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ FEATURE 2: ReviewLog                                                       │
+│                                                                              │
+│  components/StudySession.tsx :: submitReview()  (UNCHANGED shape)          │
+│       │ optimistic local FSRS compute → setQueue immediately               │
+│       │ void postReviewWithRetry(cardId, rating, onExhausted)  (fire-and-  │
+│       │ forget, bounded 3-attempt retry — UNCHANGED)                       │
+│       ▼                                                                    │
+│  app/api/review/route.ts  POST  (MODIFIED — same try/catch, same request)  │
+│       │ prisma.$transaction([                                              │
+│       │   cardReview.update(...),        ← existing write                 │
+│       │   reviewLog.create({ cardId, rating, ...newFsrsFields }),  ← NEW   │
+│       │ ])                                                                 │
+│       ▼                                                                    │
+│  ReviewLog row persisted — immutable, append-only                          │
+│                                                                              │
+│  app/api/review/undo/route.ts  POST  (UNCHANGED — does NOT touch ReviewLog)│
+│       │ reverts CardReview to prevState only, exactly as today             │
+│       ▼                                                                    │
+│  ReviewLog is a history/audit trail, not a mirror of current FSRS state —  │
+│  an undone review still appears in history (documented, not a bug)         │
+│                                                                              │
+│  app/history/page.tsx (NEW, RSC) → components/HistoryClient.tsx (NEW)      │
+│       │ same RSC + DTO pattern as /cards, /study, /, /habits               │
+│       ▼                                                                    │
+│  lib/dto.ts :: ReviewLogDTO  (NEW — .toISOString() timestamp)              │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Component Responsibilities
 
-| Component | Responsibility | How Built |
-|-----------|----------------|-----------|
-| `app/X/page.tsx` | Fetch DB data, pass as props | `async function`, no `'use client'`, calls `prisma` directly |
-| `components/XPageClient.tsx` | Own all interactive state, receive initial data as props | `'use client'` at top, `useState` seeded from props |
-| `app/X/loading.tsx` | Suspense skeleton shown while server component awaits | Thin skeleton JSX, no state, no hooks |
-| Existing interactive components | Unchanged — `StudySession`, `CardEditor`, `SwipeRow`, etc. | Already `'use client'`; receive props from the client shell |
-
----
-
-## Core Pattern: RSC + Client Shell
-
-### How Server Data Reaches a Client Component
-
-The server component fetches from Prisma and passes the result as a plain serializable prop to a `'use client'` child. The client component seeds its `useState` from that prop using a lazy initializer. Props passed across the RSC/client boundary must be JSON-serializable — no `Date` objects, no `undefined` (use `null` or ISO strings).
-
-```typescript
-// app/cards/page.tsx  — Server Component (no 'use client')
-import { prisma } from '@/lib/prisma'
-import CardsPageClient from '@/components/CardsPageClient'
-
-export default async function CardsPage() {
-  const [cards, lessons] = await Promise.all([
-    prisma.card.findMany({
-      include: {
-        review: true,
-        lesson: { select: { title: true, orderIndex: true } },
-        sentences: { orderBy: { orderIndex: 'asc' } },
-      },
-      orderBy: { createdAt: 'desc' },
-    }),
-    prisma.lesson.findMany({
-      orderBy: { orderIndex: 'asc' },
-      select: { id: true, title: true, orderIndex: true },
-    }),
-  ])
-  return <CardsPageClient initialCards={cards} initialLessons={lessons} />
-}
-```
-
-```typescript
-// components/CardsPageClient.tsx  — Client Shell
-'use client'
-
-import { useState } from 'react'
-// ...same imports as current app/cards/page.tsx...
-
-interface Props {
-  initialCards: Card[]
-  initialLessons: LessonItem[]
-}
-
-export default function CardsPageClient({ initialCards, initialLessons }: Props) {
-  // Seed state from server-provided initial data.
-  // Lazy initializer: only runs once at mount, clarifies intent.
-  const [cards, setCards] = useState<Card[]>(() => initialCards)
-  const [lessons, setLessons] = useState<LessonItem[]>(() => initialLessons)
-  // ...rest of the current page component body, unchanged...
-}
-```
-
-The `loadCards` callback (currently defined in `app/cards/page.tsx`) stays in the client shell — it is called after mutations (add/delete/edit) to refresh client state via `fetch('/api/cards')`. The initial load no longer needs it.
-
----
-
-## Data Flow Diagrams
-
-### Data Flow: Cards Page
-
-```
-Navigation to /cards
-    ↓
-app/cards/loading.tsx shown immediately (Suspense boundary auto-created by Next.js)
-    ↓
-app/cards/page.tsx (server) runs:
-    prisma.card.findMany()    ─┐
-    prisma.lesson.findMany()   ┘  parallel via Promise.all
-    ↓
-<CardsPageClient initialCards={...} initialLessons={...} /> rendered with data
-    ↓
-Client hydrates: useState seeded, no useEffect fetch needed for initial cards
-    ↓
-User searches / filters  →  client state (search, filter, lessonFrom, lessonTo)
-User edits / deletes     →  POST /api/cards → loadCards() refetch updates state
-```
-
-No `useEffect` fetch on initial load. Mutations still go through the existing API routes.
-
-### Data Flow: Study Page
-
-The study page has a multi-phase state machine. Server hydration only removes the initial `phase='loading'` phase; all other state transitions remain client-side.
-
-```
-Navigation to /study
-    ↓
-app/study/loading.tsx shown immediately
-    ↓
-app/study/page.tsx (server) runs:
-    prisma.card.findMany(where: { review: { nextReview: { lte: now } } })  ─┐
-    prisma.lesson.findMany()                                                  ┤  parallel
-    getSessionSize() + getDailyGoalSeconds() + getDayStartHour()             ┤  via Promise.all
-    prisma.studyDay.findMany(take: 400)                                      ┘
-    ↓
-<StudyPageClient initialCards={...} initialLessons={...}
-                 sessionSize={...} initialActivity={...} /> rendered
-    ↓
-Client hydrates: phase initialized to 'select-mode' (not 'loading'),
-                 cards already present, no useEffect fetch on mount
-    ↓
-User changes lesson range  →  loadDue() fetch  →  /api/cards/due?lessonFrom=&lessonTo=
-    (server hydration only removes the *first* loading phase;
-     lesson-range re-fetches remain client-side as before)
-    ↓
-StudySession receives studyCards as prop, manages mutable queue state internally
-```
-
-The `StudySession` component already owns queue state internally — it receives `cards` once as an initial prop and manages from there. No change to `StudySession` is needed; only the source of the initial `cards` array changes (prop from server rather than state set from fetch).
-
-### Data Flow: Home Page
-
-```
-Navigation to /
-    ↓
-app/loading.tsx shown immediately
-    ↓
-app/page.tsx (server) runs:
-    prisma.card.count()
-    prisma.cardReview.count(where: { nextReview: { lte: now } })
-    prisma.lesson.count()
-    prisma.cardReview.count(where: { state: 2, scheduledDays: { gte: 21 } })
-    prisma.studyDay.findMany(take: 400)
-    getDailyGoalSeconds() + getDayStartHour()
-    all parallel via Promise.all
-    ↓
-<HomeClient initialStats={...} initialActivity={...} /> rendered
-    ↓
-Client hydrates: heroState can be derived on first render from props
-                 greeting computed in useEffect from Date (impure — unchanged)
-    ↓
-Pull-to-refresh  →  POST /api/sync  →  loadStats() + loadActivity() refetches (unchanged)
-```
-
-The `greeting` stays in a `useEffect` because `new Date().getHours()` is impure under `react-hooks/purity`. One cosmetic render without the greeting is acceptable.
-
-`HabitTracker` is used on this page and currently self-fetches `/api/activity`. Since the server component already fetches this data, `HabitTracker` should accept an optional `initialData` prop and skip its internal fetch when provided. See the Modified Files section.
-
-### Data Flow: Habits Page
-
-```
-Navigation to /habits
-    ↓
-app/habits/loading.tsx shown immediately
-    ↓
-app/habits/page.tsx (server) runs:
-    prisma.studyDay.findMany(take: 400)
-    prisma.cardReview.count(where: { state: 2, scheduledDays: { gte: 21 } })
-    getDailyGoalSeconds() + getDayStartHour()
-    all parallel via Promise.all
-    ↓
-<HabitsPageClient initialDays={...} initialGoal={...}
-                  initialDayStartHour={...} masteredCount={...} /> rendered
-    ↓
-Client hydrates: all useMemo stats computed synchronously from prop-seeded state
-                 no loading state, no flash
-```
-
----
-
-## How `loading.tsx` Interacts with Suspense
-
-Next.js App Router wraps each page's server component in an implicit `<Suspense>` boundary. `loading.tsx` is the fallback for that boundary. The sequence is:
-
-1. User navigates to `/cards`.
-2. Next.js **immediately** streams the fallback from `app/cards/loading.tsx` to the browser.
-3. The server component (`app/cards/page.tsx`) awaits Prisma queries concurrently.
-4. Once data is ready, Next.js streams the full page HTML with initial data serialized into the RSC payload.
-5. React hydration runs: the `'use client'` shell picks up the serialized props, `useState` is seeded, the component becomes interactive with no additional network fetch.
-
-`loading.tsx` is only shown during the server-side data-fetch phase (point 2 through 4 above). Once the page is hydrated, subsequent client-side interactions (lesson filter change, etc.) manage loading via the component's own internal state — not `loading.tsx` again. `loading.tsx` only fires on navigation to that route.
-
-No `<Suspense>` wrappers need to be added manually inside `page.tsx`. The implicit page-level boundary is sufficient.
-
----
-
-## Auth in RSC: Why No Action Is Needed
-
-`middleware.ts` runs at the Edge before the server component executes. By the time `app/cards/page.tsx` runs, the request has already been validated — the user is authenticated. Server components do not need to re-check the cookie.
-
-The `matcher` in `middleware.ts` covers all non-login routes:
-```
-'/((?!login|api/login|_next/static|_next/image|favicon.ico|...).*)'
-```
-
-This means RSC pages (`/`, `/cards`, `/study`, `/habits`) are protected identically to API routes.
-
-Server components do not have access to `req.cookies` the way API routes do. If a server component needed to read the cookie directly, it would use `import { cookies } from 'next/headers'`. For this single-tenant app, this is never needed. The middleware guard is sufficient.
-
----
-
-## Project Structure: New vs. Modified Files
-
-### New Files
-
-| File | What It Is | Notes |
-|------|-----------|-------|
-| `app/loading.tsx` | Home page skeleton | Root route Suspense fallback |
-| `app/cards/loading.tsx` | Cards page skeleton | Search bar outline + card row stubs |
-| `app/study/loading.tsx` | Study page skeleton | Card count area + start button stub |
-| `app/habits/loading.tsx` | Habits skeleton | Streak hero + heatmap grid outline |
-| `components/HomeClient.tsx` | Extracted home page client | Cut from `app/page.tsx`; accepts `initialStats`, `initialActivity` |
-| `components/CardsPageClient.tsx` | Extracted cards page client | Cut from `app/cards/page.tsx`; accepts `initialCards`, `initialLessons` |
-| `components/StudyPageClient.tsx` | Extracted study page client | Cut from `app/study/page.tsx`; accepts `initialCards`, `initialLessons`, `sessionSize`, `initialActivity` |
-| `components/HabitsPageClient.tsx` | Extracted habits page client | Cut from `app/habits/page.tsx`; accepts `initialDays`, `initialGoal`, `initialDayStartHour`, `masteredCount` |
-
-### Modified Files
-
-| File | Change | Why |
-|------|--------|-----|
-| `app/page.tsx` | Remove `'use client'`, make `async`, call `prisma` + `lib/settings`, render `<HomeClient />` | Convert to server component |
-| `app/cards/page.tsx` | Same pattern | Convert to server component |
-| `app/study/page.tsx` | Same pattern | Convert to server component |
-| `app/habits/page.tsx` | Same pattern | Convert to server component |
-| `components/HabitTracker.tsx` | Add optional `initialData?: ActivityData` prop; skip internal `useEffect` fetch when provided | Home server already fetches activity; avoids redundant network call |
-
-### Unchanged Files
-
-Everything in `components/StudySession.tsx`, `components/CardEditor.tsx`, `components/SwipeRow.tsx`, `components/Sheet.tsx`, all `lib/*` modules, and all `app/api/*` routes stays unchanged. The conversion is purely at the page boundary.
+| Component | New / Modified | Responsibility |
+|-----------|-----------------|-----------------|
+| `prisma/schema.prisma` | Modified | Add `ReviewLog` model. Applied to Turso via hand-written DDL (`prisma migrate diff --from-empty --to-schema … --script`, then `executeMultiple()`), **not** `prisma db push` |
+| `scripts/apply-reviewlog-ddl.mjs` | New | One-time DDL script, same shape as `apply-graph-ddl.mjs` / `apply-sentence-ddl.mjs` |
+| `lib/sync.ts` | New | `runSync(documentId): Promise<SyncResult>` — the entire body currently inline in `app/api/sync/route.ts` (lines 21–283), extracted so both the manual route and the cron route call one function. Follows the existing `lib/study-cards.ts` / `lib/dashboard.ts` "shared pipeline module" convention already established in v1.2 |
+| `app/api/sync/route.ts` | Modified | Thin POST handler: parse `documentId` from body → `runSync(documentId)` → return JSON. No behavior change from the user's perspective |
+| `app/api/cron/sync/route.ts` | New | GET handler for Vercel Cron. Reads `documentId` from `process.env.NEXT_PUBLIC_GOOGLE_DOC_ID` server-side (no request body — cron requests carry no payload). Calls the same `runSync()`. `maxDuration = 300` (already ineffective on Hobby but keep for consistency/documentation, matches existing sync route comment) |
+| `middleware.ts` | Modified | Add a branch: if `pathname.startsWith('/api/cron/')`, check `Authorization === 'Bearer ' + process.env.CRON_SECRET` and allow/401 — independent of the cookie check. Everything else unchanged. Route stays inside the matcher (do **not** add it to the public-path regex — that would let anyone hit it unauthenticated) |
+| `vercel.json` | New | `{ "crons": [{ "path": "/api/cron/sync", "schedule": "0 8 * * *" }] }` (or similar once-daily cron expression) |
+| `lib/extract-cards.ts` | Modified | After building the normalized `ExtractedCard[]` return value (the existing `.map()` at the bottom), call the new filter on each card's `components` before returning |
+| `lib/filter-components.ts` | New | `filterHallucinatedComponents(components: string[], sentences: {korean:string}[], notes: string \| undefined): string[]` — pure function, no Prisma/Anthropic import. Deterministic post-check: keep a component only if it (or a normalized/substring match) is attested in the card's own sentence text or notes. Named/shaped like the project's existing pure single-source-of-truth modules (`lib/sentence-match.ts`, `lib/known-words.ts`, `lib/sequence.ts`) |
+| `app/api/review/route.ts` | Modified | Wrap `cardReview.update` + new `reviewLog.create` in `prisma.$transaction([...])` inside the existing try/catch. No new route, no new latency added to the client (already fire-and-forget) |
+| `app/api/review/undo/route.ts` | Not modified (decision, see below) | Continues to revert `CardReview` only. `ReviewLog` is treated as an immutable audit trail — an undone review still shows in history. Flag this as an explicit product decision to confirm at roadmap/requirements time, not a gap to silently fix |
+| `lib/dto.ts` | Modified | Add `ReviewLogDTO` (timestamp fields as ISO strings, per RSC-05 DTO contract) |
+| `app/history/page.tsx` + `components/HistoryClient.tsx` | New | Same RSC + client-shell + DTO pattern as every other main route: thin async server component fetches via a new `lib/review-log.ts:getReviewLog()` helper, renders one client shell |
 
 ---
 
 ## Architectural Patterns
 
-### Pattern 1: Props-as-Initial-State with Lazy Initializer
+### Pattern 1: Cron auth via middleware bearer-token branch (not a route-level check)
 
-**What:** Server-fetched data arrives as a prop; client state is seeded using the `useState` lazy initializer form.
+**What:** Vercel automatically sends `Authorization: Bearer $CRON_SECRET` on cron-triggered requests when `CRON_SECRET` is set as a project env var. Vercel does **not** bypass app-level auth for you — the app must check this header itself. Given `middleware.ts` already gates every path except an explicit allowlist, the correct integration point is `middleware.ts`, not a check duplicated inside `app/api/cron/sync/route.ts`. This keeps the single existing choke point (middleware) as the sole source of auth truth, matching the codebase's existing single-shared-password gate design (`lib/auth.ts` + `middleware.ts`).
 
-**When to use:** Any data that arrives from the server and will be mutated or re-fetched by user actions.
+**When to use:** Any future cron/webhook route that must run without the shared-password cookie.
 
-**Trade-offs:** Simple and idiomatic. The prop/state diverge after mount — if the server re-renders (navigation away and back), React re-mounts and re-seeds from fresh server data, which is correct behavior.
+**Trade-offs:** A route-level check (inside the handler) would also work and is what most Vercel Cron tutorials show, but this project already centralizes all auth in middleware — adding a second auth mechanism inside individual route handlers would fragment that. Extending middleware keeps one source of truth and makes future cron/webhook routes a one-line addition to the same branch.
 
+**Example (illustrative, not final code):**
 ```typescript
-// Correct: lazy initializer — only runs once at mount
-const [cards, setCards] = useState<Card[]>(() => initialCards)
+// middleware.ts
+export async function middleware(req: NextRequest) {
+  if (req.nextUrl.pathname.startsWith('/api/cron/')) {
+    const auth = req.headers.get('authorization')
+    if (auth === `Bearer ${process.env.CRON_SECRET}`) return NextResponse.next()
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+  // ... existing cookie check, unchanged
+}
 
-// Also correct but less explicit about intent:
-const [cards, setCards] = useState<Card[]>(initialCards)
-
-// Both are equivalent for the initial mount case.
-// The lazy form is preferred when initialCards is a large array
-// (avoids creating a new array reference on every render before state settles).
+export const config = {
+  matcher: [
+    '/((?!login|api/login|_next/static|_next/image|favicon.ico|manifest.webmanifest|icon-.*\\.png|apple-icon.*\\.png).*)',
+  ],
+}
 ```
+`/api/cron/sync` stays **inside** the matcher (it is not added to the exclusion regex) — the new branch inside the middleware body is what grants it access, not a matcher exclusion. This is the important distinction: excluding it from the matcher would make it public to anyone, not just Vercel.
 
-### Pattern 2: Derived Initial Phase Eliminates the Loading Phase
+**Confidence: MEDIUM** (cross-verified via WebSearch against Vercel's own cron-jobs docs and multiple independent tutorials; not read directly from the primary Vercel docs page in this session).
 
-**What:** The study page starts in `phase='loading'` and transitions to `phase='select-mode'` after the fetch resolves. With server hydration, `initialCards` arrives already fetched, so the initial phase should be `'select-mode'`.
+### Pattern 2: `lib/sync.ts` extraction — reuse the existing "shared pipeline module" convention
 
-**When to use:** Any page that has a loading phase gated on data that now arrives from the server.
+**What:** v1.2 already established the exact template needed here: `lib/study-cards.ts:getStudyCards()` and `lib/dashboard.ts:getStats()/getActivityData()` were extracted from inline API-route logic specifically so two different call sites (an RSC page and a legacy API route) share one implementation. The cron route is architecturally identical to that problem — two call sites (`POST /api/sync` and `GET /api/cron/sync`) need the exact same sync logic, differing only in how they obtain `documentId` and how they're authenticated.
 
+**When to use:** Any time a second caller needs logic currently inlined in a single route handler.
+
+**Trade-offs:** None significant — this is a pure refactor extraction, zero behavior change, and it's the path of least resistance given the file already reads cleanly top-to-bottom as one function body.
+
+**Example:**
 ```typescript
-// In StudyPageClient — initialCards always present from server
-const [phase, setPhase] = useState<Phase>('select-mode')
-// The 'loading' phase is still used for lesson-range filter re-fetches.
-// It is no longer the initial state.
+// lib/sync.ts
+export async function runSync(documentId: string): Promise<SyncResult> {
+  // exact current body of app/api/sync/route.ts's try block
+}
+
+// app/api/sync/route.ts
+export async function POST(req: NextRequest) {
+  const { documentId } = await req.json()
+  if (!documentId) return NextResponse.json({ error: 'documentId is required' }, { status: 400 })
+  return NextResponse.json(await runSync(documentId))
+}
+
+// app/api/cron/sync/route.ts
+export const maxDuration = 300
+export async function GET() {
+  const documentId = process.env.NEXT_PUBLIC_GOOGLE_DOC_ID ?? ''
+  if (!documentId) return NextResponse.json({ error: 'documentId not configured' }, { status: 500 })
+  return NextResponse.json(await runSync(documentId))
+}
 ```
+Note: middleware already rejects the request before this handler runs if the bearer token is wrong, so the handler itself needs no auth logic — consistent with how every other authenticated route in this app currently works (auth lives entirely in middleware, never duplicated in route bodies).
 
-### Pattern 3: Parallel Prisma Queries in Server Components
+### Pattern 3: ReviewLog write — same transaction, same request, no new latency
 
-**What:** Use `Promise.all` to run independent Prisma queries concurrently.
+**What:** `POST /api/review` is already fire-and-forget from the client's perspective (`void postReviewWithRetry(...)`, never awaited, UI already advanced optimistically). This means the *server-side* request can safely take a few extra milliseconds for a second insert — that cost is invisible to the user. The only real risk is **not** latency but **atomicity**: if `cardReview.update` succeeds but `reviewLog.create` fails (or vice versa), the client's bounded retry (`postReviewWithRetry`, 3 attempts on network/5xx) would re-run `reviewCard()` against an *already-advanced* `CardReview` row, silently double-applying the FSRS update. Wrapping both writes in `prisma.$transaction([...])` makes the pair atomic — either both land or neither does, so a retry after a transaction failure re-runs cleanly from the pre-update state, matching the existing retry contract's implicit assumption.
 
-**When to use:** Every server component that needs data from multiple tables.
+**When to use:** Whenever two dependent writes must succeed or fail together, especially under retry semantics.
 
+**Trade-offs:** `$transaction([...])` (the array/batch form, not the interactive callback form) is sufficient here since both operations are simple non-interdependent writes computed *before* the transaction call (the FSRS `updated` object is computed synchronously via `reviewCard()` before any DB write, exactly as today) — no need for the slower interactive `$transaction(async tx => …)` form.
+
+**Note on the retry double-write edge case (flag, not fix):** Even with the transaction, if the transaction *succeeds* server-side but the HTTP response is lost in flight (client times out at 8s and retries), the retry will still re-run `reviewCard()` on the now-already-advanced row and create a *second* legitimate-looking `ReviewLog` row + double-advance FSRS state. This is a pre-existing risk in the FSRS-state sense (present before this milestone) — this feature just makes it visible for the first time as a duplicate history row. Not blocking, but worth a one-line callout in the phase's UAT/verification (e.g., "confirm no visible duplicate rows after simulating a slow-network retry") rather than silently assuming the transaction alone solves it.
+
+**Example:**
 ```typescript
-// Correct: parallel queries — total time = max(query times)
-const [cards, lessons] = await Promise.all([
-  prisma.card.findMany({ ... }),
-  prisma.lesson.findMany({ ... }),
+// app/api/review/route.ts — inside the existing try block
+const updated = reviewCard(cardReview, rating)
+
+const [review] = await prisma.$transaction([
+  prisma.cardReview.update({ where: { cardId }, data: updated }),
+  prisma.reviewLog.create({
+    data: {
+      cardId,
+      rating,
+      state: updated.state,
+      stability: updated.stability,
+      difficulty: updated.difficulty,
+      reviewedAt: new Date(),
+    },
+  }),
 ])
 
-// Wrong: serial — total time = sum(query times)
-const cards = await prisma.card.findMany({ ... })
-const lessons = await prisma.lesson.findMany({ ... })
+return NextResponse.json(review)
 ```
 
-This same principle applies to the existing `/api/cards/due` route (PERF-06): the route currently has serial `await` calls for `getSessionSize()` and the card queries; these should become a `Promise.all`.
+### Pattern 4: Filter as a pure `lib/` module, invoked from `lib/extract-cards.ts` — not inline in the route
 
-### Pattern 4: Skeleton-Only `loading.tsx`
+**What:** The codebase has a strict, repeatedly-stated convention: pure business logic lives in `lib/`, is unit-testable without Prisma/network, and is the single source of truth reused across call sites (`lib/sentence-match.ts`, `lib/known-words.ts`, `lib/sequence.ts`, `lib/card-key.ts` are the direct precedents). `lib/extract-cards.ts` already has a defensive normalization pass at the very end of `extractCardsFromNotes()` (the `parsed.map((c) => {...})` block, lines 204–240) that cleans `components` (dedup, self-exclusion, empty-string filtering). The new deterministic filter is one more step in that same pipeline — call it from inside that `.map()`, but keep its logic in its own file so it's independently unit-testable and reusable if `scripts/local-resync.mts` or `scripts/relink-dependencies.mjs` ever need the same check.
 
-**What:** `loading.tsx` contains only static skeleton markup — no hooks, no state, no data fetching.
+**When to use:** Any deterministic, non-LLM validation/cleanup step on LLM output.
 
-**When to use:** Every route with a server component that fetches data.
+**Trade-offs:** Putting it inline inside `extract-cards.ts` (rather than a separate file) would also work and would avoid one import, but breaks the project's established "single source of truth, unit-tested pure module" pattern and would be harder to test in isolation (the file already does `Anthropic` API calls at module scope — importing it in a test file triggers `new Anthropic()` construction unless carefully mocked). A separate pure file avoids that entirely.
 
+**Example:**
 ```typescript
-// app/cards/loading.tsx
-export default function CardsLoading() {
-  return (
-    <div className="flex flex-col gap-4 animate-pulse">
-      <div className="h-11 bg-surface-3 rounded-xl w-full" />
-      <div className="h-8 bg-surface-3 rounded-lg w-32" />
-      {Array.from({ length: 6 }).map((_, i) => (
-        <div key={i} className="h-16 bg-surface-3 rounded-xl w-full" />
-      ))}
-    </div>
-  )
+// lib/filter-components.ts — pure, no Prisma/Anthropic imports
+export function filterHallucinatedComponents(
+  components: string[],
+  sentences: { korean: string }[],
+  notes: string | undefined,
+): string[] {
+  const haystack = [...sentences.map((s) => s.korean), notes ?? ''].join(' ')
+  return components.filter((c) => haystack.includes(c))
 }
+
+// lib/extract-cards.ts — inside the existing return parsed.map(...) block
+const rawComponents = /* existing dedup/self-exclusion logic, unchanged */
+const components = filterHallucinatedComponents(rawComponents, sentencesForThisCard, c.notes)
+```
+Exact matching rule (substring vs. normalized/stemmed match) is an open design question for the phase plan — see Gaps below.
+
+---
+
+## Data Flow
+
+### Cron sync flow (Feature 1)
+
+```
+Vercel Cron scheduler (daily)
+    ↓ GET /api/cron/sync, Authorization: Bearer $CRON_SECRET
+middleware.ts (bearer-token branch, NEW)
+    ↓ pass
+app/api/cron/sync/route.ts (NEW)
+    ↓ documentId = process.env.NEXT_PUBLIC_GOOGLE_DOC_ID
+lib/sync.ts :: runSync(documentId) (NEW — extracted, shared with POST /api/sync)
+    ↓
+lib/google-docs.ts → lib/extract-cards.ts (incl. Feature 3 filter) → prisma upserts
+    ↓
+JSON result (same shape SyncPanel already parses) — no UI consumes this cron response directly;
+logged server-side (Vercel function logs) for now. A future "last synced" surface is out of
+scope for this milestone unless added as a requirement.
 ```
 
-The skeleton approximates the real layout so the transition to real content is smooth. Uses `bg-surface-3` (deep well token) consistent with the existing pulse skeletons already in `app/study/page.tsx`.
+### Review + log flow (Feature 2)
 
-### Pattern 5: Optional `initialData` Prop for Self-Fetching Components
+```
+User taps grade button (StudySession.tsx)
+    ↓ synchronous: reviewCard() computed client-side, setQueue() advances immediately (UNCHANGED)
+    ↓ void postReviewWithRetry(cardId, rating, onExhausted)  — fire-and-forget (UNCHANGED)
+POST /api/review (MODIFIED)
+    ↓ validate rating (UNCHANGED) → prisma.$transaction([cardReview.update, reviewLog.create]) (NEW pairing)
+    ↓ 200 { ...review } — response shape UNCHANGED, client doesn't need to change
+      (client never reads the response body beyond res.ok — verify no future coupling needed)
 
-**What:** A component that currently self-fetches via `useEffect` accepts an optional prop. When the prop is provided, the internal fetch is skipped. When absent, the component falls back to self-fetching (preserving backward compatibility for other use sites).
+Later — user taps "Undo"
+    ↓ POST /api/review/undo — UNCHANGED, reverts CardReview only
+    ↓ ReviewLog row from the undone review remains — immutable history (explicit decision)
+```
 
-**When to use:** Any shared component used both on pages where the server can pre-fetch the data and on pages where it cannot.
+### Filter flow (Feature 3)
 
-```typescript
-// components/HabitTracker.tsx (modified)
-interface Props {
-  initialData?: {
-    days: DayRecord[]
-    dailyGoalSeconds: number
-    dayStartHour: number
-  }
-}
-
-export default function HabitTracker({ initialData }: Props) {
-  const [days, setDays] = useState<DayRecord[] | null>(() => initialData?.days ?? null)
-  const [goal, setGoal] = useState(() => initialData?.dailyGoalSeconds ?? DEFAULT_GOAL_SECONDS)
-  // ...
-
-  useEffect(() => {
-    // Skip if initialData was provided by the server
-    if (initialData) {
-      const hour = initialData.dayStartHour
-      setToday(habitDateStr(hour))
-      return
-    }
-    // Fall back to self-fetch for pages that don't provide server data
-    fetch('/api/activity')
-      .then((r) => r.json())
-      .then((d) => { ... })
-  }, []) // empty deps — mount-only, same as today
-}
+```
+POST /api/sync or GET /api/cron/sync (both, via lib/sync.ts)
+    ↓ extractCardsFromNotes(lessonText, existingFronts, emphasized)
+lib/extract-cards.ts
+    ↓ Claude returns raw components[] per card
+    ↓ existing normalization (dedup, self-exclusion) — UNCHANGED
+    ↓ lib/filter-components.ts :: filterHallucinatedComponents() (NEW)
+    ↓ returns ExtractedCard[] with FILTERED components
+sync route persists card.components as before — no route-level change needed for this feature;
+the filter is fully contained inside extract-cards.ts's existing return pipeline
 ```
 
 ---
 
-## Build Order
+## Anti-Patterns to Avoid
 
-The conversion should be done in this order. Each phase establishes the pattern before the next and has a clear validation gate.
+### Anti-Pattern 1: Excluding `/api/cron/*` from the middleware matcher
 
-### Step 1: Cards Page (establish the pattern, lowest complexity)
+**What people do:** Add `api/cron` to the matcher's negative-lookahead regex (alongside `login`, `api/login`) so the route "just works" without touching the auth logic.
+**Why it's wrong:** That makes the sync endpoint public to anyone on the internet who finds the URL — no bearer-token check ever runs. The endpoint would silently accept unauthenticated syncs (burns Claude API budget, could be spammed).
+**Instead:** Keep `/api/cron/*` inside the matcher; add an explicit bearer-token branch inside the middleware function body that grants access only on a valid `CRON_SECRET` match, exactly as shown in Pattern 1 above.
 
-The cards page is the simplest conversion — static initial data, pure client-side filtering, mutations trigger refetch. No phase state machine. Establishing the pattern here first gives confidence before more complex pages.
+### Anti-Pattern 2: Writing `ReviewLog` in a separate, unawaited fire-and-forget call from the route
 
-**Files:**
-- Create `components/CardsPageClient.tsx` (extracted from `app/cards/page.tsx`)
-- Convert `app/cards/page.tsx` to async server component
-- Add `app/cards/loading.tsx`
+**What people do:** To "avoid slowing down the request," fire the `reviewLog.create()` off in the background inside the route handler (`.catch(() => {})`, not awaited) rather than including it in the transaction.
+**Why it's wrong:** `POST /api/review` is already the background call — there's no user-facing latency to protect at this layer. Detaching the log write from the state-update transaction reopens exactly the atomicity problem the transaction is meant to close: the update could succeed while the log silently fails (or vice versa), with no retry coverage for the failed half.
+**Instead:** Same transaction, same request — see Pattern 3.
 
-**Validation gate:**
-- No `useEffect` fetch fires on initial page load (confirm in network tab)
-- Search/filter still works client-side
-- Add/edit/delete card still works (API mutation + refetch)
-- Skeleton appears on hard-reload before cards load
+### Anti-Pattern 3: Making the filter LLM-based (a second Claude call) instead of deterministic
 
-### Step 2: Habits Page (pure read, no re-fetch, validates useMemo from props)
+**What people do:** Given the milestone description says "Claude self-verification step" as one of three named approaches (prompt tightening / deterministic filter / Claude self-verification), a naive implementation might add a second Claude round-trip to "double check" the components.
+**Why it's wrong:** The question you asked scopes this specifically to "a deterministic post-extraction filter" — a second LLM call would add real latency to a sync path that's already budget-constrained (`MAX_LESSONS_PER_SYNC = 1` exists specifically because Opus + exhaustive extraction is already slow, 60–120s/lesson, against a 60s Hobby hard cap). A second Claude call risks pushing a single-lesson sync over the timeout.
+**Instead:** Pure substring/normalized-match filter against the card's own already-returned `sentences[]`/`notes` text — zero extra network calls, sub-millisecond, matches the "deterministic" framing in the milestone goal. (Prompt tightening, if pursued, is a separate/complementary change to the prompt string in `lib/extract-cards.ts` and doesn't touch this filter module.)
 
-The habits page is all computed state — `useMemo` calls over `DayRecord[]`. Validates that `useMemo` computations from prop-seeded state work correctly on first render without a loading flash.
+### Anti-Pattern 4: Inline `prisma.card.findMany()` re-query inside the filter function
 
-**Files:**
-- Create `components/HabitsPageClient.tsx`
-- Convert `app/habits/page.tsx`
-- Add `app/habits/loading.tsx`
-
-**Validation gate:**
-- Streak, heatmap, and all-time stats render correctly on first paint
-- `today` string is derived correctly from `dayStartHour` prop (via `habitDateStr` in `useEffect`)
-- No blank state between skeleton and data
-
-### Step 3: Home Page (shared data with HabitTracker; band-up detection)
-
-Home requires modifying `HabitTracker` (add optional prop). The server component passes data to both `HomeClient` and through it to `HabitTracker`.
-
-**Files:**
-- Modify `components/HabitTracker.tsx` to accept optional `initialData` prop
-- Create `components/HomeClient.tsx`
-- Convert `app/page.tsx`
-- Add `app/loading.tsx`
-
-**Validation gate:**
-- Hero state (A/B/C) is correct on first render (no loading flash in hero area)
-- `greeting` appears after one paint (acceptable — it's impure)
-- `HabitTracker` does not make a redundant `/api/activity` fetch when `initialData` is provided (confirm in network tab)
-- Pull-to-refresh still triggers sync and updates stats
-- Band-up detection (localStorage comparison) still works
-
-### Step 4: Study Page (most complex — phase machine, lesson range re-fetch)
-
-The study page has the most state. Server hydration only removes the initial `phase='loading'` transition; all other state transitions remain client-side.
-
-**Files:**
-- Create `components/StudyPageClient.tsx`
-- Convert `app/study/page.tsx`
-- Add `app/study/loading.tsx`
-
-**Validation gate:**
-- Page arrives at `select-mode` immediately with correct card count (no loading phase on first load)
-- Lesson range filter re-fetch still transitions through `phase='loading'` correctly
-- `StudySession` receives cards and starts correctly
-- Complete screen (streak ring, stats) works
-- "Study ahead" flow works
+**What people do:** Since `components` is meant to eventually resolve against the deck (via `CardDependency`), a tempting "smarter" filter would query the DB to check if a component matches an *existing card's* `normalizedFront`, not just the current card's own sentence text.
+**Why it's wrong:** That conflates two different concerns — "is this component text attested anywhere in the card's own example content" (the deterministic hallucination check) vs. "does this component resolve to a real card" (already handled downstream by the sync route's `keyToId` two-phase linking, which correctly tolerates components that don't yet have their own card — see the `lib/extract-cards.ts` docstring: "Include items even if they don't yet have their own card in the deck"). Making the filter DB-aware would also break the "pure, no Prisma" module convention and require passing a Prisma client into `lib/extract-cards.ts`, which currently has zero DB dependency.
+**Instead:** Keep the filter scoped purely to "was this string actually used/mentioned in this card's own sentences/notes" — a text-containment check, nothing more. Prerequisite *resolution* (does the component match a real card) stays exactly where it already lives, in the sync route's `keyToId` map.
 
 ---
 
-## Anti-Patterns
+## Integration Points
 
-### Anti-Pattern 1: Calling `prisma` from a 'use client' component
+### External Services
 
-**What people do:** Import `prisma` directly in a `'use client'` component.
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| Vercel Cron | `vercel.json` `crons` array; GET-only; auto-injects `Authorization: Bearer $CRON_SECRET` when that env var is set on the project | Hobby plan: cron jobs run at most once per day at the *start* of the specified hour (exact minute not guaranteed) — matches this milestone's "once daily" scope exactly. Must set `CRON_SECRET` in Vercel project env vars (same place `APP_PASSWORD`/`AUTH_SECRET`/etc. already live) |
+| Turso (libSQL) | Schema change via hand-written DDL, NOT `prisma db push`/`migrate` | `ReviewLog` table creation follows the exact documented process in `CLAUDE.md` § Schema changes: edit `schema.prisma` → `npx prisma generate` → `prisma migrate diff --from-empty --to-schema … --script` → apply only the new `CREATE TABLE` via `@libsql/client executeMultiple()`. This is a **hard prerequisite** — no code that writes to `ReviewLog` can be deployed until this DDL is applied |
 
-**Why it's wrong:** Next.js will attempt to bundle the Prisma client and `@libsql/client` into the browser bundle, causing a build error. Prisma is Node-only.
+### Internal Boundaries
 
-**Do this instead:** Only call `prisma` from `async` server components (no `'use client'` directive) or from API route handlers.
-
-### Anti-Pattern 2: Passing non-serializable props across the RSC boundary
-
-**What people do:** Pass a `Date` object or `undefined` as a prop from server to client component.
-
-**Why it's wrong:** RSC serialization only supports JSON-compatible values. `Date` objects become strings in transit; `undefined` is silently dropped, causing TypeScript types to lie about what the client receives.
-
-**Do this instead:** Pass `Date` values as ISO strings. Use `null` instead of `undefined` for absent optional values. The app's Prisma setup already returns `DateTime` fields as strings when serialized — the same care applies to RSC props.
-
-### Anti-Pattern 3: Keeping the `useEffect` fetch for data that now arrives from the server
-
-**What people do:** Copy the original component into the client shell without removing the `useEffect` fetch, so the initial data is fetched twice — once server-side (passed as prop, used to seed state) and once client-side (redundant).
-
-**Why it's wrong:** Defeats the purpose. The initial blank flash is gone, but the redundant network round-trip remains and will overwrite the server-provided state with identical data.
-
-**Do this instead:** Seed `useState` from the `initialX` prop. Remove the `useEffect` that was fetching initial data. Keep only the fetch callbacks triggered by user mutations.
-
-### Anti-Pattern 4: Adding data-fetch logic to `loading.tsx`
-
-**What people do:** Add a `useEffect` to `loading.tsx` to start loading data "early" while the skeleton is showing.
-
-**Why it's wrong:** `loading.tsx` is a Suspense fallback — it can be unmounted before any effect fires. The server component already fetches concurrently while the skeleton is being streamed. There is nothing to pre-fetch.
-
-**Do this instead:** Keep `loading.tsx` as pure static skeleton markup. No hooks, no `'use client'`.
-
-### Anti-Pattern 5: Using a separate `app/X/client.tsx` file for the client shell
-
-**What people do:** Put the client shell at `app/cards/client.tsx` to keep it co-located with the route.
-
-**Why it's not idiomatic:** Next.js App Router reserves `app/` for routing files (`page.tsx`, `layout.tsx`, `loading.tsx`, `error.tsx`, `route.ts`). Placing arbitrary component files in `app/` is technically valid but confusing. The convention in this codebase — and in the Next.js ecosystem — is to put React components in `components/`.
-
-**Do this instead:** Put client shells in `components/` alongside other interactive components: `components/CardsPageClient.tsx`.
+| Boundary | Communication | Notes |
+|----------|----------------|-------|
+| `middleware.ts` ↔ `app/api/cron/sync/route.ts` | Header-based auth check happens entirely in middleware; the route trusts that any request reaching it is already authorized (matches how every other route in this app already assumes middleware has gated access) | New branch, not a new pattern |
+| `app/api/sync/route.ts` ↔ `app/api/cron/sync/route.ts` | Both call `lib/sync.ts:runSync()` | Single source of truth, per the v1.2-established "shared pipeline module" convention |
+| `app/api/review/route.ts` ↔ `app/api/review/undo/route.ts` | No shared code today (undo re-implements its own field-by-field revert rather than calling a shared helper) and this milestone does **not** need to introduce one — undo intentionally does not touch `ReviewLog` | Explicit non-integration — documented so it isn't "discovered" as a gap during execution |
+| `lib/extract-cards.ts` ↔ `lib/filter-components.ts` | Direct function call inside the existing normalization `.map()` | New pure module, no new route/API surface |
 
 ---
 
-## Scaling Considerations
+## Build Order (dependency-ordered, for the roadmapper)
 
-This is a single-tenant personal app. These notes apply at the scale of one user.
+1. **`ReviewLog` schema + DDL** (Feature 2, foundation). Nothing in Feature 2 can be built or tested until the table exists on Turso. This is the same "DDL must land before writes" pattern as `apply-graph-ddl.mjs`/`apply-sentence-ddl.mjs` before it. Do this first, in isolation, and verify with a throwaway insert via `@libsql/client` before touching route code.
+2. **Feature 3 (components[] filter)** can be built and shipped fully independently of 1 and 2 — it only touches `lib/extract-cards.ts` and a new pure `lib/filter-components.ts`, with no schema dependency. Good candidate to parallelize with step 1, or sequence first since it's the lowest-risk, most self-contained change (pure function, unit-testable, no DB/auth surface).
+3. **Feature 2 write path** (transaction in `POST /api/review` + `ReviewLog` writes) — depends on step 1's DDL being live in both dev (`file:./dev.db`) and Turso prod. Confirm the local SQLite dev DB also has the table (schema.prisma + `prisma generate` covers dev automatically; only Turso needs the manual DDL step).
+4. **Feature 2 history page** (`app/history/page.tsx` + `HistoryClient.tsx` + `ReviewLogDTO`) — depends on step 3 (needs real rows to display) but is otherwise a standard, low-risk RSC + client-shell addition following the exact pattern of `/habits` (`app/habits/page.tsx` → `HabitsClient.tsx`).
+5. **Feature 1 (cron sync)** — depends on `lib/sync.ts` extraction (a pure refactor, can happen any time, zero behavior change, good to land early/independently) plus the new `middleware.ts` branch and `CRON_SECRET` env var provisioning (Vercel dashboard). Not dependent on Features 2 or 3, but **should land after Feature 3** if the goal is "cron syncs never re-introduce the hallucination bug" — otherwise the first unattended cron run could persist unfiltered `components[]` again.
 
-| Concern | Before RSC conversion | After RSC conversion |
-|---------|----------------------|----------------------|
-| Time to first content | 2–3s blank wait (useEffect fetch) | ~200–500ms (skeleton immediate, data with HTML) |
-| DB queries per navigation | 1 server render + 1 client API fetch (sequential) | 1 server render with parallel queries (no client fetch on initial load) |
-| Vercel cold start | Adds to API route fetch latency | Adds to server component render — same runtime, same impact |
-| Cache behavior | No caching — always fresh | Same — RSC is `dynamic` by default when `new Date()` is used in the server component; always fetches fresh data |
-| Vercel 60s function limit | Affects `/api/sync` only | Lightweight Prisma queries; does not approach the limit |
+Suggested phase grouping: (a) Feature 3 filter — standalone, lowest risk; (b) `ReviewLog` DDL + write-path + transaction — schema-gated; (c) History page — depends on (b); (d) Cron sync — depends on (a) for correctness, otherwise independent; middleware/env work can start in parallel with (b)/(c).
 
-The Vercel Hobby 60s function timeout is not a concern for page server components. The timeout only matters for `/api/sync` (Claude API calls). Prisma queries complete in single-digit milliseconds.
+---
+
+## Gaps to Address (for roadmap/requirements phase, not resolved here)
+
+- **Exact filter matching rule** (`lib/filter-components.ts`): plain substring containment (`haystack.includes(c)`) will miss inflected forms — e.g. a component `가다` (base form) won't literally appear in a sentence using `가요`/`갔어요`. The codebase already has `splitParticle`/stem-fallback logic in `lib/known-words.ts` for a conceptually similar "is this word attested" problem — worth deciding at requirements time whether the filter reuses/adapts that stemming approach or accepts base-form components as a looser pass (e.g., checking `notes` text too, which often contains the base form even when sentences don't). Recommend flagging this as a specific requirement/acceptance-criteria question rather than an implementation default.
+- **Undo/ReviewLog interaction is a product decision, not just an implementation detail** — this research recommends "immutable, undo does not touch it" as the lowest-risk default (avoids a new race condition since `postReviewWithRetry` is fire-and-forget and the log row's id is never returned to the client), but confirm this is acceptable UX for the history page (an undone review will still show in history) before locking it into a phase plan.
+- **`GET /api/cron/sync` response consumption** — no UI currently displays "last cron sync" status. If the milestone wants visibility into whether the daily cron actually ran (vs. silently failing), that's an additional small feature (e.g., a `Setting` row updated on each cron run, surfaced in Settings ▸ Advanced next to the existing `SyncPanel`) — not currently in the 3 named features but worth surfacing as a question during requirements.
+- **`CRON_SECRET` provisioning** is an infra/env step (Vercel dashboard), not code — make sure the phase plan includes it explicitly as a task, not just assumed. Same category as the existing `.env`/Vercel env var list in `CLAUDE.md`.
 
 ---
 
 ## Sources
 
-- Next.js App Router documentation: server components, loading UI, Suspense — stable patterns established in Next.js 13, unchanged through Next.js 16.
-- Existing codebase proof of concept: `app/layout.tsx` is already an `async` server component that calls `prisma` via `lib/settings.ts` (lines 50–58). This is the exact same pattern, already proven to work in this codebase with Turso/libSQL.
-- Auth analysis: `middleware.ts` reviewed directly — the matcher covers all page routes; no additional auth needed in server components.
+- Primary (HIGH confidence — direct code reads this session): `CLAUDE.md`, `.planning/PROJECT.md`, `middleware.ts`, `app/api/sync/route.ts`, `app/api/review/route.ts`, `app/api/review/undo/route.ts`, `lib/extract-cards.ts`, `prisma/schema.prisma`, `components/StudySession.tsx` (submitReview/postReviewWithRetry/handleUndo), `components/SyncPanel.tsx`, `components/HomeClient.tsx`
+- Secondary (MEDIUM confidence — WebSearch, verified against official Vercel docs URL + multiple independent tutorials): Vercel Cron Jobs `CRON_SECRET` / `Authorization: Bearer` auto-injection pattern — https://vercel.com/docs/cron-jobs/manage-cron-jobs
 
 ---
-
-*Architecture research for: RSC + client shell pattern in Next.js 16 App Router*
-*Researched: 2026-06-29*
+*Architecture research for: Korean Study v1.4 (cron sync, ReviewLog, components[] filter)*
+*Researched: 2026-07-02*

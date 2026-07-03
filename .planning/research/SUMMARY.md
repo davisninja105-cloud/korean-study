@@ -1,195 +1,163 @@
-# Project Research Summary: Korean Study v1.2 Performance & Snappiness
+# Project Research Summary
 
-**Project:** Korean Study — v1.2 Performance & Snappiness  
-**Domain:** Next.js App Router performance UX optimization for PWA spaced-repetition study app  
-**Researched:** 2026-06-29  
-**Confidence:** HIGH
-
----
+**Project:** Korean Study — v1.4 milestone (Vercel Cron auto-sync, ReviewLog history, components[] filter fix)
+**Domain:** Feature additions to an existing personal Next.js/Prisma/Turso SRS app
+**Researched:** 2026-07-02
+**Confidence:** MEDIUM-HIGH
 
 ## Executive Summary
 
-Version 1.2 solves the "blank page flash" problem (currently 2–3 second wait for data on navigation) through a combination of Server-Side Rendering (RSC), skeleton loading screens, and database query parallelization. No new npm packages required — all capabilities (RSC, `loading.txt`, `React.cache`, `Promise.all`, Suspense streaming) are built into Next.js 16 and React 19 already.
+v1.4 adds three features to an already-mature single-user Korean SRS app: (1) daily automated Google Doc sync via Vercel Cron, (2) a persisted, browsable `ReviewLog` audit trail exposed as a history page, and (3) a fix for the extraction pipeline hallucinating entries in a card's `components[]` prerequisite list. All four research passes agree on a strong headline: no new npm dependency is needed for any of the three features, continuing the "zero new packages" streak from v1.1/v1.2. Everything is buildable from platform config (Vercel Cron + `vercel.json` + `CRON_SECRET`), one new Prisma model applied via the project's established manual-Turso-DDL workaround, and reuse of existing pure helpers (`lib/card-key.ts`, `lib/sentence-match.ts`, `lib/known-words.ts`).
 
-The recommended approach: (1) convert the four main pages (`/cards`, `/study`, `/habits`, `/`) from `'use client'` + `useEffect` fetch to async Server Components that call Prisma directly, passing data as props to renamed client shell components; (2) add skeleton `loading.txt` files to eliminate blank-screen flashes during navigation; (3) parallelize the three independent Prisma queries in `/api/cards/due` to shave 200–400ms off study-session startup.
+The recommended approach: extract the current `POST /api/sync` body into a shared `lib/sync.ts:runSync()` (mirroring the v1.2 `lib/study-cards.ts`/`lib/dashboard.ts` shared-pipeline convention) so both the manual route and the new `GET /api/cron/sync` route call one implementation, authenticated via a new bearer-token branch inside `middleware.ts` (not a matcher exclusion, which would make the endpoint public). For `ReviewLog`, add the model + DDL first, then wire an idempotency-keyed, transactional write into `POST /api/review`, then build the history page as a standard RSC + DTO + client-shell page following the `/habits` precedent. For the `components[]` filter, reuse the deck's existing `normalizeFront`-based lookup/stem-fallback resolution pattern (the same shape as `lib/known-words.ts:countUnknownWords`) rather than literal substring containment against a card's own sentence text.
 
-The core risk is proper Date/DateTime serialization across the RSC→client boundary — Prisma returns `Date` objects which JSON-serialize to strings, causing silent type mismatches in client code. Prevention: define plain DTO interfaces for cross-boundary props and explicitly convert all Date fields to ISO strings or epoch milliseconds before passing to client components.
-
----
+The primary risks are correctness, not technology choice: (a) the cron route is the first route in this codebase that must be reachable without the session cookie, and a careless fix (widening the middleware matcher exclusion) would leave `/api/sync` open to the public internet, burning Anthropic API budget; (b) `POST /api/review`'s existing fire-and-forget 3-attempt retry wrapper is not idempotent server-side — adding a naive best-effort `ReviewLog` write to it will produce duplicate, user-visible history rows and can silently double-apply FSRS state under network retry; and (c) the originally-assumed "deterministic post-extraction filter" design (drop `components[]` entries not literally found via substring match in a card's own sentences) is structurally wrong, because `components[]` uses abstract base-form/pattern notation while sentence text is fully conjugated Korean — a naive filter would gut almost all grammar-pattern edges, the exact opposite of the milestone's intent.
 
 ## Key Findings
 
 ### Recommended Stack
 
-**No new packages needed.** Every performance pattern in v1.2 is achievable with the existing tech stack:
+All three features are implementable with platform features and DB/config changes already conventional in this repo — no npm installs. Vercel Cron (`vercel.json` `crons[]`, `GET` handler, auto-injected `Authorization: Bearer $CRON_SECRET`) triggers the daily sync; Hobby plan caps this at once/day with hour-level (not minute-level) precision, which fits the "daily sync" requirement exactly. The `ReviewLog` model is added to `prisma/schema.prisma` and applied to Turso via the project's standard `prisma migrate diff --from-empty --to-schema ... --script` + `@libsql/client executeMultiple()` workaround (never `prisma db push`, which fails with P1013 against `libsql://`). The `components[]` filter reuses `lib/card-key.ts` (`normalizeFront`) and the resolution-order pattern already implemented in `lib/known-words.ts` — no fuzzy-string library, since edit-distance libraries are the wrong tool for Korean agglutinative morphology.
 
-- **Next.js 16 App Router**: Async server components, `loading.txt` skeleton convention, implicit `<Suspense>` page wrapping, streaming SSR
-- **React 19**: `React.cache()` for per-request deduplication, `<Suspense>` boundary primitive, `use()` API for promise streaming
-- **Prisma 7 + `@prisma/adapter-libsql`**: Direct ORM calls in async server components (replaces client-side `fetch('/api/...')` round-trips); `Promise.all()` for parallel queries works correctly outside transactions with libSQL's HTTP transport
-- **TypeScript 5.9.3**: Async page type signatures (`async function Page()` returns `Promise<JSX.Element>`) compile without modification
+**Core technologies:**
+- Vercel Cron Jobs (platform feature) — daily sync trigger; zero new infra, Hobby-plan-compatible (once/day only)
+- `CRON_SECRET` env var + `Authorization: Bearer` check — the officially documented Vercel Cron auth mechanism; must be checked at the route/middleware level, never assumed
+- Prisma 7.6.0 + `@prisma/adapter-libsql` (already installed) — `ReviewLog` model; DDL applied by hand to Turso, exactly as every prior schema change in this repo
+- Reuse of `lib/card-key.ts` / `lib/sentence-match.ts` / `lib/known-words.ts` resolution patterns — no new dependency for the `components[]` filter fix
 
-The existing Prisma singleton in `lib/prisma.ts` and libSQL adapter are already optimized for concurrent RSC renders (libSQL uses HTTP/2 transport, not a shared connection pool).
+### Expected Features
 
-### Expected Features (v1.2 MVP)
+Scope for this milestone is narrow and backend-heavy; the only feature with real UI surface is the review-history page (feature #2). Feature #1 (cron) and #3 (filter fix) are operational/correctness changes with no primary UI, aside from an optional "last synced" line in Settings ▸ Advanced.
 
-**Must have (eliminates blank-page problem):**
-- `loading.txt` skeletons for `/cards`, `/study`, `/`, `/habits` — instant visual feedback on navigation
-- RSC hydration for Home page — stats (due count, mastered, lessons) + activity arrive with HTML, eliminate 2-pass render
-- RSC hydration for Habits page — all computation runs server-side, no loading flash
-- Parallel DB queries in `/api/cards/due` — independent queries run concurrently, shave 200–400ms
+**Must have (table stakes) for the history page:**
+- Reverse-chronological, paginated list (cursor-based, ~20-30/page) of `ReviewLog` rows: timestamp, card front, rating (reusing existing grade-language, not raw 1-4 integers)
+- Per-card filter — the single highest-value filter ("why is this card still hard"), higher priority than date-range or rating filters
+- Empty state following the app's existing RSC hydration convention (server-rendered real state, no client loading flash)
+- Entry point from an existing surface (Settings, `/wrapped`, or `CardEditor` link) — no new bottom-nav tab (app deliberately caps at 4)
 
-**Should have (UX polish):**
-- Cards page RSC+Client split — higher complexity; deferred to v1.3 after simpler conversions prove the pattern
-- Shimmer animation on skeletons — pure CSS; nice-to-have after basic skeletons ship
-- `useLinkStatus` nav indicator — low priority; navigation already feels instant with skeletons
+**Should have (competitive, cheap once P1 ships):**
+- Rating filter (lapses-only view) — actionable "show me what I've been failing"
+- Date-range filter, mirroring `LessonRangeFilter.tsx`'s interaction shape (not its lesson-indexed logic)
+- `CardEditor` inline mini-trend (review count / lapses / last-seen) for the card being edited
 
-**Defer (v2+):**
-- Study page progressive reveal (streaming mode selector separately)
-- Service worker caching for offline PWA support
+**Defer / explicit anti-features (do not build):**
+- A second review-specific heatmap — redundant with the already-shipped `HabitHeatmap.tsx` (day-level activity is a solved problem; `ReviewLog`'s value is event-level detail)
+- Editable/deletable log rows — conflicts with the append-only audit-trail intent; `/api/review/undo` already covers the real "I misgraded" use case
+- Any charting/analytics dashboard beyond `/wrapped`'s existing vanity metrics — no algorithm-tuning surface exists in this single-config, single-user app
+- Prominent home-page "last synced" chrome — belongs in Settings ▸ Advanced next to `SyncPanel`, not the tuned three-state home hero
 
 ### Architecture Approach
 
-The solution follows the **RSC + Client Shell pattern**: async Server Components fetch from Prisma and pass serialized data as props to renamed client shell components (`'use client'`). Each page route gets a skeleton `loading.txt` that Next.js automatically uses as a Suspense fallback during client-side navigation. Data arrives with the initial HTML; no client-side fetch on mount. Mutations (add/edit/delete card) still flow through existing API routes and trigger client-side refetches to update local state.
+Each feature attaches at a well-defined existing seam, following conventions already established in v1.1/v1.2. Cron sync extracts the current inline `POST /api/sync` body into `lib/sync.ts:runSync(documentId)` (the same "shared pipeline module" pattern as `lib/study-cards.ts`/`lib/dashboard.ts`), so both the manual route and a new `app/api/cron/sync/route.ts` `GET` handler call one implementation; auth for the cron path is a new bearer-token branch added directly inside `middleware.ts` (kept inside the existing matcher, not excluded from it — the branch itself, not a matcher gap, is what grants access). The `components[]` filter is a new pure module, `lib/filter-components.ts` (or equivalent resolution-based helper), invoked from inside `lib/extract-cards.ts`'s existing post-processing `.map()`, with zero Prisma/Anthropic dependency of its own — matching the codebase's strict "pure, unit-testable `lib/` module" convention (`lib/sentence-match.ts`, `lib/sequence.ts`, `lib/card-key.ts` are the direct precedents). `ReviewLog` follows the full RSC pattern: schema/DDL first, then a transactional write inside `POST /api/review`, then `app/history/page.tsx` + `HistoryClient.tsx` + a new `ReviewLogDTO` in `lib/dto.ts`, matching `/habits`'s existing RSC + client-shell + DTO shape exactly.
 
 **Major components:**
-1. **Async Page Server Components** (`app/X/page.tsx`) — fetch Prisma data in parallel, pass as props to shell
-2. **Client Shell Components** (`components/XPageClient.tsx`) — receive initial data as props, manage all interactive state
-3. **Skeleton Fallbacks** (`app/X/loading.txt`) — static skeleton JSX shown during server component render + navigation
-4. **Data Transfer Objects (DTOs)** — plain JavaScript objects with all Date fields converted to ISO strings or epoch ms; prevent serialization mismatches
-5. **Error Boundaries** (`app/X/error.tsx`) — recovery UI for transient Turso/Prisma failures
+1. `lib/sync.ts:runSync()` — shared sync pipeline used by both `POST /api/sync` and `GET /api/cron/sync`
+2. `middleware.ts` bearer-token branch — the sole auth boundary for `/api/cron/*`, extending the existing single-choke-point auth design rather than fragmenting it into per-route checks
+3. `lib/filter-components.ts` (or resolution-based equivalent) — pure post-extraction correction step inside `lib/extract-cards.ts`'s pipeline
+4. `ReviewLog` schema + transactional write path in `POST /api/review` — the append-only audit table, gated behind idempotency
+5. `app/history/page.tsx` + `HistoryClient.tsx` + `ReviewLogDTO` — the browsable history page, following the established RSC/DTO/client-shell convention
+
+**Suggested build order (dependency-ordered):** (a) `components[]` filter fix — standalone, lowest risk, no schema dependency, should land before cron sync so the first unattended cron run doesn't reintroduce the hallucination bug; (b) `ReviewLog` DDL + idempotent transactional write path — schema-gated foundation; (c) history page — depends on (b) having real rows; (d) cron sync — depends on (a) for correctness, otherwise independent, and can be developed in parallel with (b)/(c) once `lib/sync.ts` is extracted.
 
 ### Critical Pitfalls
 
-1. **Prisma Date objects fail silently when passed to client components.** `Date` objects serialize to ISO strings across the RSC boundary; TypeScript doesn't catch this. Client code calling `.getTime()` or `.toLocaleDateString()` on what it thinks is a `Date` receives a `string` instead. Prevention: define DTO interfaces with `date: string` (ISO) or `dateMs: number` (epoch) for all cross-boundary props. Convert in the server component before passing.
+1. **Cron route auth "fixed" by excluding it from the middleware matcher instead of adding a real check** — leaves `/api/sync` reachable by anyone on the internet, burning Anthropic Opus budget on demand. Keep `/api/cron/*` inside the matcher; add an explicit `Authorization: Bearer $CRON_SECRET` branch inside the middleware body, and fail closed (401) if `CRON_SECRET` is unset — never `if (secret && header !== expected)`, which silently disables auth when the env var is missing.
+2. **`POST /api/review`'s existing 3-attempt retry wrapper is not idempotent server-side** — it re-reads current DB state and re-runs `reviewCard()` on every attempt, so a lost-response retry double-applies FSRS state today (silently) and will double-write visible `ReviewLog` rows once the log exists. The fix is a client-generated idempotency key threaded through `postReviewWithRetry` → `POST /api/review`, a unique constraint on `ReviewLog` keyed to it, and both writes (`CardReview.update` + `ReviewLog.create`) inside one `prisma.$transaction([...])`. Do not ship `ReviewLog` as a second best-effort `.catch(() => {})` write bolted onto the route.
+3. **Undo racing an in-flight background retry can silently "un-undo" itself** — `postReviewWithRetry`'s `AbortController` isn't exposed to `handleUndo`, so a retry that lands after an undo re-applies the graded rating with zero UI feedback, and (once `ReviewLog` exists) produces a ghost log row timestamped after the undo. At minimum, cancel in-flight retries on undo and document what the history page should show for an undone review (recommended default: `ReviewLog` stays immutable/append-only; undo does not delete or mark rows).
+4. **Naive substring-containment filtering for `components[]` gutts grammar-pattern edges** — `components[]` entries are abstract base-form/pattern notation (`먹다`, `~(으)면`) while sentence text is fully conjugated natural Korean; raw `includes()` checks will drop nearly all grammar-pattern components and most conjugated-vocabulary components, regressing the exact knowledge graph the milestone exists to fix. Correction from the original milestone framing: do not check literal containment against a card's own sentences/notes as the primary signal. Instead reuse the deck-lookup resolution pattern already proven in `lib/known-words.ts:countUnknownWords` — `normalizeFront()` direct match against existing cards' `normalizedFront`, then `splitParticle`-style stem fallback — the same signal `app/api/sync/route.ts`'s two-phase `CardDependency` linking already uses to resolve components to real cards. Dry-run the filter against the real corpus before wiring it into the write path; a >50% drop rate, or a drop rate skewed heavily toward `grammar`-type cards, means the filter logic is wrong, not the corpus.
+5. **Unbounded `ReviewLog` queries and missing indexes** — a history page with no `take`/cursor bound will slow monotonically as reviews accumulate (low-thousands of rows within a year for a daily user); add `@@index([cardId])` and `@@index([createdAt])` in the same DDL step that creates the table, and use cursor-based pagination (page size ~20-30), matching the existing `take: 1000` bounded-pool precedent in `lib/study-cards.ts`.
 
-2. **`loading.txt` only shows on client-side navigation, not first load.** Developers expect skeletons to cover initial page load; they don't. `loading.txt` is a Suspense fallback that only triggers on client-side route transitions. First-load slowness is solved by RSC hydration (data with HTML). In `next dev` prefetching is disabled, so the skeleton may not appear at all during testing. Prevention: test in production build (`next build && next start`); understand the two problems separately (first-load speed via RSC, navigation jank via `loading.txt`).
+## Reconciliations (cross-file disagreements resolved for the roadmapper)
 
-3. **Data fetches in `layout.tsx` block `loading.txt` fallback.** If the root or segment layout awaits runtime data (e.g., `await prisma.setting.findMany()` for button colors), the entire navigation blocks until that layout resolves — the skeleton never shows. Prevention: keep `layout.tsx` structural-only. Move runtime data fetches to `page.tsx`. For essential layout data, wrap it in its own `<Suspense>` boundary with a minimal fallback.
+### 1. ReviewLog write pattern: idempotency key + transaction (not sequential unguarded writes)
 
-4. **`Promise.all` fails atomically — one Turso timeout crashes the entire parallel fetch.** Converting three serial queries to `Promise.all([q1, q2, q3])` means any transient Turso latency on one query rejects the whole batch. The route returns 500; user sees an error screen. Prevention: wrap `Promise.all` in try/catch and return a degraded response (e.g., `{ error: 'Query failed' }` with status 500). Consider `Promise.allSettled` for independent queries where partial success is acceptable.
+STACK.md leans toward two sequential independent awaits (no `$transaction`), citing that this codebase has zero existing `$transaction` precedent and that official Prisma/Turso docs don't explicitly confirm interactive-transaction support over libSQL's HTTP transport. ARCHITECTURE.md recommends `prisma.$transaction([cardReview.update, reviewLog.create])` (the array/batch form, not the interactive callback form) for atomicity. PITFALLS.md identifies the root problem underneath the transaction question: `POST /api/review` is not idempotent under retry today — it re-reads DB state and re-runs `reviewCard()` on every attempt of the existing 3-attempt client retry wrapper, so a lost-response retry silently double-applies FSRS state. Once `ReviewLog` exists, that same double-write becomes a user-visible duplicate history row, not just a hidden state-corruption bug.
 
-5. **`'use client'` boundary placed too high pulls entire component tree into client bundle.** Placing `'use client'` on an RSC page wrapper defeats the purpose — everything gets bundled client-side. Prevention: keep `'use client'` only on the shell component. The page route stays RSC. Data fetching happens server-side. Sub-components like `StudySession` (genuinely interactive) stay `'use client'` but are passed data as props from the RSC.
+**Resolution for the roadmapper:** treat this as one requirement, not an open question — idempotency key + `prisma.$transaction([...])` (batch/array form) is core scope for the `ReviewLog` phase, not a stretch goal. The array form (not the interactive callback form) is sufficient since both writes are computed synchronously before the transaction call, sidestepping STACK.md's Turso-interactive-transaction concern. A client-generated idempotency key (e.g. `crypto.randomUUID()` created once per grade action in `submitReview`, reused across all retry attempts) should be passed to `POST /api/review` and enforced via a unique constraint on `ReviewLog` (or an equivalent dedup check before `reviewCard()` is re-applied). This is justified because correctness now has a visible failure mode: once there's a browsable history page, a duplicate row is not an invisible aggregate-state nuisance anymore — it's a bug the user can literally see and count. Flag as an explicit UAT check: simulate a slow/flaky retry (devtools network throttling) while grading a card and confirm exactly one `ReviewLog` row and one FSRS state transition result.
 
----
+### 2. `components[]` filter approach: resolution-based lookup, not sentence-text containment
+
+The milestone's original framing (per pending todo) assumed a "deterministic post-extraction filter" that drops `components[]` entries not found via literal substring containment in the card's own sentences/notes. PITFALLS.md's dedicated analysis (Pitfall 4) demonstrates this premise is structurally wrong: `components[]` entries are abstract base-form lemmas and pattern notation (`먹다`, `~(으)면`, `~고 싶다`) as documented in `lib/extract-cards.ts`'s own prompt, while `sentences[].korean` is fully conjugated natural Korean and `notes` is free-text explanation — neither contains the component's literal notation. A raw `includes()` filter would drop nearly every grammar-pattern component (which never appears character-for-character with its `~`/parens notation in a natural sentence) and most conjugated-vocabulary components, for the same reason `lib/sentence-match.ts`'s `splitParticle` already documents as an unsolved general problem — except worse here, since grammar-pattern notation has no morphological relationship to sentence surface forms at all.
+
+**Resolution for the roadmapper:** correct the requirement before it's planned. "Fix spurious `components[]`" should mean: filter a component out only if it does not resolve to a real card in the deck via the existing `normalizeFront()` lookup pattern (the same signal `app/api/sync/route.ts`'s two-phase `CardDependency` linking already uses), following the two-step resolution order already proven in `lib/known-words.ts:countUnknownWords` — direct `normalizeFront` match first, then a `splitParticle`-style stem fallback if literal-text checking against sentence content is still wanted as a secondary signal. This is NOT literal substring containment against the card's own sentence/notes text. Ship the filter as a new pure `lib/` module (no Prisma/Anthropic dependency, matching the `lib/sentence-match.ts`/`lib/sequence.ts` convention) so it stays independently unit-testable. Before wiring it into the write path, dry-run it against the real corpus (no writes) and verify the drop rate for `grammar`-type components is not dramatically higher than for `vocabulary`-type components — a large asymmetry there is the signal that the filter, not the corpus, is broken.
 
 ## Implications for Roadmap
 
-Research suggests a **5-phase structure** (all in v1.2):
+Based on combined research, suggested phase structure (4 phases, dependency-ordered):
 
-### Phase 1: Cards Page — Establish RSC + Client Shell Pattern
-**Rationale:** Simplest conversion; static initial data, pure client-side filtering, no phase state machine. Establishes the pattern for more complex pages.  
-**Delivers:** Skeleton-less blank flash on Cards page navigation; initial card list hydrated from server; search/filter work client-side.  
-**Implements:** `app/cards/page.tsx` (RSC, Prisma fetch) + `components/CardsPageClient.tsx` (client shell) + `app/cards/loading.txt` (skeleton).  
-**Addresses:** PERF-01 (eliminates empty-state flash).  
-**Avoids:** Pitfall #1 (Date serialization — establish DTO pattern here), Pitfall #5 (`'use client'` boundary at shell level, not page).  
-**Validation gates:** No client `useEffect` fetch on initial load; skeleton shows on navigation in production build; search/filter/mutations work.
+### Phase 1: Components[] Filter Fix
+**Rationale:** Standalone, lowest risk, zero schema dependency, purely a pure-function addition to an existing pipeline. Per the reconciliation above and ARCHITECTURE.md's build order, this should land before cron sync so the first unattended daily cron run doesn't reintroduce the hallucination bug it's meant to fix.
+**Delivers:** A new pure `lib/filter-components.ts` (or equivalent) module using `normalizeFront()` deck-lookup resolution (not substring containment), invoked from `lib/extract-cards.ts`'s existing post-processing step; dry-run validation against the real corpus before enabling in the write path.
+**Addresses:** The extraction-correctness gap identified in the milestone's original scope (correcting a wrong initial assumption per Reconciliation #2).
+**Avoids:** Pitfall 4 (naive substring filter gutting grammar-pattern edges).
 
-### Phase 2: Habits Page — Validate Computed State from Props
-**Rationale:** Simpler than Home/Study; pure read, no re-fetch, all computation (`useMemo` calls) runs server-side. Validates that derived state works correctly on first render.  
-**Delivers:** Habit stats (streak, heatmap, mastered count) render instantly with no loading flash.  
-**Implements:** `app/habits/page.tsx` (RSC, parallel Prisma queries) + `components/HabitsPageClient.tsx` (client shell) + `app/habits/loading.txt`.  
-**Addresses:** PERF-04 (eliminates blank habit stats on navigation).  
-**Avoids:** Pitfall #3 (no runtime data fetches in layout); Pitfall #2 (understand that skeleton covers navigation, not first load).  
-**Validation gates:** Streak + heatmap render correctly on first paint; `today` derived correctly from `dayStartHour` prop.
+### Phase 2: ReviewLog Schema + Idempotent Write Path
+**Rationale:** Foundation for the history page — nothing in Phase 3 can be built or tested until the table exists on Turso and writes are trustworthy. Per Reconciliation #1, the idempotency/transaction design is core scope here, not deferred.
+**Delivers:** `ReviewLog` Prisma model + manual Turso DDL (with `@@index([cardId])`/`@@index([createdAt])` from the start), a client-generated idempotency key threaded through `postReviewWithRetry` → `POST /api/review`, and `prisma.$transaction([cardReview.update, reviewLog.create])` (array form) replacing the current single write. Includes resolving the undo-vs-in-flight-retry race (Pitfall 3) — at minimum, cancel in-flight retries on undo.
+**Uses:** Prisma 7.6.0 + `@prisma/adapter-libsql` (existing); the project's standard `migrate diff --from-empty --script` + `executeMultiple()` DDL workaround.
+**Implements:** The `ReviewLog` write-path architecture component from ARCHITECTURE.md.
 
-### Phase 3: Home Page — Parallel Stats + Activity, Optional Data Props
-**Rationale:** Introduces parallel data-fetching pattern (`Promise.all` for stats + activity); requires modifying `HabitTracker` to accept optional data props; first RSC that has client islands (`<HomeClient>` owns pull-to-refresh, band-up detection, greeting logic).  
-**Delivers:** Hero stats arrive with HTML; pull-to-refresh still works; band-up confetti/banner on CEFR level-up detected client-side.  
-**Implements:** `app/page.tsx` (RSC, `Promise.all` parallel queries) + `components/HomeClient.tsx` (client islands) + `app/loading.txt` + modify `HabitTracker.tsx` to skip internal fetch when `initialData` provided.  
-**Addresses:** PERF-02 (Home data hydration), PERF-05 (avoid layout data blocks loading.txt — this audit happens here).  
-**Avoids:** Pitfall #3 (validate layout.tsx has no runtime data fetches); Pitfall #7 (React 19 hydration mismatch from `Date.now()` — greeting is in `useEffect`, acceptable).  
-**Validation gates:** Hero state (A/B/C) correct on first render; `greeting` appears after mount (impure, acceptable); `HabitTracker` no redundant fetch; pull-to-refresh works.
+### Phase 3: Review History Page
+**Rationale:** Depends on Phase 2 having real rows to display; otherwise a standard, low-risk RSC + client-shell addition following the exact established `/habits` pattern (no new architectural ground).
+**Delivers:** `app/history/page.tsx` (thin async RSC) + `components/HistoryClient.tsx` + `ReviewLogDTO` in `lib/dto.ts`; reverse-chronological, cursor-paginated list (~20-30/page); per-card filter (highest-value, ship first); grade shown via existing mastery-language/colors, not raw integers; empty state matching the RSC-05 no-loading-flash convention; entry point via Settings/`/wrapped`/`CardEditor` link (no new bottom-nav tab).
+**Addresses:** FEATURES.md's P1 table-stakes set (list, per-card filter, empty state, entry point) — explicitly excludes the anti-features (second heatmap, editable rows, analytics dashboard, prominent home-page sync chrome).
+**Avoids:** The unbounded-`findMany` performance trap; the "history page renders every row with no aggregation" UX pitfall.
 
-### Phase 4: Study Page — Phase State Machine Sync
-**Rationale:** Most complex RSC — preserves phase state machine, lesson-range re-fetch remains client-side. Only removes the initial `phase='loading'` transition; subsequent state changes unaffected.  
-**Delivers:** Study page arrives at mode-select phase immediately with correct due card count; no loading phase on first load; lesson-range filter re-fetch still transitions through `phase='loading'`.  
-**Implements:** `app/study/page.tsx` (RSC, pass initialCards to skip phase='loading') + `components/StudyPageClient.tsx` (client shell) + `app/study/loading.txt`.  
-**Addresses:** PERF-03 (Study page hydration — most complex).  
-**Avoids:** Pitfall #5 (`StudySession` stays `'use client'` as a prop; page is RSC); Pitfall #1 (DTO mapping for Card + CardReview data).  
-**Validation gates:** Page at `select-mode` on first load; lesson range re-fetch still works; `StudySession` receives cards; complete screen works; study-ahead flow works.
-
-### Phase 5: API Parallelization — `/api/cards/due` Query Optimization
-**Rationale:** Server-side speed win; single-file change; no user-facing complexity. Moves three serial `await` calls to `Promise.all`, reducing study-session startup latency by max(query_times) − 200–400ms (typical Turso round-trip).  
-**Delivers:** 200–400ms faster study session startup on repeating users.  
-**Implements:** Restructure `/api/cards/due` route: `Promise.all([getSessionSize, card pool, knownLemmas])` then `await edges` (depends on pool IDs). Wrap in try/catch.  
-**Addresses:** PERF-06 (parallel DB queries).  
-**Avoids:** Pitfall #4 (`Promise.all` atomic failure — wrap in try/catch; return 500 gracefully).  
-**Validation gates:** Network timeline shows queries firing concurrently; page load time ≤ max(query_times); simulate Turso timeout to confirm error handling.
+### Phase 4: Vercel Cron Auto-Sync
+**Rationale:** Sequenced last because correctness depends on Phase 1 (filter fix) already being live — otherwise the first unattended cron run re-persists unfiltered/hallucinated `components[]`. Independent of Phases 2-3 otherwise; `lib/sync.ts` extraction and `CRON_SECRET` provisioning can start in parallel with earlier phases if desired.
+**Delivers:** `lib/sync.ts:runSync(documentId)` extracted from the current `POST /api/sync` body; new `app/api/cron/sync/route.ts` (`GET` handler, reads `NEXT_PUBLIC_GOOGLE_DOC_ID` server-side); `vercel.json` with a once-daily `crons[]` entry; a new bearer-token branch inside `middleware.ts` (kept inside the existing matcher, `CRON_SECRET` checked, fail-closed if unset); `CRON_SECRET` provisioned in Vercel Production env vars.
+**Delivers (optional, confirm at requirements):** A "Last auto-synced" line in Settings ▸ Advanced next to the existing `SyncPanel`, if visibility into cron success/failure is wanted (flagged as a gap below — not one of the three named features but raised independently by both FEATURES.md and PITFALLS.md).
 
 ### Phase Ordering Rationale
 
-1. **Cards → Habits → Home → Study** progression: Each phase builds complexity and confidence. Cards establishes the pattern. Habits validates computed state. Home introduces parallel fetches. Study is most complex (phase state machine).
-2. **API parallelization last**: Can be done any time after Home (doesn't depend on page conversions); grouped at the end for focus.
-3. **Error boundaries and Pitfall #1 (DTO pattern) must be established in Phase 1** and enforced throughout.
-4. **DTO pattern prevents 80% of runtime bugs** — make this the first code-review gate in Phase 1.
+- Filter fix first: lowest risk, no dependencies, and its correctness gates whether cron sync (Phase 4) is safe to enable — an unattended daily sync should not be the first thing to exercise a still-unverified filter.
+- ReviewLog schema/write-path before the history page: the DDL-then-code split is a hard Turso constraint (same pattern as every prior schema change in this repo), and the page's correctness is only as good as the write path's idempotency — building the page against an unreliable write path would surface duplicate-row bugs as a UI problem instead of catching them at the source.
+- Cron sync last: it is the feature most exposed to "silent failure" (Vercel does not retry or alert on cron failures) and most dependent on getting an entirely new auth pattern right (the first route in this codebase reachable without the session cookie) — sequencing it after the other three gives more implementation experience with this milestone's conventions before tackling the highest-blast-radius security surface (an unauthenticated route could burn real API budget).
+- Cross-cutting: every phase reuses an existing convention (shared `lib/` pipeline modules, RSC+DTO+client-shell pages, manual Turso DDL, pure single-source-of-truth `lib/` helpers) rather than introducing a new pattern — keeps v1.4 architecturally consistent with v1.1/v1.2.
 
 ### Research Flags
 
 Phases likely needing deeper research during planning:
-- **Phase 5 (API parallelization):** Turso free-tier rate limits and concurrent-query behavior — if parallelization causes rate-limit errors, may need fallback to serial queries or caching strategy.
+- **Phase 2 (ReviewLog write path):** The exact idempotency-key mechanism (client-generated UUID threading, unique-constraint shape, and interaction with `handleUndo`'s in-flight-retry race) is a genuine design decision, not a copy-paste of an existing pattern — recommend `--research-phase` or at least a focused discuss-phase pass specifically on the idempotency/undo interaction before planning.
+- **Phase 4 (Cron sync auth):** The Vercel Cron auth pattern (middleware bearer-token branch alongside the existing cookie gate) is architecturally new for this codebase — MEDIUM confidence across all four research files (cross-verified via WebSearch, not all directly read from primary Vercel docs in every pass). Worth a final direct-docs check at plan time.
 
-Phases with standard, well-documented patterns (can skip research-phase):
-- **Phase 1–4 (RSC conversions):** Patterns are stable and well-documented in Next.js 13+ / React 18+ ecosystem. Official Next.js docs cover all required patterns. No niche integrations.
-
----
+Phases with standard patterns (skip research-phase):
+- **Phase 1 (filter fix):** Directly reuses `lib/known-words.ts`'s already-implemented resolution pattern — a known shape, not new research.
+- **Phase 3 (history page):** Directly follows the `/habits` RSC + client-shell + DTO precedent — a known shape, not new research.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| **Stack** | **HIGH** | Official Next.js 16 docs + existing codebase proof (layout.tsx already RSC + Prisma). No ecosystem comparison needed — the tech stack is fixed. |
-| **Features** | **HIGH** | NN/G skeleton UX research authoritative; Next.js loading API reference official; feature table is well-researched and prioritized. |
-| **Architecture** | **HIGH** | RSC + client shell is the official Next.js recommended pattern (stable since Next.js 13). Existing `layout.tsx` in this codebase already proves the pattern works with Prisma + libSQL. |
-| **Pitfalls** | **MEDIUM-HIGH** | Cross-checked against official Next.js docs + multiple community sources (LogRocket, GitHub issues with maintainer responses). Pitfall #1 (Date serialization) is community-verified issue; Pitfall #2 (loading behavior) confirmed in official docs; others are architectural gotchas from ecosystem experience. |
+| Stack | MEDIUM-HIGH | Cron mechanics verified directly against current official Vercel docs (HIGH); Prisma/libSQL transaction behavior over Turso's HTTP transport is not explicitly documented anywhere (MEDIUM, filled by reasoned inference — resolved in this summary by choosing the transaction-array form specifically to sidestep the interactive-transaction uncertainty) |
+| Features | MEDIUM | Grounded in direct reading of this app's existing conventions and `PROJECT.md` (HIGH), cross-referenced against Anki's Card Info/Stats/Review-Heatmap patterns as the nearest domain analogue (single web source per claim, MEDIUM) |
+| Architecture | HIGH | Codebase-grounded (direct reads of `middleware.ts`, `app/api/sync/route.ts`, `app/api/review/route.ts`, `lib/extract-cards.ts`, `prisma/schema.prisma`, `components/StudySession.tsx`); the one external pattern (Vercel Cron auth) is MEDIUM, cross-verified against official docs |
+| Pitfalls | MEDIUM | Codebase-specific pitfalls (auth matcher, retry idempotency, undo race, filter notation mismatch) are HIGH confidence — derived from direct inspection of the actual retry/undo/filter code, not general web patterns. General web-sourced claims (Prisma audit-log-at-scale framing, optimistic-update race framing) are LOW confidence and used only as corroboration, not as load-bearing sources |
 
-**Overall confidence: HIGH** — This is a well-understood performance optimization pattern in the Next.js ecosystem, with official documentation backing the approach and an existing proof of concept in the codebase.
+**Overall confidence:** MEDIUM-HIGH — the codebase-specific findings (which drive nearly every actionable recommendation and both reconciliations above) are consistently HIGH confidence across all four files; the residual uncertainty is confined to two external, not-fully-verified claims (Turso interactive-transaction support, and Vercel Cron auth cross-verification depth) that this summary has already routed around via conservative design choices (batch-form transaction; middleware-centralized auth).
 
 ### Gaps to Address
 
-1. **Turso rate-limit behavior under parallel queries (Phase 5):** Research found that libSQL HTTP transport handles concurrency correctly, but Turso free-tier rate limits are not well-documented. During Phase 5 planning, confirm: (a) are Turso rate limits per-connection or per-account? (b) does parallelizing 3 queries increase the risk of hitting limits? (c) if so, should Phase 5 include a fallback to `Promise.allSettled` with graceful degradation?
-
-2. **HabitTracker optional prop backward compatibility (Phase 3):** The modification to `HabitTracker` to skip internal fetch when `initialData` is provided is straightforward, but need to verify no other pages currently use `HabitTracker` and rely on its self-fetch behavior. Check: `/study`, `/wrapped`, and any other pages that render the component.
-
-3. **Skeleton layout shift validation (all phases):** Each skeleton must match the real content's height to avoid Cumulative Layout Shift (CLS). During implementation, measure actual component heights and hard-code skeleton dimensions. No automation here — manual audit required.
-
----
+- **Undo/ReviewLog interaction is an explicit product decision, not resolved here:** the recommended default (ReviewLog stays immutable/append-only; undo does not delete or mark rows, so an undone review still appears in history) should be confirmed as acceptable UX before Phase 2/3 planning locks it in — flagged consistently by ARCHITECTURE.md and PITFALLS.md as a decision point, not an implementation detail.
+- **"Last cron sync" visibility is out of the three named features but raised independently by two research passes** (FEATURES.md and PITFALLS.md) as a real gap: Vercel does not alert on cron failures, so a silently-broken daily sync could go unnoticed for a long time without some visible status. Recommend a lightweight addition (a `Setting` row updated on each cron run, surfaced in Settings ▸ Advanced next to `SyncPanel`) — confirm at requirements time whether this is in v1.4 scope or explicitly deferred.
+- **Exact idempotency-key transport mechanism (Phase 2) needs a concrete design pass**, not just "add a UUID" — specifically how `handleUndo` should interact with an in-flight retry carrying that key (cancel it? let it complete and treat the log row as informational-only?). Flagged as a Research Flag above.
+- **Filter dry-run validation methodology (Phase 1)** — PITFALLS.md recommends running the corrected filter against the real corpus before enabling it in the write path and checking for a drop-rate asymmetry between `grammar`- and `vocabulary`-type components; this should be an explicit verification step in the Phase 1 plan, not left implicit.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- [Next.js 16.2 Fetching Data docs](https://nextjs.org/docs/app/getting-started/fetching-data) — RSC patterns, async page components, server-client boundaries
-- [Next.js 16.2 loading.js API reference](https://nextjs.org/docs/app/api-reference/file-conventions/loading) — Suspense wrapping behavior, navigation-only activation
-- [Next.js 16.2 Streaming guide](https://nextjs.org/docs/app/guides/streaming) — Suspense boundaries, streaming SSR
-- [Existing codebase CLAUDE.md](https://example.com) — Proof of concept: layout.tsx already an async RSC calling lib/settings.ts Prisma functions; pattern works in production on Turso/libSQL
-- [Prisma Turso documentation](https://www.prisma.io/docs/orm/v6/overview/databases/turso) — libSQL adapter, HTTP transport, concurrent query safety
-- [React 19 Suspense documentation](https://react.dev/reference/react/Suspense) — Suspense API, fallback behavior
+- Direct codebase reads (all four research files): `CLAUDE.md`, `.planning/PROJECT.md`, `middleware.ts`, `lib/auth.ts`, `app/api/sync/route.ts`, `app/api/review/route.ts`, `app/api/review/undo/route.ts`, `components/StudySession.tsx`, `lib/extract-cards.ts`, `lib/sentence-match.ts`, `lib/known-words.ts`, `lib/card-key.ts`, `prisma/schema.prisma`, `prisma.config.ts`, `lib/prisma.ts`, `scripts/apply-graph-ddl.mjs`, `package.json`
+- https://vercel.com/docs/cron-jobs — fetched directly 2026-07-02, `crons[]` schema, expression limits, Hobby daily-only + within-the-hour timing
+- https://vercel.com/docs/cron-jobs/manage-cron-jobs — fetched directly 2026-07-02, `CRON_SECRET`/`Authorization: Bearer` mechanism, non-retry-on-failure behavior, idempotency guidance
 
 ### Secondary (MEDIUM confidence)
-- [Nielsen Norman Group: Skeleton Screens 101](https://www.nngroup.com/articles/skeleton-screens/) — UX research on skeleton loading patterns
-- [GitHub vercel/next.js #46137](https://github.com/vercel/next.js/discussions/46137) — "Only plain objects can be passed to Client Components" Date serialization warning (community-verified)
-- [GitHub prisma/prisma #19983](https://github.com/prisma/prisma/discussions/19983) — Date/Decimal serialization in RSC (Prisma team response)
-- [GitHub vercel/next.js #68763](https://github.com/vercel/next.js/discussions/68763) — loading behavior on initial vs. navigation loads (maintainer clarification)
-- [LogRocket: 6 React Server Component performance pitfalls in Next.js](https://blog.logrocket.com/react-server-components-performance-mistakes) — Waterfalls, serialization, Date handling
-- [DEV.to: Complete Next.js Streaming Guide](https://dev.to/boopykiki/a-complete-nextjs-streaming-guide-loadingtsx-suspense-and-performance-9g9) — Community guide to patterns
+- WebSearch cross-checks on Vercel Cron Hobby-plan limits (consistent with fetched docs)
+- WebSearch on Prisma/libSQL interactive-transaction support over Turso HTTP transport — inconclusive, used only to justify caution, not as a positive claim
+- [Card Info, Graphs and Statistics — Anki Manual](https://docs.ankiweb.net/stats.html) and [Review Heatmap add-on](https://ankiweb.net/shared/info/1771074083) — per-review-event vs. day-level-heatmap distinction
 
 ### Tertiary (LOW confidence)
-- [Community blog: Next.js 16.2 unstable_cache vs use cache](https://www.buildwithmatija.com/blog/nextjs-16-2-caching-unstable-cache-vs-use-cache) — Why not to add caching (inferred that RSC solves the problem better)
-- [LogRocket: Skeleton loading screen design](https://blog.logrocket.com/ux-design/skeleton-loading-screen-design/) — Skeleton UX best practices (general, not Next.js-specific)
+- General web sources on Vercel Cron route method/matcher pitfalls, Prisma audit-log-at-scale patterns, and optimistic-update race framing — used only as corroboration for codebase-derived findings, not as independent claims
 
 ---
-
-## What NOT to Build
-
-Research identifies several commonly-requested features that should be deferred or rejected:
-
-| What | Why Not | Alternative |
-|------|---------|-------------|
-| `unstable_cache` / `use cache` | Replaced/complex; the RSC hydration pattern solves the initial-load problem; per-request caching via `React.cache()` only; cross-request caching adds staleness risk for a personal app | RSC hydration for first load; `React.cache()` for within-request dedup if sub-components need same data |
-| SWR / React Query | Client-side data fetching; RSC already eliminates the blank-page problem | RSC async pages + client `fetch` for mutations only |
-| `server-only` package | Optional guard; in this single-dev project, boundaries are explicit in CLAUDE.md | Continue using `// No 'use client' — server-side only` comment convention |
-| New DB layer (Drizzle/Kysely) | Existing Prisma 7 + libSQL works correctly with RSC + Promise.all parallelism | Keep existing setup |
-
----
-
-*Research completed: 2026-06-29*  
+*Research completed: 2026-07-02*
 *Ready for roadmap: yes*
