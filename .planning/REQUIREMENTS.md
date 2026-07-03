@@ -61,27 +61,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| GRAPH-01 | TBD | Pending |
-| GRAPH-02 | TBD | Pending |
-| GRAPH-03 | TBD | Pending |
-| GRAPH-04 | TBD | Pending |
-| GRAPH-05 | TBD | Pending |
-| HIST-01 | TBD | Pending |
-| HIST-02 | TBD | Pending |
-| HIST-03 | TBD | Pending |
-| HIST-04 | TBD | Pending |
-| HIST-05 | TBD | Pending |
-| HIST-06 | TBD | Pending |
-| HIST-07 | TBD | Pending |
-| SYNC-02 | TBD | Pending |
-| SYNC-03 | TBD | Pending |
-| SYNC-04 | TBD | Pending |
+| GRAPH-01 | Phase 16 | Pending |
+| GRAPH-02 | Phase 16 | Pending |
+| GRAPH-03 | Phase 16 | Pending |
+| GRAPH-04 | Phase 16 | Pending |
+| GRAPH-05 | Phase 16 | Pending |
+| HIST-01 | Phase 17 | Pending |
+| HIST-02 | Phase 17 | Pending |
+| HIST-03 | Phase 17 | Pending |
+| HIST-04 | Phase 18 | Pending |
+| HIST-05 | Phase 18 | Pending |
+| HIST-06 | Phase 18 | Pending |
+| HIST-07 | Phase 18 | Pending |
+| SYNC-02 | Phase 19 | Pending |
+| SYNC-03 | Phase 19 | Pending |
+| SYNC-04 | Phase 19 | Pending |
 
 **Coverage:**
 - v1.4 requirements: 15 total
-- Mapped to phases: 0 (pending roadmap creation)
-- Unmapped: 15 ⚠️ (expected — filled in by `/gsd-roadmapper`)
+- Mapped to phases: 15 ✓ (Phase 16: 5 · Phase 17: 3 · Phase 18: 4 · Phase 19: 3)
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-07-02*
-*Last updated: 2026-07-02 after initial v1.4 definition*
+*Last updated: 2026-07-02 — roadmap created, all 15 requirements mapped to Phases 16–19*

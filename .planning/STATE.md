@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Knowledge Graph Quality & History
 status: planning
-last_updated: "2026-07-03T04:00:14.026Z"
-last_activity: 2026-07-03
+last_updated: "2026-07-02T00:00:00.000Z"
+last_activity: 2026-07-02
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,119 +17,85 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-03)
+See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** v1.3 (Reliability & Hardening) complete — all 3 phases (13, 14, 15) shipped and verified; ready for milestone close
+**Current focus:** v1.4 Knowledge Graph Quality & History — Phase 16 (Components[] Filter Fix)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-07-03 — Milestone v1.4 started
+Phase: 16 of 19 (Components[] Filter Fix) — first phase of the v1.4 milestone
+Plan: — of TBD
+Status: Ready to plan
+Last activity: 2026-07-02 — Roadmap created; 4 phases (16–19), 15/15 requirements mapped
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed (v1.3): 4
-- Average duration: ~7.5 min
-- Total execution time: ~0.5 hours (v1.3)
+- Total plans completed (v1.4): 0
+- Prior milestone (v1.3): 4 plans, ~7.5 min avg, ~0.5 h total
 
 **By Phase:**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 13 | 2/2 | ~15 min | ~7.5 min |
-| 14 | 2 | - | - |
-| 15 | 2 | - | - |
+| 16 | 0/TBD | - | - |
+| 17 | 0/TBD | - | - |
+| 18 | 0/TBD | - | - |
+| 19 | 0/TBD | - | - |
 
 **Recent Trend:**
 
-- Last milestone: v1.2 Performance & Snappiness shipped 2026-07-01 (4 phases, 9 plans)
+- Last milestone: v1.3 Reliability & Hardening shipped 2026-07-03 (3 phases, 6 plans)
 - Trend: —
 
 *Updated after each plan completion*
-
-| Plan | Duration | Tasks | Files |
-|------|----------|-------|-------|
-| Phase 13 P01 | 5 min | 2 | 2 |
-| Phase 13 P02 | ~10 min | 3 | 2 |
-| Phase 14 P01 | ~8 min | 2 | 1 |
-| Phase 14 P02 | ~7 min | 3 | 3 |
-| Phase 15 P01 | 6 min | 2 tasks | 3 files |
-| Phase 15 P02 | 15min | 3 tasks | 4 files |
 
 ## Accumulated Context
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
+Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decisions for v1.4:
 
-- v1.3 is a bug-fix/hardening milestone sourced directly from `.planning/codebase/CONCERNS.md` (2026-07-02); no research phase (fix approaches already specified in the audit).
-- Phase order is risk/rework driven: server-side review correctness first (Phase 13), then sync visibility + caching (Phase 14), then the StudySession structural refactor last (Phase 15) so it preserves already-verified behavior.
-- Behavior-changing StudySession work (REVIEW-04 retry, REVIEW-05 undo atomicity) lands in Phase 13; Phase 15 restructures the same file only after behavior is locked.
-- Within Phase 15: extract the pure sentence-selection module (REFACTOR-02) + memoize it (PERF-03) BEFORE splitting into mode sub-components (REFACTOR-01) — avoids restructuring the selection logic twice.
-- Deferred (out of scope): rate limiting, time-bound auth tokens, API/UI test coverage, card retirement, review-log table, background sync, model fallback — see REQUIREMENTS.md Out of Scope.
-- [Phase 13]: Plan 13-01: rating range guard placed before try block (pure validation, zero DB/FSRS work for invalid rating); 404 kept inside try since findUnique can throw — Plan prose said 404 outside try, but binding acceptance_criteria + must_have truths require findUnique inside catch so DB hiccups are caught (REVIEW-01)
-- [Phase 13]: Plan 13-01: /api/review 500 returns generic 'Failed to record review' (raw error console.error'd server-side only) per threat T-13-02; cards route 500 left echoing e.message since REVIEW-03 scopes only the collision branch — Avoid internal-schema disclosure on review route; changing cards 500 behavior would be scope creep beyond REVIEW-03
-- [Phase 13]: Plan 13-01: used Prisma P2002 catch (not a pre-update normalizedFront findUnique) for the card-front collision 400 — Matches the codebase's existing catch-based error-handling idiom and avoids an extra query per edit
-- [Phase 13]: Plan 13-01: app/api/review/undo/route.ts left untouched despite same missing-try/catch shape — Out of scope for REVIEW-01..05 per the plan; deferred to a future phase
-- [Phase 13]: Plan 13-02: postReviewWithRetry uses 3 total attempts (1 initial + 2 retries) with ~500ms/~1500ms backoff, toast only on exhaustion (REVIEW-04) — Hard-bounded so a persistent failure can't spin an unbounded request loop (threat T-13-05); toast scoped to background-save failure path only, not handleUndo
-- [Phase 13]: Plan 13-02: atomic undo via mount-guard + React 18/19 auto-batched setState block (not useReducer) — isMountedRef gates the whole restoration incl. seenCardIdsRef write so it applies all-or-nothing (REVIEW-05); Phase 15 owns the larger StudySession refactor so this plan minimized churn
-- [Phase 13]: Plan 13-02: Toast dismiss callback held in a ref so auto-dismiss setTimeout is set up once on mount and survives parent re-renders; onDismiss fires inside the timeout (not the effect body) — satisfies react-hooks/set-state-in-effect; token-styled, no new npm dep
-- [Phase 14]: Plan 14-01: Kept where:{components:{not:null}} on the seed findMany (not broadened to all cards) — preserves existing CardDependency edge-creation semantics exactly; broadening would change which edges are created and is out of scope for a perf-preserving refactor (PERF-01)
-- [Phase 14]: Plan 14-01: Dropped `components` from the seed findMany select; component strings now come from the in-memory extraction result (card.components) instead of JSON.parse-ing a DB re-read — eliminates the parse-error path entirely and removes a DB column read (PERF-01)
-- [Phase 14]: Plan 14-01: linkTargets declared in the per-lesson try block (resets each lesson) and in scope for both the Promise.all callback (push) and the post-await linking loop (iterate); keyToId fully populated by link time so forward references within a lesson resolve (PERF-01)
-- [Phase 14]: Plan 14-01: lessonExcerpt returns the user's OWN Google Doc content (first non-empty line) — intentionally surfaced back to the sole authenticated owner (T-14-02 accepted); raw msg/dbMsg confined to server-side console.error/console.warn only (T-14-01 mitigated), mirroring Phase 13 T-13-02 (SYNC-01)
-- [Phase 14]: Plan 14-01: Response shape (failed/failures/remaining/newLessons/newCards) left unchanged so components/SyncPanel.tsx renders the new excerpt strings with zero client-side edit (SYNC-01)
-- [Phase 14]: Plan 14-02: Gloss preload keyed by `normalizeFront(raw)` on the client to match the server DB key `gloss:<normalizeFront(word)>` — the load-bearing alignment that makes a preloaded entry a HIT on the next tap; `raw` (display + POST body) kept separate so server resolution is unchanged (PERF-02)
-- [Phase 14]: Plan 14-02: Mount preload effect writes to `cache.current` (a ref) ONLY — no setState in the effect body — so it is `react-hooks/set-state-in-effect` safe; React StrictMode double-invoke is harmless (idempotent `Map.set`); rendering is never gated on preload resolving (PERF-02)
-- [Phase 14]: Plan 14-02: Preload endpoint bounded + gloss-scoped — fixed server-side `take: GLOSS_PRELOAD_LIMIT` (300), no client-controllable limit param (T-14-04); `where: { key: { startsWith: 'gloss:' } }` so app-config settings are never read/serialized (T-14-05); degrades to `{ entries: [] }` on error, never a 500 (PERF-02)
-- [Phase 14]: Plan 14-02: Per-row `JSON.parse` in try/catch (skip + console.warn malformed, mirroring getCachedGloss) — a corrupt cache row never crashes the preload (T-14-06); no new npm deps, no schema changes (T-14-SC accepted)
-- [Phase ?]: [Phase 15] Plan 15-01: Co-located hashStr in lib/sentence-selection.ts (not a separate lib/hash.ts) — single source of truth shared by sentence-selection tie-break and mcOptions distractor seeding; lower ceremony than a one-function file (REFACTOR-02)
-- [Phase ?]: [Phase 15] Plan 15-01: Moved chosenIdx useMemo + its inputs above the empty-queue early return to satisfy react-hooks/rules-of-hooks — the original inline IIFE was not a hook so could sit after the return, but useMemo cannot be called conditionally (PERF-03)
-- [Phase ?]: [Phase 15] Plan 15-01: Used minimal structural SelectableSentence interface ({korean, targetForm, unknownCount?}) instead of importing SentenceDTO — mirrors lib/sequence.ts SeqCard, keeps the pure module decoupled from the DTO layer (REFACTOR-02)
+- Phase order is dependency-driven (per research SUMMARY.md): (16) filter fix first — standalone, lowest risk, and its correctness gates whether unattended cron sync is safe to enable; (17) ReviewLog schema + idempotent write path before (18) the history page — the DDL-then-code split is a hard Turso constraint and the page is only as trustworthy as the write path; (19) cron last — highest blast-radius (first route reachable without the session cookie).
+- Filter (GRAPH-03/04) resolves components by `normalizeFront()` deck-lookup, NOT literal sentence-text containment — research Reconciliation #2: substring matching would gut abstract grammar-pattern edges, the opposite of the milestone's intent. Dry-run the corpus (GRAPH-05) before wiring into the write path.
+- ReviewLog idempotency (HIST-02) is core scope, not a stretch — client-generated key + `prisma.$transaction([cardReview.update, reviewLog.create])` (array form, sidesteps Turso interactive-transaction uncertainty). Undo cancels in-flight retries (HIST-03); ReviewLog stays append-only, undo never mutates rows (HIST-06).
+- Zero new npm dependencies expected — all three features build on platform config (Vercel Cron + `vercel.json` + `CRON_SECRET`), one Prisma model via the manual Turso-DDL workaround, and reuse of existing pure `lib/` helpers.
 
 ### Pending Todos
 
-- `2026-07-02-fix-spurious-components-in-card-extraction.md` — Claude extraction lists spurious `components` (e.g. `~(으)ㄴ 후에` on a `~ㄹ 것 같다` sentence), creating wrong CardDependency edges. Area: general. Files: `lib/extract-cards.ts:110-117`, `app/api/sync/route.ts:240-264`.
+- `2026-07-02-fix-spurious-components-in-card-extraction.md` — now IN SCOPE for v1.4 Phase 16 (GRAPH-01..05). Was deferred at v1.3 close; the roadmap folds it into the Components[] Filter Fix phase.
 
 ### Blockers/Concerns
 
-- [Phase 13 → resolved] Phases 13 & 15 both touched `components/StudySession.tsx` — Phase 13 shipped first, so Phase 15's refactor must preserve the `postReviewWithRetry` wiring, `isMountedRef` mount-guard, `saveError`/`<Toast>` plumbing, and atomic `handleUndo` restoration.
-- [Phase 15 → resolved] Behavior-preserving refactor confirmed via live study-session UAT (flip/grade/undo/mode-switch, all 3 modes) — human typed "approved"; lint stayed clean (0 errors) throughout.
-- [Phase 14 → resolved] PERF-01 & SYNC-01 both edited `app/api/sync/route.ts` — landed together in plan 14-01 with no conflict (PERF-01 hoisted the map; SYNC-01 added the excerpt helper + rewrote failure strings; both tasks committed atomically).
-- [Phase 14 → resolved] UAT complete (3/3 passed, 0 issues): SYNC-01 excerpt rendering confirmed, PERF-01 CardDependency edge creation confirmed (2095 edges, 0 self-edges, edges connect cards with components to prereq cards with components), PERF-02 live-verified at plan level. Security: threats_open:0 (8 threats, all closed). Nyquist: partial (lessonExcerpt unit-tested, sync route + gloss preload manual-only).
-- [Phase 13 deferred] `app/api/review/undo/route.ts` has the same missing-try/catch shape as the hardened `/api/review` route but was out of scope for REVIEW-01..05 — left for a future hardening pass.
+- [Phase 17 → research flag] The idempotency-key mechanism + its interaction with `handleUndo`'s in-flight retry is a genuine design decision, not a copy-paste. Recommend a focused discuss/research pass on the idempotency/undo interaction before planning (see research SUMMARY.md Research Flags).
+- [Phase 19 → research flag] The Vercel Cron auth pattern (middleware bearer-token branch alongside the existing cookie gate) is architecturally new for this codebase (MEDIUM confidence). Worth a final direct-docs check at plan time.
+- [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch (same shape as the Phase 13-hardened routes) — out of scope; may be touched incidentally by Phase 17's undo work.
 
 ### Roadmap Evolution
 
-- v1.3 roadmap created 2026-07-02: 3 phases (13–15), 11/11 requirements mapped, coarse granularity.
+- v1.3 roadmap: 3 phases (13–15), 11/11 requirements mapped, coarse granularity — shipped 2026-07-03.
+- v1.4 roadmap created 2026-07-02: 4 phases (16–19), 15/15 requirements mapped, coarse granularity. Structure follows research SUMMARY.md's dependency-ordered 4-phase suggestion; boundaries and success criteria owned by roadmapper.
 
 ## Deferred Items
 
-Carried forward from v1.2 close (2026-07-01) — informational only:
+Carried forward, informational only:
 
 | Category | Item | Status |
 |----------|------|--------|
-| verification | Phase 10/11 `human_needed` RSC paint-timing checks | Resolved in practice via Phase 11 live UAT; low risk |
-| hardening | `app/api/review/undo/route.ts` missing try/catch (deferred in Phase 13) | Open — future hardening pass |
-
-Items acknowledged and deferred at milestone close on 2026-07-03:
-
-| Category | Item | Status |
-|----------|------|--------|
-| todo | 2026-07-02-fix-spurious-components-in-card-extraction.md | Open — future work, out of v1.3 scope |
+| hardening | `app/api/review/undo/route.ts` missing try/catch (deferred in Phase 13) | Open — may be addressed incidentally in Phase 17 |
+| feature | Card retirement/mastery flag (MASTERY-01) | Deferred to v2 — see REQUIREMENTS.md |
+| gap | "Last cron sync" visibility raised by two research passes | Confirmed IN scope as SYNC-04 (Settings ▸ Advanced timestamp) |
 
 ## Session Continuity
 
-Last session: 2026-07-03T01:00:23.302Z
-Stopped at: Phase 15 complete and verified — v1.3 (Reliability & Hardening) milestone execution done, ready for /gsd-complete-milestone v1.3
+Last session: 2026-07-02 — v1.4 roadmap created
+Stopped at: ROADMAP.md + STATE.md written, REQUIREMENTS.md traceability filled (15/15 mapped)
 Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan the first phase with `/gsd-plan-phase 16`
