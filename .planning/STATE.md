@@ -5,10 +5,10 @@ milestone_name: Knowledge Graph Quality & History
 current_phase: 16
 current_phase_name: components-filter-fix
 status: executing
-stopped_at: Completed 16-03-PLAN.md
-last_updated: "2026-07-03T22:45:45.499Z"
+stopped_at: "16-04-PLAN.md Tasks 1-2 complete; paused at Task 3 blocking-human checkpoint"
+last_updated: "2026-07-03T23:10:00.000Z"
 last_activity: 2026-07-03
-last_activity_desc: Phase 16 execution started
+last_activity_desc: Phase 16 plan 04 Tasks 1-2 complete; awaiting developer checkpoint approval
 progress:
   total_phases: 4
   completed_phases: 0
@@ -30,8 +30,8 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 Phase: 16 (components-filter-fix) — EXECUTING
 Plan: 4 of 4
-Status: Ready to execute
-Last activity: 2026-07-03 — Phase 16 plan 03 complete
+Status: PAUSED at Task 3 blocking-human checkpoint (production data mutation gate)
+Last activity: 2026-07-03 — Phase 16 plan 04 Tasks 1-2 complete (script created + documented); Task 3 requires a developer to run scripts/retro-filter-cleanup.mts locally, review the dry-run against the 16-01 baseline, and approve --apply
 
 Progress: [████████░░] 75%
 
@@ -76,6 +76,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 - [Phase 16]: parseExtractionResponse exported as single pure entry point for salvage + structural validation; plan 16-03 will extend it with a deckNormalizedFronts Set<string> parameter
 - [Phase 16]: Deck-lookup filter (filterComponents) wired into parseExtractionResponse's per-card pipeline via a single integration point inside extractCardsFromNotes; scripts/local-resync.mts inherits filtering for free (GRAPH-03)
 - [Phase 16]: keyToId lookup in app/api/sync/route.ts and scripts/local-resync.mts rescoped to ALL cards (no components-not-null where clause) so real leaf-node cards are resolvable as prerequisites; stale keyToId.delete branch removed
+- [Phase 16]: scripts/retro-filter-cleanup.mts created — dry-run-by-default retroactive corpus cleanup that re-filters every persisted Card.components row and reconciles CardDependency edges (prune stale, add newly-valid), gated behind --apply; production execution is a blocking-human checkpoint per the plan's threat model (T-16-08/T-16-09), not auto-approvable
 
 ### Pending Todos
 
@@ -83,6 +84,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 
 ### Blockers/Concerns
 
+- [Phase 16 → blocking-human checkpoint] Plan 16-04 Task 3 requires a developer to run `npx tsx scripts/retro-filter-cleanup.mts` locally (dry-run), compare its per-type drop counts to the 16-01 baseline (grammar 8.0% / vocabulary 24.9% / phrase 21.5% / whole-corpus 22.5%), then run with `--apply` and confirm an idempotent re-run (0 further changes) before Phase 16 can close.
 - [Phase 17 → research flag] The idempotency-key mechanism + its interaction with `handleUndo`'s in-flight retry is a genuine design decision, not a copy-paste. Recommend a focused discuss/research pass on the idempotency/undo interaction before planning (see research SUMMARY.md Research Flags).
 - [Phase 19 → research flag] The Vercel Cron auth pattern (middleware bearer-token branch alongside the existing cookie gate) is architecturally new for this codebase (MEDIUM confidence). Worth a final direct-docs check at plan time.
 - [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch (same shape as the Phase 13-hardened routes) — out of scope; may be touched incidentally by Phase 17's undo work.
@@ -104,10 +106,12 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-03T22:45:45.494Z
-Stopped at: Completed 16-03-PLAN.md
+Last session: 2026-07-03T23:10:00.000Z
+Stopped at: 16-04-PLAN.md Tasks 1-2 complete; PAUSED at Task 3 blocking-human checkpoint
 Resume file: .planning/phases/16-components-filter-fix/16-04-PLAN.md
 
 ## Operator Next Steps
 
-- Plan 16-03 complete. Continue Phase 16 with plan 04 (`/gsd-execute-phase 16` or equivalent).
+- Run `npx tsx scripts/retro-filter-cleanup.mts` locally (dry-run, no writes). Review the per-type report and compare to the 16-01 baseline (grammar 8.0% / vocabulary 24.9% / phrase 21.5% / whole-corpus 22.5%).
+- If the dry run looks right, run `npx tsx scripts/retro-filter-cleanup.mts --apply` to mutate production, then confirm the final report and re-run the dry run once more to prove idempotency (0 further changes).
+- Report back with "approved" and the recorded before/after counts (cards changed, edges pruned, edges added) — or describe any anomaly — so the plan/phase can be closed out.

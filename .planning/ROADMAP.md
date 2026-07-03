@@ -82,7 +82,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   3. Abstract grammar-pattern components that never appear verbatim in conjugated sentences are correctly retained (resolution is by deck-lookup, not literal containment).
   4. Before the filter is wired into the write path, a dry run against the real corpus reports its drop rate separately for grammar- vs vocabulary-type components, confirming grammar edges are not disproportionately dropped.
 
-**Plans**: 3/4 plans executed
+**Plans**: 3/4 plans executed; 16-04 Tasks 1-2 done, paused at blocking-human checkpoint (Task 3)
 **Wave 1**
 
 - [x] 16-01-PLAN.md — Pure deck-lookup filter module (`lib/filter-components.ts`) + read-only corpus dry-run + human-reviewed drop-rate gate (GRAPH-03/04/05)
@@ -94,7 +94,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 16-04-PLAN.md — Retroactive corpus cleanup: dry-run-first developer-run script re-filters `Card.components` + reconciles `CardDependency` edges (user-locked retroactive cleanup)
+- [ ] 16-04-PLAN.md — Retroactive corpus cleanup: dry-run-first developer-run script re-filters `Card.components` + reconciles `CardDependency` edges (user-locked retroactive cleanup) — script built + documented (Tasks 1-2); PAUSED at Task 3 blocking-human checkpoint pending developer-run dry-run/--apply against production
 
 ### Phase 17: ReviewLog Schema & Idempotent Write Path
 
