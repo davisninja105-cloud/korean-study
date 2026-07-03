@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { sentenceMatch } from './sentence-match'
 import { normalizeFront } from './card-key'
+import { filterComponents } from './filter-components'
 
 export interface ExtractedSentence {
   korean:      string   // full sentence, no blank — targetForm appears verbatim
@@ -168,7 +169,8 @@ ${notes}`,
 
   const text = content.text.trim()
 
-  return parseExtractionResponse(text)
+  const deckSet = new Set(existingNormalizedFronts)
+  return parseExtractionResponse(text, deckSet)
 }
 
 const VALID_CARD_TYPES = ['vocabulary', 'grammar', 'phrase'] as const
@@ -201,8 +203,20 @@ function isValidExtractedCard(c: unknown): c is Partial<ExtractedCard> {
  * validation (GRAPH-02: a malformed card object is dropped, never coerced
  * into an empty-string card) BEFORE the existing normalization step. No
  * Anthropic call inside — safe to unit test in isolation.
+ *
+ * `deckNormalizedFronts` (GRAPH-03) is the full set of every card's
+ * normalizedFront already in the deck. After the existing self-dedup/
+ * self-exclude step produces a card's components array, filterComponents()
+ * drops any entry that does not resolve to a real deck card (direct
+ * normalizeFront match or particle-stem fallback) — never by sentence-text
+ * containment. Defaults to an empty Set so existing callers/tests that don't
+ * pass a deck set simply get all components filtered out; the live caller
+ * (extractCardsFromNotes) always passes the real deck set.
  */
-export function parseExtractionResponse(text: string): ExtractedCard[] {
+export function parseExtractionResponse(
+  text: string,
+  deckNormalizedFronts: Set<string> = new Set()
+): ExtractedCard[] {
   // Tolerant JSON parser: if the full parse fails (e.g. truncated output), trim back
   // to the last complete object before the array closes so a dense lesson still
   // yields the cards that did complete rather than losing them all.
@@ -252,12 +266,16 @@ export function parseExtractionResponse(text: string): ExtractedCard[] {
 
     // Clean components: array of non-empty strings, deduped, self-excluded.
     const rawComponents = Array.isArray(c.components) ? c.components : []
-    const components = [...new Set(
+    const dedupedComponents = [...new Set(
       rawComponents
         .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
         .map((x) => x.trim())
         .filter((x) => normalizeFront(x) !== myKey)
     )]
+    // Deck-lookup filter (GRAPH-03): drop any component that doesn't resolve
+    // to a real deck card. Order matters — cheap self-dedup/self-exclude runs
+    // first, then this filter against the full deck set.
+    const components = filterComponents(dedupedComponents, deckNormalizedFronts)
 
     return {
       type:       (c.type ?? 'vocabulary') as ExtractedCard['type'],

@@ -26,7 +26,10 @@ describe('parseExtractionResponse', () => {
       sentences: [{ korean: '가면 좋다', targetForm: '가면', translation: 'good if you go' }],
       components: ['가다', '이다'],
     }
-    const result = parseExtractionResponse(JSON.stringify([cardA, cardB]))
+    // Deck set includes "학교" so this test isolates dedup/self-exclusion behavior
+    // from the deck-lookup filter (GRAPH-03, covered separately below).
+    const deckSet = new Set(['학교'])
+    const result = parseExtractionResponse(JSON.stringify([cardA, cardB]), deckSet)
 
     expect(result).toHaveLength(2)
     expect(result[0].front).toBe('가다')
