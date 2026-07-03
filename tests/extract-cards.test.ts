@@ -128,4 +128,82 @@ describe('parseExtractionResponse', () => {
     const fronts = result.map((c) => c.front)
     expect(fronts).toEqual(['가다', '오다'])
   })
+
+  describe('deckNormalizedFronts filtering (GRAPH-03 write-path wiring)', () => {
+    it('drops a spurious component not present in the deck set', () => {
+      const card = {
+        type: 'vocabulary',
+        front: '가다',
+        back: 'to go',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '학교에 가다', targetForm: '가다', translation: 'go to school' }],
+        components: ['학교', '완전히-지어낸단어'],
+      }
+      const deckSet = new Set(['학교'])
+      const result = parseExtractionResponse(JSON.stringify([card]), deckSet)
+
+      expect(result[0].components).toEqual(['학교'])
+    })
+
+    it('retains a component whose normalizeFront is in the deck set', () => {
+      const card = {
+        type: 'vocabulary',
+        front: '가다',
+        back: 'to go',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '학교에 가다', targetForm: '가다', translation: 'go to school' }],
+        components: ['학교'],
+      }
+      const deckSet = new Set(['학교'])
+      const result = parseExtractionResponse(JSON.stringify([card]), deckSet)
+
+      expect(result[0].components).toEqual(['학교'])
+    })
+
+    it('retains an abstract grammar-pattern component by deck-membership, not sentence-text containment (SC3)', () => {
+      const card = {
+        type: 'grammar',
+        front: '가면 좋다',
+        back: 'good if you go',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '가면 좋다', targetForm: '가면', translation: 'good if you go' }],
+        components: ['~(으)면'],
+      }
+      const deckSet = new Set(['~(으)면'])
+      const result = parseExtractionResponse(JSON.stringify([card]), deckSet)
+
+      expect(result[0].components).toEqual(['~(으)면'])
+    })
+
+    it('drops all components when deckSet is absent (default empty Set)', () => {
+      const card = {
+        type: 'vocabulary',
+        front: '가다',
+        back: 'to go',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '학교에 가다', targetForm: '가다', translation: 'go to school' }],
+        components: ['학교', '이다'],
+      }
+      const result = parseExtractionResponse(JSON.stringify([card]))
+
+      expect(result[0].components).toEqual([])
+    })
+
+    it('still self-excludes the card\'s own headword before the deck filter runs', () => {
+      const card = {
+        type: 'vocabulary',
+        front: '가다',
+        back: 'to go',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '학교에 가다', targetForm: '가다', translation: 'go to school' }],
+        // "가다" duplicates the card's own front and would also be in the deck set —
+        // self-exclusion must drop it BEFORE the deck-lookup filter ever sees it.
+        components: ['가다', '학교'],
+      }
+      const deckSet = new Set(['가다', '학교'])
+      const result = parseExtractionResponse(JSON.stringify([card]), deckSet)
+
+      expect(result[0].components).toEqual(['학교'])
+    })
+  })
 })
