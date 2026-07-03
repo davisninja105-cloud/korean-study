@@ -470,10 +470,13 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       const prevState = current.card.review ?? {}
 
       // 1. Compute FSRS result locally — instant, no network (D-08).
-      // Guard: brand-new cards without a prior review (no lastReview) skip local recompute;
-      // requeue stays false (safe — new cards are handled by REQUEUE_GAP anyway).
+      // Guard only requires nextReview (present for any due card). Brand-new cards
+      // have lastReview === null; reviewCard() handles that via createEmptyCard(),
+      // so they must NOT be excluded here — otherwise a new card graded Again gets
+      // a sub-day interval but is never requeued within the session (the "sub-day
+      // cards not replayed" bug). Pass lastReview through as null when absent.
       const reviewData = current.card.review
-      if (reviewData && reviewData.nextReview && reviewData.lastReview) {
+      if (reviewData && reviewData.nextReview) {
         // Convert ISO strings to Date objects — CardReviewFields requires Date, not string (Pitfall 1).
         const cardReviewFields = {
           state: reviewData.state ?? 0,
@@ -484,7 +487,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           reps: reviewData.reps ?? 0,
           lapses: reviewData.lapses ?? 0,
           nextReview: new Date(reviewData.nextReview),
-          lastReview: new Date(reviewData.lastReview),
+          lastReview: reviewData.lastReview ? new Date(reviewData.lastReview) : null,
         }
         const localResult = reviewCard(cardReviewFields, rating as Grade)
         // 2. Decide requeue from local result — instant, no network.
