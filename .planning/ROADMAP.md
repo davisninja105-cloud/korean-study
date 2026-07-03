@@ -52,7 +52,7 @@ See `.planning/milestones/v1.2-ROADMAP.md` for full phase details.
 
 - [x] **Phase 13: Review API Hardening & Save Reliability** - try/catch + rating validation in `/api/review`, friendly front-collision error, silent review-save retry, atomic undo (completed 2026-07-02)
 - [x] **Phase 14: Sync Failure Visibility & Caching Performance** - name failed lessons in the SyncPanel, cache the `normalizedFront → cardId` map during sync, preload the gloss cache from the DB (completed 2026-07-02)
-- [ ] **Phase 15: StudySession Refactor & Sentence-Selection Memoization** - extract sentence-selection into a pure, tested module + memoize it, then split into mode sub-components
+- [x] **Phase 15: StudySession Refactor & Sentence-Selection Memoization** - extract sentence-selection into a pure, tested module + memoize it, then split into mode sub-components (completed 2026-07-03)
 
 ## Phase Details
 
@@ -104,14 +104,14 @@ See `.planning/milestones/v1.2-ROADMAP.md` for full phase details.
   4. A live study session behaves identically to before — flip, grade, undo, Exposure/Recall toggle, and mode switching all work with no regression.
   5. `npm run lint` stays clean (`react-hooks/purity` respected — no impure calls in render) and `npm test` passes, including the new sentence-selection tests.
 
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans complete
 **Wave 1**
 
 - [x] 15-01-PLAN.md — Extract sentence-selection into pure, tested `lib/sentence-selection.ts` + memoize it in StudySession; single-source `hashStr` (REFACTOR-02, PERF-03)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 15-02-PLAN.md — Split StudySession into `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` sub-components + live UAT (REFACTOR-01) — Tasks 1+2 committed (89c32b1, bc98179); Task 3 human-verify checkpoint pending
+- [x] 15-02-PLAN.md — Split StudySession into `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` sub-components + live UAT (REFACTOR-01)
 
 ## Progress
 
@@ -135,4 +135,4 @@ Phases execute in numeric order: 13 → 14 → 15
 | 12. Home & Habits Hydration | v1.2 | 3/3 | Complete | 2026-07-01 |
 | 13. Review API Hardening & Save Reliability | v1.3 | 2/2 | Complete    | 2026-07-02 |
 | 14. Sync Failure Visibility & Caching Performance | v1.3 | 2/2 | Complete    | 2026-07-02 |
-| 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 1/2 | In Progress|  |
+| 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 2/2 | Complete   | 2026-07-03 |
