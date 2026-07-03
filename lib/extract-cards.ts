@@ -109,8 +109,14 @@ ${existingList}
 
 - "components": JSON array of base-form Hangul lemmas that a learner must already know to
   understand this card. Use base/dictionary forms (먹다 not 먹어요; 은/는 for the topic particle).
-  Include items even if they don't yet have their own card in the deck — they still represent
-  prerequisite knowledge. Omit the card's own headword. Examples:
+  Only list it if this card actually depends on it as a prerequisite — never because it merely
+  appears elsewhere in the lesson. A word or grammar pattern taught elsewhere in this same lesson
+  is NOT automatically a component of every other card — list it here only when THIS card's own
+  front or example sentences genuinely build on it as something the learner must already know.
+  A component need not yet have its own card in the deck to qualify — that's fine, it still
+  represents real prerequisite knowledge — but it MUST be something this specific card actually
+  depends on, not just a topically-related or co-occurring item from the same lesson. Omit the
+  card's own headword. Examples:
     • card 먹다 → components: ["밥", "을/를"] (vocabulary it's commonly paired with)
     • card ~(으)면 → components: ["가다", "이다"] (verbs used to illustrate it)
     • card 학교 → components: ["에", "가다"] (typical sentence components)
