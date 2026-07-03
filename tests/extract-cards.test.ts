@@ -113,13 +113,14 @@ describe('parseExtractionResponse', () => {
   })
 
   it('preserves the existing truncation-salvage logic — a raw response with no closing bracket still yields its complete cards', () => {
-    // Raw text mimics a truncated Claude stream: 2 complete card objects followed by
-    // a partial third object with no closing "]" anywhere in the string. The tolerant
+    // Raw text mimics a truncated Claude stream: 2 complete card objects (no nested
+    // arrays, so no stray "]" characters confuse the outer-array regex) followed by a
+    // partial third object with no closing "]" anywhere in the string. The tolerant
     // salvage parser (lib/extract-cards.ts) must trim back to the last complete "},"
     // and re-close the array so the 2 complete cards are still recovered and validated.
     const truncatedText = `[
-{"type":"vocabulary","front":"가다","back":"to go","distractors":["a","b","c"],"sentences":[{"korean":"학교에 가다","targetForm":"가다","translation":"go"}],"components":[]},
-{"type":"vocabulary","front":"오다","back":"to come","distractors":["a","b","c"],"sentences":[{"korean":"집에 오다","targetForm":"오다","translation":"come"}],"components":[]},
+{"type":"vocabulary","front":"가다","back":"to go"},
+{"type":"vocabulary","front":"오다","back":"to come"},
 {"type":"vocabulary","front":"먹다","back":"to eat`
     const result = parseExtractionResponse(truncatedText)
 
