@@ -171,10 +171,14 @@ for (let i = 0; i < newLessons.length; i++) {
   totalNewCards += newCardCount
 
   // Two-phase dependency linking for this lesson's upserted cards.
+  // Load ALL cards (no where clause) so a leaf-node card (no components of its
+  // own) is still resolvable as another card's prerequisite; the loop below
+  // already skips cards with no components as edge SOURCES via the
+  // `!dbCard.components` guard, so broadening this only affects which
+  // prerequisites resolve.
   if (upsertedIds.length > 0) {
     const allCardsForLink = await prisma.card.findMany({
       select: { id: true, normalizedFront: true, components: true },
-      where:  { components: { not: null } },
     }) as { id: string; normalizedFront: string; components: string | null }[]
     const keyToId = new Map(allCardsForLink.map((c) => [c.normalizedFront, c.id]))
     const upsertedSet = new Set(upsertedIds)
@@ -203,10 +207,11 @@ for (let i = 0; i < newLessons.length; i++) {
 }
 
 // Final relink pass to catch cross-lesson forward references.
+// Load ALL cards (no where clause) so leaf-node cards without their own
+// components remain resolvable as prerequisites for other cards.
 console.log('Running final dependency relink pass…')
 const allCards = await prisma.card.findMany({
   select: { id: true, normalizedFront: true, components: true },
-  where:  { components: { not: null } },
 }) as { id: string; normalizedFront: string; components: string | null }[]
 const keyToId = new Map(allCards.map((c) => [c.normalizedFront, c.id]))
 let relinkCount = 0

@@ -74,14 +74,15 @@ export async function POST(req: NextRequest) {
 
     // Build the normalizedFront → cardId map ONCE per request so the per-lesson
     // dependency-linking step doesn't re-query the full deck each iteration.
-    // Kept scoped to `components: { not: null }` to preserve existing edge
-    // semantics (only cards that have components are resolvable as prerequisites).
+    // Seeded from ALL cards (same broad shape as existingNormalizedFronts above) —
+    // a card with no components of its own is still a valid prerequisite target
+    // for another card, so the lookup must cover the whole deck, not just cards
+    // that themselves carry components.
     // `select` drops `components` — component strings now come from the in-memory
     // extraction result, not a DB re-read. Augmented incrementally during upserts.
     const keyToId = new Map<string, string>()
     const seedCards = await prisma.card.findMany({
       select: { id: true, normalizedFront: true },
-      where: { components: { not: null } },
     })
     for (const c of seedCards) keyToId.set(c.normalizedFront, c.id)
 
@@ -204,12 +205,10 @@ export async function POST(req: NextRequest) {
               if (card.components.length > 0) {
                 keyToId.set(nf, existing.id)
                 linkTargets.push({ id: existing.id, components: card.components })
-              } else {
-                // Card is losing its components — remove from the lookup map so it's
-                // no longer resolvable as a prerequisite (matches the original
-                // post-upsert re-query's `where: { components: { not: null } }`).
-                keyToId.delete(nf)
               }
+              // A card losing its own components is still a valid prerequisite
+              // target for other cards — it stays in keyToId (seeded from ALL
+              // cards above) and is never deleted here.
             }
           })
         )
