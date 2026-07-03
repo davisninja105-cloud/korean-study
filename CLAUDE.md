@@ -148,6 +148,7 @@ One-time / operational scripts — run locally against Turso via `@libsql/client
 - `apply-sentence-ddl.mjs` — One-time DDL that created the `Sentence` table (already applied, do not re-run).
 - `add-lesson-order.mjs` — One-time backfill that added `orderIndex` to existing lessons (already applied, do not re-run).
 - `gen-icons.mjs` — Rasterizes `public/icon.svg` (한 mark on brand blue) via `sharp` into the icon set: `icon-192.png`, `icon-512.png`, `apple-icon.png` (180px), `icon-512-maskable.png` (한 scaled to 80% safe zone). Run locally after editing the SVG: `node scripts/gen-icons.mjs`, then commit the PNGs. Requires Apple SD Gothic Neo or another Korean font on the OS.
+- `retro-filter-cleanup.mts` — Re-applies the deck-lookup `filterComponents()` filter to all persisted `Card.components` rows and reconciles `CardDependency` edges (prunes stale, adds newly-valid). **DRY-RUN by default** (`npx tsx scripts/retro-filter-cleanup.mts` — reports only, no writes); mutates production only with `--apply`. Developer-run locally, NEVER in the `/api/sync` request path. Idempotent — safe to re-run.
 
 ## Environment Variables
 
