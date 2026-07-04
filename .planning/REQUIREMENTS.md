@@ -23,7 +23,7 @@ Requirements for the "Knowledge Graph Quality & History" milestone. Each maps to
 - [x] **HIST-04**: User can view a reverse-chronological, cursor-paginated history of their reviews (~20-30/page), reachable from an existing surface (Settings, `/wrapped`, or `CardEditor` — no new bottom-nav tab)
 - [x] **HIST-05**: User can filter the history view down to a single card
 - [x] **HIST-06**: Undone reviews remain visible in history, unmarked — `ReviewLog` is append-only and never mutated by undo
-- [ ] **HIST-07**: History page follows the RSC + DTO + client-shell hydration pattern (real data on first paint, no loading flash)
+- [x] **HIST-07**: History page follows the RSC + DTO + client-shell hydration pattern (real data on first paint, no loading flash)
 
 ### Automatic Sync
 
@@ -72,7 +72,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | HIST-04 | Phase 18 | Complete |
 | HIST-05 | Phase 18 | Complete |
 | HIST-06 | Phase 18 | Complete |
-| HIST-07 | Phase 18 | Pending |
+| HIST-07 | Phase 18 | Complete |
 | SYNC-02 | Phase 19 | Pending |
 | SYNC-03 | Phase 19 | Pending |
 | SYNC-04 | Phase 19 | Pending |
