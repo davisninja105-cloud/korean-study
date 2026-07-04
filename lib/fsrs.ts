@@ -36,7 +36,7 @@ function formatInterval(due: Date, now: Date): string {
 }
 
 // Returns mastery-language copy for a given interval, e.g. "Memory strengthening → 3d".
-function masteryPhrase(due: Date, now: Date): string {
+export function masteryPhrase(due: Date, now: Date): string {
   const short = formatInterval(due, now)
   const diffMs = due.getTime() - now.getTime()
   const diffDays = diffMs / 86_400_000

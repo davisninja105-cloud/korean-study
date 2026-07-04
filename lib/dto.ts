@@ -31,6 +31,17 @@ export interface SentenceDTO {
   unknownCount?: number     // annotated by study-cards.ts pipeline; absent on cards page path
 }
 
+export interface ReviewLogDTO {
+  id: string
+  createdAt: string         // ISO string, was Date
+  cardId: string
+  cardFront: string
+  cardType: string
+  rating: number
+  gradeName: string          // 'Again' | 'Hard' | 'Good' | 'Easy'
+  mastery: string            // e.g. "Memory strengthening → 3d"
+}
+
 export interface LessonRefDTO {
   title: string
   orderIndex: number
@@ -76,6 +87,9 @@ export interface StatsDTO {
   // when the _count arg is a boolean (Prisma 7 GetCardGroupByPayload generic).
   cardsByType: { type: string; _count: number }[]
   masteredCount: number
+  // prisma.cardReview.groupBy({ by: ['state'], _count: true }) → _count is scalar number
+  // when the _count arg is a boolean (Prisma 7 GetCardReviewGroupByPayload generic).
+  cardsByState: { state: number; stateLabel: string; _count: number }[]
 }
 
 export interface ActivityDTO {
