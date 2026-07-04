@@ -106,23 +106,35 @@ const REVIEW_ENDPOINT = '/api/review'
 async function postReviewWithRetry(
   cardId: string,
   rating: number,
+  idempotencyKey: string,
+  cancelSignal: AbortSignal,
   onExhausted: () => void,
 ): Promise<void> {
   const backoffMs = [500, 1500]
   for (let attempt = 0; attempt < 3; attempt++) {
+    if (cancelSignal.aborted) return
     const ctrl = new AbortController()
+    // Forward the outer (undo-triggered) cancel signal into this attempt's
+    // controller — manual addEventListener forwarding, not the newer variadic
+    // AbortSignal.any() combinator (later browser-support floor, unused
+    // elsewhere in this codebase; HIST-03 / RESEARCH Architecture Pattern 2).
+    const forwardAbort = () => ctrl.abort()
+    cancelSignal.addEventListener('abort', forwardAbort, { once: true })
     const timeoutId = setTimeout(() => ctrl.abort(), 8000)
     try {
       const res = await fetch(REVIEW_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cardId, rating }),
+        body: JSON.stringify({ cardId, rating, idempotencyKey }),
         signal: ctrl.signal,
       })
       if (res.ok) return
       // 4xx is a permanent failure — don't retry; go straight to exhausted.
       if (res.status >= 400 && res.status < 500) break
     } catch {
+      // A deliberate cancel (undo) is not a failed attempt — return silently
+      // without ever calling onExhausted (HIST-03).
+      if (cancelSignal.aborted) return
       // fetch rejected or aborted (timeout) — counts as a failed attempt; fall through to backoff/retry
     } finally {
       // IN-01: always clear the per-attempt timer, including when fetch
@@ -131,12 +143,14 @@ async function postReviewWithRetry(
       // aborts a controller whose fetch has already settled (harmless no-op,
       // but an avoidable dangling timer).
       clearTimeout(timeoutId)
+      cancelSignal.removeEventListener('abort', forwardAbort)
     }
     if (attempt < 2) {
       await new Promise<void>((resolve) => setTimeout(resolve, backoffMs[attempt]))
+      if (cancelSignal.aborted) return
     }
   }
-  onExhausted()
+  if (!cancelSignal.aborted) onExhausted()
 }
 
 type StudyItem =
@@ -198,6 +212,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     prevStats: { reviewed: number; correct: number; incorrect: number }
     prevSeenCount: number
     prevSeenCardIds: Set<string>
+    controller: AbortController
   } | null>(null)
 
   // Track unique card IDs seen at least once this session so the "Card N of N"
@@ -513,15 +528,23 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
         }
       }
 
+      // One idempotency key + one AbortController generated ONCE per grade
+      // action, here in the event-handler flow (Pitfall 5 / react-hooks/purity
+      // — never lift these into useMemo/render). The key is reused unchanged
+      // across every retry attempt (HIST-02); the controller lets handleUndo
+      // cancel the in-flight retry chain (HIST-03).
+      const idempotencyKey = crypto.randomUUID()
+      const controller = new AbortController()
+
       // Capture undo snapshot BEFORE queue advance (Pitfall 4 — critical ordering).
-      undoRef.current = { cardId, prevState, prevQueue: queue, prevStats, prevSeenCount, prevSeenCardIds }
+      undoRef.current = { cardId, prevState, prevQueue: queue, prevStats, prevSeenCount, prevSeenCardIds, controller }
       setCanUndo(true)
 
       // 4. Fire background save — NOT awaited; bounded silent retry (REVIEW-04).
       // A toast surfaces only after all retries are exhausted (via onExhausted),
       // guarded by isMountedRef so a setState fired after unmount is skipped.
       // `void` marks the promise as intentionally fire-and-forget.
-      void postReviewWithRetry(cardId, rating, () => {
+      void postReviewWithRetry(cardId, rating, idempotencyKey, controller.signal, () => {
         if (isMountedRef.current) {
           setSaveError("Couldn't save your last review — check your connection.")
         }
@@ -565,9 +588,12 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
 
   const handleUndo = async () => {
     if (!undoRef.current) return
-    const { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds } = undoRef.current
+    const { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds, controller } = undoRef.current
     undoRef.current = null
     setCanUndo(false)
+    // HIST-03: cancel the in-flight background retry chain BEFORE the undo
+    // request goes out, so a stale retry can never re-apply the undone rating.
+    controller.abort()
 
     try {
       const res = await fetch('/api/review/undo', {
@@ -583,7 +609,9 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       if (!isMountedRef.current) return
       // Network failure: undo could not be persisted. Re-arm canUndo so the user
       // can retry, and do NOT restore client state (server is still at post-review).
-      undoRef.current = { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds }
+      // Re-include the SAME (already-aborted) controller — do not create a new
+      // one; retrying undo does not need to un-abort the review's save.
+      undoRef.current = { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds, controller }
       setCanUndo(true)
       return
     }
