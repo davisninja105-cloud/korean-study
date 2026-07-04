@@ -116,13 +116,23 @@ export async function POST(req: NextRequest) {
         { status: 409 },
       )
     }
+    // WR-01: only treat P2002 as an idempotent-retry success when the
+    // violated constraint is actually `idempotencyKey` — inspecting
+    // `e.meta?.target` avoids silently swallowing a future unique
+    // constraint violation elsewhere in this transaction (e.g. one added
+    // later to CardReview) and reporting a false success for it.
+    //
     // HIST-02: a duplicate idempotencyKey collides on ReviewLog's UNIQUE
     // index, rolling back the whole transaction — CardReview was NOT
     // re-applied. Treat this as an idempotent success: read back the
     // current (already-correct) state and return it with 200, so the
     // client's retry wrapper (which treats any non-ok status as a failed
     // attempt) doesn't spuriously retry an already-successful review.
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+    if (
+      e instanceof Prisma.PrismaClientKnownRequestError &&
+      e.code === 'P2002' &&
+      (e.meta?.target as string[] | undefined)?.includes('idempotencyKey')
+    ) {
       const current = await prisma.cardReview.findUnique({ where: { cardId } })
       return NextResponse.json(current)
     }
