@@ -89,6 +89,14 @@ model CardReview {
 // FSRS snapshot at the time of each review — cardId is NOT unique (many rows per
 // card). idempotencyKey is the DB-level source of truth that makes lost-response
 // retries safe to replay without double-applying a rating (HIST-02).
+// WR-04: "append-only" describes writes only — the relation to Card is
+// `onDelete: Cascade`, so a card's review history is scoped to that card's
+// lifetime and is deleted along with it (via DELETE /api/cards/[id] or any
+// future cleanup script). This is intentional: there is no standalone
+// "review history" surface in the product that outlives its card, so a
+// dangling/orphaned log for a deleted card would just be unreachable dead
+// data. If a future feature needs history to survive card deletion, this
+// relation must change (nullable cardId or a restrict-delete policy).
 model ReviewLog {
   id             String   @id @default(cuid())
   createdAt      DateTime @default(now())
