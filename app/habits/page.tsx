@@ -15,6 +15,7 @@ export default async function HabitsPage() {
       initialGoal={activity.dailyGoalSeconds}
       initialDayStartHour={activity.dayStartHour}
       initialMasteredCount={stats.masteredCount}
+      initialCardsByState={stats.cardsByState}
     />
   )
 }

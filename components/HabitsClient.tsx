@@ -6,6 +6,7 @@ import HabitsLoading from '@/app/habits/loading'
 import HabitHeatmap from '@/components/HabitHeatmap'
 import ProgressRing from '@/components/ProgressRing'
 import ProficiencyArc from '@/components/ProficiencyArc'
+import type { StatsDTO } from '@/lib/dto'
 import {
   computeStreaks,
   computeHabitStats,
@@ -32,18 +33,35 @@ function formatDate(dateStr: string): string {
   return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
 }
 
+// Fixed tile order so all four FSRS states always render, even when the
+// groupBy omits an empty state.
+const stateOrder = [
+  { state: 0, label: 'New' },
+  { state: 1, label: 'Learning' },
+  { state: 2, label: 'Review' },
+  { state: 3, label: 'Relearning' },
+]
+
 interface Props {
   initialDays: DayRecord[]
   initialGoal: number
   initialDayStartHour: number
   initialMasteredCount: number
+  initialCardsByState: StatsDTO['cardsByState']
 }
 
-export default function HabitsClient({ initialDays, initialGoal, initialDayStartHour, initialMasteredCount }: Props) {
+export default function HabitsClient({
+  initialDays,
+  initialGoal,
+  initialDayStartHour,
+  initialMasteredCount,
+  initialCardsByState,
+}: Props) {
   const [days] = useState<DayRecord[]>(initialDays)
   const [today, setToday] = useState('')
   const [goal] = useState(initialGoal)
   const [masteredCount] = useState(initialMasteredCount)
+  const countFor = (s: number) => initialCardsByState.find((r) => r.state === s)?._count ?? 0
 
   // Compute client-local today in an effect (habitDateStr calls new Date() internally —
   // impure, must not run during render). Promise.resolve().then satisfies
@@ -163,6 +181,25 @@ export default function HabitsClient({ initialDays, initialGoal, initialDayStart
           </div>
         </div>
       </section>
+
+      {/* Card progress — FSRS-state breakdown, whole section is the /history entry point (D-08) */}
+      <Link
+        href="/history"
+        className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3 hover:shadow-lg transition-shadow"
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-foreground">Card progress</h2>
+          <span className="text-xs text-button">View history →</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          {stateOrder.map(({ state, label }) => (
+            <div key={state} className="bg-surface-2 rounded-xl p-4">
+              <p className="text-2xl font-bold text-foreground">{countFor(state)}</p>
+              <p className="text-xs text-muted mt-0.5">{label}</p>
+            </div>
+          ))}
+        </div>
+      </Link>
 
       {/* Averages & consistency */}
       <section className="bg-surface-1 rounded-2xl shadow-md p-6 flex flex-col gap-3">
