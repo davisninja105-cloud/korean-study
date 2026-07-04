@@ -64,7 +64,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 
 - [x] **Phase 16: Components[] Filter Fix** - Extraction only keeps prerequisite components that resolve to a real card via `normalizeFront()` deck-lookup, dry-run validated before it touches the write path (completed 2026-07-03)
 - [x] **Phase 17: ReviewLog Schema & Idempotent Write Path** - Every review writes an append-only `ReviewLog` row via an idempotency-keyed single transaction; undo cancels in-flight retries (completed 2026-07-04)
-- [ ] **Phase 18: Review History Page** - A reverse-chronological, per-card-filterable, cursor-paginated history view reachable from an existing surface (RSC + DTO hydration)
+- [x] **Phase 18: Review History Page** - A reverse-chronological, per-card-filterable, cursor-paginated history view reachable from an existing surface (RSC + DTO hydration) (completed 2026-07-04)
 - [ ] **Phase 19: Vercel Cron Auto-Sync** - A daily cron syncs 1 lesson via a `CRON_SECRET`-authenticated route, with a "last auto-synced" timestamp in Settings ▸ Advanced
 
 ## Phase Details
@@ -136,7 +136,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   3. Undone reviews still appear in the history, unmarked — `ReviewLog` is append-only and never mutated by undo.
   4. The history view shows real data on the first server-rendered paint with no loading flash (RSC + DTO + client-shell hydration).
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans complete
 
 **Wave 1**
 
@@ -145,7 +145,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 **Wave 2** *(both depend on 18-01; parallel — no file overlap)*
 
 - [x] 18-02-PLAN.md — Habits "Card progress" entry point: `cardsByState` groupBy in `lib/dashboard.ts` + whole-section `<Link href="/history">` FSRS-state breakdown on the Habits page (HIST-04/07; D-06/07/08)
-- [ ] 18-03-PLAN.md — `/history` UI: RSC page + skeleton + `HistoryClient` (mastery-language rows, amber/red weak-grade colors, IntersectionObserver infinite scroll, "All cards ×" chip) + CardEditor "View history" deep-link (HIST-04/05/06/07)
+- [x] 18-03-PLAN.md — `/history` UI: RSC page + skeleton + `HistoryClient` (mastery-language rows, amber/red weak-grade colors, IntersectionObserver infinite scroll, "All cards ×" chip) + CardEditor "View history" deep-link (HIST-04/05/06/07)
 
 **UI hint**: yes
 
@@ -188,5 +188,5 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 2/2 | Complete | 2026-07-03 |
 | 16. Components[] Filter Fix | v1.4 | 4/4 | Complete    | 2026-07-03 |
 | 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 4/4 | Complete   | 2026-07-04 |
-| 18. Review History Page | v1.4 | 2/3 | In Progress|  |
+| 18. Review History Page | v1.4 | 3/3 | Complete   | 2026-07-04 |
 | 19. Vercel Cron Auto-Sync | v1.4 | 0/TBD | Not started | - |
