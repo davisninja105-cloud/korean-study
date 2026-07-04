@@ -4,9 +4,9 @@ milestone: v1.4
 milestone_name: Knowledge Graph Quality & History
 current_phase: 17
 current_phase_name: reviewlog-schema-idempotent-write-path
-status: complete
-stopped_at: Phase 18 context gathered
-last_updated: "2026-07-04T18:35:49.150Z"
+status: executing
+stopped_at: Phase 18 UI-SPEC approved
+last_updated: "2026-07-04T20:53:05.598Z"
 last_activity: 2026-07-04
 last_activity_desc: Completed 17-04-PLAN.md (gap closure, HIST-02 verified)
 progress:
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 Phase: 17 (reviewlog-schema-idempotent-write-path) — COMPLETE
 Plan: 4 of 4
-Status: Phase complete — ready to plan Phase 18
+Status: Ready to execute
 Last activity: 2026-07-04 — Completed 17-04-PLAN.md (gap closure, HIST-02 verified)
 
 Progress: [█████░░░░░] 50% (2/4 phases complete; Phase 16 + 17 done, Phase 18 next)
@@ -117,9 +117,9 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-04T18:35:49.138Z
-Stopped at: Phase 18 context gathered
-Resume file: .planning/phases/18-review-history-page/18-CONTEXT.md
+Last session: 2026-07-04T18:42:54.391Z
+Stopped at: Phase 18 UI-SPEC approved
+Resume file: .planning/phases/18-review-history-page/18-UI-SPEC.md
 
 ## Operator Next Steps
 
