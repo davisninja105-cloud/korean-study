@@ -133,7 +133,15 @@ export async function POST(req: NextRequest) {
       e.code === 'P2002' &&
       (e.meta?.target as string[] | undefined)?.includes('idempotencyKey')
     ) {
+      // WR-02: the CardReview row can be missing here (e.g. the parent Card
+      // was deleted concurrently between the failed transaction and this
+      // re-read) — return the same 404 the initial lookup uses instead of a
+      // 200 with a null body, so the "not found" condition has one consistent
+      // API contract regardless of which code path detects it.
       const current = await prisma.cardReview.findUnique({ where: { cardId } })
+      if (!current) {
+        return NextResponse.json({ error: 'Card review not found' }, { status: 404 })
+      }
       return NextResponse.json(current)
     }
     console.error('POST /api/review failed:', e)
