@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { reviewCard, type Grade } from '@/lib/fsrs'
 import { Prisma } from '@/app/generated/prisma/client'
+import { isUniqueConstraintError } from '@/lib/db-errors'
 
 // IN-01: named type guard instead of an unchecked `as Grade` cast, so the
 // compiler — not just the runtime check below — enforces the relationship.
@@ -128,10 +129,28 @@ export async function POST(req: NextRequest) {
     // current (already-correct) state and return it with 200, so the
     // client's retry wrapper (which treats any non-ok status as a failed
     // attempt) doesn't spuriously retry an already-successful review.
+    //
+    // GAP-01: this write path uses the INTERACTIVE `prisma.$transaction(async
+    // (tx) => {...})` form (required by CR-01's optimistic-concurrency
+    // read-then-conditional-write above). With Prisma 7 +
+    // `@prisma/adapter-libsql`, a SQLite UNIQUE-constraint violation thrown
+    // inside that interactive-transaction callback surfaces as a raw,
+    // unclassified `DriverAdapterError` rather than a
+    // `Prisma.PrismaClientKnownRequestError`/P2002 — so the P2002 check below
+    // alone never matched a duplicate idempotencyKey collision (this was the
+    // Phase 17 end-of-phase UAT Test 6 gap; see
+    // .planning/debug/reviewlog-p2002-catch-never-fires.md).
+    // `isUniqueConstraintError(e, 'idempotencyKey')` recognizes that raw
+    // shape by walking the error's `.cause` chain for a message naming both
+    // the constraint and the idempotencyKey column, closing the gap. It only
+    // matches messages naming that specific column, so unrelated write
+    // failures still fall through to the generic 500/409 below rather than
+    // being blanket-swallowed as a false success.
     if (
-      e instanceof Prisma.PrismaClientKnownRequestError &&
-      e.code === 'P2002' &&
-      (e.meta?.target as string[] | undefined)?.includes('idempotencyKey')
+      (e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002' &&
+        (e.meta?.target as string[] | undefined)?.includes('idempotencyKey')) ||
+      isUniqueConstraintError(e, 'idempotencyKey')
     ) {
       // WR-02: the CardReview row can be missing here (e.g. the parent Card
       // was deleted concurrently between the failed transaction and this
