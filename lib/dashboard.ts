@@ -6,25 +6,35 @@
 
 import { prisma } from '@/lib/prisma'
 import { getDailyGoalSeconds, getDayStartHour } from '@/lib/settings'
+import { State } from '@/lib/fsrs'
 import type { StatsDTO, ActivityDTO } from '@/lib/dto'
 
 /**
  * Fetches all stats needed by the Home page, /wrapped, and GET /api/stats.
- * Runs 5 Prisma queries in parallel via Promise.all.
+ * Runs 6 Prisma queries in parallel via Promise.all.
  * Throws on DB error — callers wrap in try/catch (API routes return 500;
  * RSC pages surface to the nearest error boundary).
  */
 export async function getStats(): Promise<StatsDTO> {
   const now = new Date()
-  const [totalCards, dueCards, totalLessons, cardsByType, masteredCount] = await Promise.all([
+  const [totalCards, dueCards, totalLessons, cardsByType, masteredCount, cardsByStateRaw] = await Promise.all([
     prisma.card.count(),
     prisma.cardReview.count({ where: { nextReview: { lte: now } } }),
     prisma.lesson.count(),
     prisma.card.groupBy({ by: ['type'], _count: true }),
     // Cards in Review state (state=2) scheduled >= 21 days ≈ well-retained.
     prisma.cardReview.count({ where: { state: 2, scheduledDays: { gte: 21 } } }),
+    // FSRS state breakdown (New/Learning/Review/Relearning) for the Habits
+    // page "Card progress" section (HIST-04/HIST-07). Lives on CardReview,
+    // same table already queried above for dueCards/masteredCount.
+    prisma.cardReview.groupBy({ by: ['state'], _count: true }),
   ])
-  return { totalCards, dueCards, totalLessons, cardsByType, masteredCount }
+  const cardsByState = cardsByStateRaw.map((r) => ({
+    state: r.state,
+    stateLabel: State[r.state],
+    _count: r._count,
+  }))
+  return { totalCards, dueCards, totalLessons, cardsByType, masteredCount, cardsByState }
 }
 
 /**
