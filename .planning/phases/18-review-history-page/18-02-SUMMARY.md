@@ -124,3 +124,7 @@ None - no external service configuration required.
 ---
 *Phase: 18-review-history-page*
 *Completed: 2026-07-04*
+
+## Self-Check: PASSED
+
+All modified files found on disk (`lib/dashboard.ts`, `app/habits/page.tsx`, `components/HabitsClient.tsx`, this SUMMARY.md); all task commit hashes (`e532249`, `2788091`, `e4f9f2b`) verified present in git log.
