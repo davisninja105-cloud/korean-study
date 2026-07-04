@@ -129,8 +129,24 @@ export async function POST(req: NextRequest) {
         // dependency-linking step after Promise.all resolves. Resets each lesson.
         const linkTargets: { id: string; components: string[] }[] = []
 
+        // WR-05: de-duplicate by normalizeFront before the concurrent upsert below.
+        // Each iteration is a non-atomic check-then-act (findUnique then create);
+        // if Claude's response ever contains two entries that normalize to the same
+        // front (nothing enforces uniqueness on Claude's output), both concurrent
+        // iterations could see existing === null and the second create() would
+        // throw on the DB unique constraint — turning one duplicate front into a
+        // whole-lesson failure (the outer catch deletes the just-created Lesson
+        // row). Keep the first occurrence, consistent with "one card per base form."
+        const seenFronts = new Set<string>()
+        const dedupedCards = cards.filter((card) => {
+          const nf = normalizeFront(card.front)
+          if (seenFronts.has(nf)) return false
+          seenFronts.add(nf)
+          return true
+        })
+
         await Promise.all(
-          cards.map(async (card) => {
+          dedupedCards.map(async (card) => {
             const nf = normalizeFront(card.front)
             const distractorsJson = card.distractors.length
               ? JSON.stringify(card.distractors)
