@@ -136,7 +136,17 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   3. Undone reviews still appear in the history, unmarked — `ReviewLog` is append-only and never mutated by undo.
   4. The history view shows real data on the first server-rendered paint with no loading flash (RSC + DTO + client-shell hydration).
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+**Wave 1**
+
+- [ ] 18-01-PLAN.md — History data pipeline: export `masteryPhrase`, add `ReviewLogDTO`/`StatsDTO.cardsByState`, `lib/review-history.ts:getReviewHistory()` (cursor pagination + pure helpers) + Wave-0 tests, and `GET /api/reviews` with V5 validation (HIST-04/05/06)
+
+**Wave 2** *(both depend on 18-01; parallel — no file overlap)*
+
+- [ ] 18-02-PLAN.md — Habits "Card progress" entry point: `cardsByState` groupBy in `lib/dashboard.ts` + whole-section `<Link href="/history">` FSRS-state breakdown on the Habits page (HIST-04/07; D-06/07/08)
+- [ ] 18-03-PLAN.md — `/history` UI: RSC page + skeleton + `HistoryClient` (mastery-language rows, amber/red weak-grade colors, IntersectionObserver infinite scroll, "All cards ×" chip) + CardEditor "View history" deep-link (HIST-04/05/06/07)
+
 **UI hint**: yes
 
 ### Phase 19: Vercel Cron Auto-Sync
