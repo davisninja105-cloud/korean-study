@@ -47,6 +47,8 @@ model Card {
   dependencies CardDependency[] @relation("CardToPrereqs")
   // Reverse relation: cards that depend on this one.
   requiredBy   CardDependency[] @relation("PrereqToCards")
+  // Append-only review history (HIST-01).
+  reviewLogs   ReviewLog[]
 
   @@index([lessonId])
 }
@@ -80,6 +82,33 @@ model CardReview {
   lapses        Int       @default(0)
   nextReview    DateTime  @default(now())
   lastReview    DateTime?
+}
+
+// Append-only audit log of every individual review (HIST-01). Unlike CardReview
+// (one row per card, current FSRS state), ReviewLog stores the full post-update
+// FSRS snapshot at the time of each review — cardId is NOT unique (many rows per
+// card). idempotencyKey is the DB-level source of truth that makes lost-response
+// retries safe to replay without double-applying a rating (HIST-02).
+model ReviewLog {
+  id             String   @id @default(cuid())
+  createdAt      DateTime @default(now())
+  cardId         String
+  card           Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  rating         Int      // FSRS grade 1-4 (Again/Hard/Good/Easy)
+  idempotencyKey String   @unique
+  // Resulting (post-update) FSRS snapshot — same shape as CardReview.
+  state          Int
+  stability      Float
+  difficulty     Float
+  elapsedDays    Int
+  scheduledDays  Int
+  reps           Int
+  lapses         Int
+  nextReview     DateTime
+  lastReview     DateTime?
+
+  @@index([cardId])
+  @@index([createdAt])
 }
 
 // A directed prerequisite edge: `card` is built from `prerequisite`.
