@@ -536,6 +536,17 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
             },
           },
         }
+      } else {
+        // WR-05: this "should never happen" for a card in the due-card pool
+        // (getStudyCards() always attaches a review). If it ever does, the
+        // silent fallback below leaves `requeue = false` and `updatedItem =
+        // current` unchanged — the card is treated as fully graduated and
+        // permanently leaves the session queue regardless of the rating
+        // given. Log so the failure is visible instead of silent.
+        console.error(
+          'submitReview: card missing review.nextReview, cannot compute local FSRS state',
+          cardId,
+        )
       }
 
       // One idempotency key + one AbortController generated ONCE per grade
