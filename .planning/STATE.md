@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Knowledge Graph Quality & History
-current_phase: 16
-current_phase_name: components-filter-fix
-status: executing
-stopped_at: Phase 16 complete (4/4 plans); ready to plan Phase 17
-last_updated: "2026-07-03T23:40:00.000Z"
-last_activity: 2026-07-03
-last_activity_desc: Phase 16 plan 04 Task 3 checkpoint approved; production corpus cleanup applied and independently re-verified (511 cards changed, 2 edges pruned, 4 edges added, 2133 total edges, idempotent). Phase 16 (Components[] Filter Fix) fully complete — 4/4 plans, GRAPH-01..05 all satisfied.
+current_phase: 17
+current_phase_name: ReviewLog Schema & Idempotent Write Path
+status: verifying
+stopped_at: Phase 16 complete (4/4 plans, all requirements satisfied)
+last_updated: "2026-07-04T04:21:24.672Z"
+last_activity: 2026-07-04
+last_activity_desc: Phase 16 complete, transitioned to Phase 17
 progress:
   total_phases: 4
   completed_phases: 1
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 ## Current Position
 
-Phase: 16 (components-filter-fix) — COMPLETE (4/4 plans)
-Plan: 4 of 4
+Phase: 17 — ReviewLog Schema & Idempotent Write Path
+Plan: Not started
 Status: COMPLETE — checkpoint approved, production cleanup applied and verified
-Last activity: 2026-07-03 — Phase 16 plan 04 Task 3 checkpoint approved; `npx tsx scripts/retro-filter-cleanup.mts --apply` run against production (511 cards changed, 2 edges pruned, 4 edges added, 2133 total edges); idempotency confirmed by two independent dry-run checks. Phase 16 (Components[] Filter Fix) is now fully complete.
+Last activity: 2026-07-04 — Phase 16 complete, transitioned to Phase 17
 
 Progress: [██░░░░░░░░] 25% (1/4 phases complete; Phase 16 done, Phase 17 next)
 
@@ -46,7 +46,7 @@ Progress: [██░░░░░░░░] 25% (1/4 phases complete; Phase 16 do
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 16 | 4/4 | ~74min | ~18.5min |
+| 16 | 4 | - | - |
 | 17 | 0/TBD | - | - |
 | 18 | 0/TBD | - | - |
 | 19 | 0/TBD | - | - |
