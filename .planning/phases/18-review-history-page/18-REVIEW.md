@@ -22,7 +22,7 @@ findings:
   warning: 2
   info: 3
   total: 6
-status: issues_found
+status: fixed
 ---
 
 # Phase 18: Code Review Report
@@ -169,6 +169,18 @@ When `field === 'korean'`, `updated.targetForm` is already `s.targetForm` (untou
 **Fix:** No action required; keep for future tests that may want the `@/` alias, or drop it if it's not planned to be used.
 
 ---
+
+## Resolution
+
+Fixed inline by the orchestrator in commit `657038d` (not via `--fix`/`gsd-code-fixer`):
+
+- **CR-01:** Applied the `key={cardId ?? 'all'}` fix on `<HistoryClient>` exactly as suggested.
+- **WR-01:** Added `timeZone: 'UTC'` to `formatTimestamp`.
+- **WR-02:** Exported `isValidOpaqueId` from `lib/review-history.ts` (single source of truth); `GET /api/reviews` and `app/history/page.tsx` both use it now — an invalid `cardId` is treated as `null`. Added 4 unit tests.
+- **IN-02:** `card.id` now wrapped in `encodeURIComponent` in `CardEditor.tsx`.
+- **IN-01, IN-03:** No action — IN-01 is pre-existing (outside this phase's diff) and IN-03 is inert config with no current caller.
+
+Post-fix: `npm test` 120/120, `npm run lint` clean (0 errors), `npm run build` succeeds.
 
 _Reviewed: 2026-07-04_
 _Reviewer: Claude (gsd-code-reviewer)_
