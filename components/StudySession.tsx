@@ -103,14 +103,21 @@ const REVIEW_ENDPOINT = '/api/review'
 //
 // Runs from an event-handler flow (submitReview), never during render, so the
 // setTimeout usage is purity-safe (react-hooks/purity).
+// WR-03: distinguishes a permanent failure (4xx — retrying won't help, e.g.
+// a stale/deleted card) from a network/timeout/5xx failure, so the caller can
+// show connection-neutral copy for the former instead of misleadingly
+// blaming the user's connection.
+type SaveFailureReason = 'network' | 'permanent'
+
 async function postReviewWithRetry(
   cardId: string,
   rating: number,
   idempotencyKey: string,
   cancelSignal: AbortSignal,
-  onExhausted: () => void,
+  onExhausted: (reason: SaveFailureReason) => void,
 ): Promise<void> {
   const backoffMs = [500, 1500]
+  let failureReason: SaveFailureReason = 'network'
   for (let attempt = 0; attempt < 3; attempt++) {
     if (cancelSignal.aborted) return
     const ctrl = new AbortController()
@@ -130,7 +137,10 @@ async function postReviewWithRetry(
       })
       if (res.ok) return
       // 4xx is a permanent failure — don't retry; go straight to exhausted.
-      if (res.status >= 400 && res.status < 500) break
+      if (res.status >= 400 && res.status < 500) {
+        failureReason = 'permanent'
+        break
+      }
     } catch {
       // A deliberate cancel (undo) is not a failed attempt — return silently
       // without ever calling onExhausted (HIST-03).
@@ -150,7 +160,7 @@ async function postReviewWithRetry(
       if (cancelSignal.aborted) return
     }
   }
-  if (!cancelSignal.aborted) onExhausted()
+  if (!cancelSignal.aborted) onExhausted(failureReason)
 }
 
 type StudyItem =
@@ -544,9 +554,16 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       // A toast surfaces only after all retries are exhausted (via onExhausted),
       // guarded by isMountedRef so a setState fired after unmount is skipped.
       // `void` marks the promise as intentionally fire-and-forget.
-      void postReviewWithRetry(cardId, rating, idempotencyKey, controller.signal, () => {
+      void postReviewWithRetry(cardId, rating, idempotencyKey, controller.signal, (reason) => {
         if (isMountedRef.current) {
-          setSaveError("Couldn't save your last review — check your connection.")
+          // WR-03: a permanent (4xx) failure has nothing to do with
+          // connectivity — telling the user to "check your connection" is
+          // actively misleading. Use connection-neutral copy for it.
+          setSaveError(
+            reason === 'permanent'
+              ? "Couldn't save your last review. Your progress may not be recorded."
+              : "Couldn't save your last review — check your connection.",
+          )
         }
       })
     } else {
