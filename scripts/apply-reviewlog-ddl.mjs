@@ -30,7 +30,9 @@ const token = process.env.DATABASE_AUTH_TOKEN ?? envVars.DATABASE_AUTH_TOKEN
 if (!url) { console.error('DATABASE_URL not set'); process.exit(1) }
 
 const db = createClient({ url, authToken: token ?? undefined })
-console.log('Connected to:', url)
+// IN-01: redact the connection string before logging — it exposes the
+// internal Turso database hostname/identifier unnecessarily in console/CI logs.
+console.log('Connected to:', url.replace(/\/\/.*@/, '//***@'))
 
 // Create the ReviewLog table (ignore if it already exists)
 try {
