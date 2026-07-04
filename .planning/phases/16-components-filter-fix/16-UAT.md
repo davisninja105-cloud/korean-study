@@ -1,9 +1,9 @@
 ---
 status: complete
 phase: 16-components-filter-fix
-source: [16-01-SUMMARY.md, 16-02-SUMMARY.md, 16-03-SUMMARY.md, 16-04-SUMMARY.md]
+source: [16-01-SUMMARY.md, 16-02-SUMMARY.md, 16-03-SUMMARY.md, 16-04-SUMMARY.md, 16-VERIFICATION.md]
 started: 2026-07-04T03:25:34Z
-updated: 2026-07-04T03:35:00Z
+updated: 2026-07-04T03:45:00Z
 ---
 
 ## Current Test
@@ -79,10 +79,26 @@ expected: |
   idempotency (0 cards / 0 edges to change).
 result: pass
 
+### 11. Live POST /api/sync run against a real new lesson, post-review-fix
+expected: |
+  Trigger a real sync (pull-to-refresh in the app, or curl -X POST .../api/sync) against at
+  least one genuinely new lesson that introduces 2+ cards which legitimately reference each
+  other (a same-lesson forward-reference case — e.g. a new vocabulary card whose components[]
+  lists a new grammar pattern also being created in this same lesson). Inspect the resulting
+  Card.components and CardDependency rows for both new cards:
+  (a) the sibling-referencing component survives in persisted components[] JSON and a
+      CardDependency edge links the two same-batch cards, even though the referenced
+      sibling has zero components of its own (CR-01 / CR-02 fixes)
+  (b) if a later re-sync legitimately shrinks a card's components[], no stale CardDependency
+      edge remains (WR-02 fix)
+  (c) if Claude ever returns two entries with the same normalized front in one response, only
+      one card is created, not a whole-lesson failure (WR-05 fix)
+result: pass
+
 ## Summary
 
-total: 10
-passed: 10
+total: 11
+passed: 11
 issues: 0
 pending: 0
 skipped: 0
