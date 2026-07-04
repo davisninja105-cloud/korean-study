@@ -3,6 +3,7 @@ import { createHash } from 'crypto'
 import { fetchGoogleDoc } from '@/lib/google-docs'
 import { extractCardsFromNotes } from '@/lib/extract-cards'
 import { normalizeFront } from '@/lib/card-key'
+import { resolveDependencyEdges } from '@/lib/link-dependencies'
 import { lessonExcerpt } from '@/lib/lesson-excerpt'
 import { prisma } from '@/lib/prisma'
 
@@ -274,29 +275,20 @@ export async function POST(req: NextRequest) {
         //    forward references within the same sync batch can be resolved.
         //    `keyToId` was built once before the per-lesson loop and augmented above
         //    as each card was upserted — no per-lesson full-deck findMany here.
-        for (const { id, components } of linkTargets) {
-          for (const comp of components) {
-            if (!comp) continue
-            const prereqId = keyToId.get(normalizeFront(comp))
-            if (!prereqId || prereqId === id) continue
-            try {
-              await prisma.cardDependency.upsert({
-                where: {
-                  cardId_prerequisiteId: {
-                    cardId:         id,
-                    prerequisiteId: prereqId,
-                  },
-                },
-                create: {
-                  cardId:         id,
-                  prerequisiteId: prereqId,
-                },
-                update: {}, // no-op — just ensure it exists
-              })
-            } catch (linkErr) {
-              // Link failures are non-fatal — card still usable, just unlinked.
-              console.warn(`CardDependency link failed (${id} → ${prereqId}):`, linkErr)
-            }
+        //    Resolution itself is shared (IN-02) via lib/link-dependencies.ts.
+        const resolvedEdges = resolveDependencyEdges(keyToId, linkTargets)
+        for (const { cardId, prerequisiteId } of resolvedEdges) {
+          try {
+            await prisma.cardDependency.upsert({
+              where: {
+                cardId_prerequisiteId: { cardId, prerequisiteId },
+              },
+              create: { cardId, prerequisiteId },
+              update: {}, // no-op — just ensure it exists
+            })
+          } catch (linkErr) {
+            // Link failures are non-fatal — card still usable, just unlinked.
+            console.warn(`CardDependency link failed (${cardId} → ${prerequisiteId}):`, linkErr)
           }
         }
 

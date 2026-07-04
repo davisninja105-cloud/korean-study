@@ -36,9 +36,9 @@ config({ path: path.resolve(__dir, '..', '.env') })
 config({ path: path.resolve(__dir, '..', '.env.local'), override: true })
 
 // Now that env is loaded, dynamically import libs that read process.env at module init.
-const { filterComponents } = await import('../lib/filter-components.js')
-const { normalizeFront }   = await import('../lib/card-key.js')
-const { prisma }           = await import('../lib/prisma.js')
+const { filterComponents }       = await import('../lib/filter-components.js')
+const { resolveDependencyEdges } = await import('../lib/link-dependencies.js')
+const { prisma }                 = await import('../lib/prisma.js')
 
 const APPLY = process.argv.includes('--apply')
 
@@ -141,21 +141,13 @@ const wholeDropped = tallies.grammar.dropped + tallies.vocabulary.dropped + tall
 const keyToId = new Map(allCards.map((c) => [c.normalizedFront, c.id]))
 
 // Desired edge set computed from the CLEANED components (post-filter),
-// not the raw persisted ones.
-const desired = new Set<string>() // `${cardId}::${prerequisiteId}`
-const desiredPairs: { cardId: string; prerequisiteId: string }[] = []
-for (const [cardId, comps] of cleanedByCardId) {
-  for (const comp of comps) {
-    if (!comp) continue
-    const prereqId = keyToId.get(normalizeFront(comp))
-    if (!prereqId || prereqId === cardId) continue
-    const key = `${cardId}::${prereqId}`
-    if (!desired.has(key)) {
-      desired.add(key)
-      desiredPairs.push({ cardId, prerequisiteId: prereqId })
-    }
-  }
-}
+// not the raw persisted ones. Resolution itself is shared (IN-02) via
+// lib/link-dependencies.ts.
+const desiredPairs = resolveDependencyEdges(
+  keyToId,
+  [...cleanedByCardId.entries()].map(([id, components]) => ({ id, components }))
+)
+const desired = new Set(desiredPairs.map((p) => `${p.cardId}::${p.prerequisiteId}`)) // `${cardId}::${prerequisiteId}`
 
 const existingEdges = (await prisma.cardDependency.findMany({
   select: { id: true, cardId: true, prerequisiteId: true },

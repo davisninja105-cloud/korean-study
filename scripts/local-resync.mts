@@ -21,10 +21,11 @@ config({ path: path.resolve(__dir, '..', '.env') })
 config({ path: path.resolve(__dir, '..', '.env.local'), override: true })
 
 // Now that env is loaded, dynamically import libs that read process.env at module init.
-const { fetchGoogleDoc }        = await import('../lib/google-docs.js')
-const { extractCardsFromNotes } = await import('../lib/extract-cards.js')
-const { normalizeFront }        = await import('../lib/card-key.js')
-const { prisma }                = await import('../lib/prisma.js')
+const { fetchGoogleDoc }         = await import('../lib/google-docs.js')
+const { extractCardsFromNotes }  = await import('../lib/extract-cards.js')
+const { normalizeFront }         = await import('../lib/card-key.js')
+const { resolveDependencyEdges } = await import('../lib/link-dependencies.js')
+const { prisma }                 = await import('../lib/prisma.js')
 
 const documentId = process.env.NEXT_PUBLIC_GOOGLE_DOC_ID
 if (!documentId) { console.error('NEXT_PUBLIC_GOOGLE_DOC_ID not set'); process.exit(1) }
@@ -182,24 +183,25 @@ for (let i = 0; i < newLessons.length; i++) {
     }) as { id: string; normalizedFront: string; components: string | null }[]
     const keyToId = new Map(allCardsForLink.map((c) => [c.normalizedFront, c.id]))
     const upsertedSet = new Set(upsertedIds)
+    // IN-02: resolution itself is shared via lib/link-dependencies.ts.
+    const linkTargets = allCardsForLink
+      .filter((c) => upsertedSet.has(c.id) && c.components)
+      .map((c) => {
+        let comps: string[] = []
+        try { comps = JSON.parse(c.components as string) } catch { comps = [] }
+        return { id: c.id, components: comps }
+      })
+    const resolvedEdges = resolveDependencyEdges(keyToId, linkTargets)
     let edgeCount = 0
-    for (const dbCard of allCardsForLink) {
-      if (!upsertedSet.has(dbCard.id) || !dbCard.components) continue
-      let comps: string[] = []
-      try { comps = JSON.parse(dbCard.components) } catch { continue }
-      for (const comp of comps) {
-        if (!comp) continue
-        const prereqId = keyToId.get(normalizeFront(comp))
-        if (!prereqId || prereqId === dbCard.id) continue
-        try {
-          await prisma.cardDependency.upsert({
-            where:  { cardId_prerequisiteId: { cardId: dbCard.id, prerequisiteId: prereqId } },
-            create: { cardId: dbCard.id, prerequisiteId: prereqId },
-            update: {},
-          })
-          edgeCount++
-        } catch { /* non-fatal */ }
-      }
+    for (const { cardId, prerequisiteId } of resolvedEdges) {
+      try {
+        await prisma.cardDependency.upsert({
+          where:  { cardId_prerequisiteId: { cardId, prerequisiteId } },
+          create: { cardId, prerequisiteId },
+          update: {},
+        })
+        edgeCount++
+      } catch { /* non-fatal */ }
     }
     if (edgeCount > 0) console.log(`  ↳ ${edgeCount} dependency edges linked.`)
   }
@@ -214,24 +216,25 @@ const allCards = await prisma.card.findMany({
   select: { id: true, normalizedFront: true, components: true },
 }) as { id: string; normalizedFront: string; components: string | null }[]
 const keyToId = new Map(allCards.map((c) => [c.normalizedFront, c.id]))
+// IN-02: resolution itself is shared via lib/link-dependencies.ts.
+const finalLinkTargets = allCards
+  .filter((c) => c.components)
+  .map((c) => {
+    let comps: string[] = []
+    try { comps = JSON.parse(c.components as string) } catch { comps = [] }
+    return { id: c.id, components: comps }
+  })
+const finalResolvedEdges = resolveDependencyEdges(keyToId, finalLinkTargets)
 let relinkCount = 0
-for (const dbCard of allCards) {
-  if (!dbCard.components) continue
-  let comps: string[] = []
-  try { comps = JSON.parse(dbCard.components) } catch { continue }
-  for (const comp of comps) {
-    if (!comp) continue
-    const prereqId = keyToId.get(normalizeFront(comp))
-    if (!prereqId || prereqId === dbCard.id) continue
-    try {
-      await prisma.cardDependency.upsert({
-        where:  { cardId_prerequisiteId: { cardId: dbCard.id, prerequisiteId: prereqId } },
-        create: { cardId: dbCard.id, prerequisiteId: prereqId },
-        update: {},
-      })
-      relinkCount++
-    } catch { /* non-fatal */ }
-  }
+for (const { cardId, prerequisiteId } of finalResolvedEdges) {
+  try {
+    await prisma.cardDependency.upsert({
+      where:  { cardId_prerequisiteId: { cardId, prerequisiteId } },
+      create: { cardId, prerequisiteId },
+      update: {},
+    })
+    relinkCount++
+  } catch { /* non-fatal */ }
 }
 console.log(`  ↳ ${relinkCount} edges confirmed/created.`)
 console.log()
