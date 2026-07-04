@@ -49,11 +49,11 @@ Matches the existing type scale used across `HabitsClient.tsx` / `CardsClient.ts
 | Role | Size | Weight | Line Height |
 |------|------|--------|-------------|
 | Body (row secondary text — timestamp, filter label) | 12px (`text-xs`) | 400 (regular) | 1.5 |
-| Label (row primary — grade name + mastery phrase, card front) | 14px (`text-sm`) | 500 (medium) / 600 (semibold for grade name) | 1.5 |
-| Heading (page title "History", section headers) | 20px (`text-xl`)/24px (`text-2xl`) | 700 (bold) | 1.2 |
-| Display (FSRS-state breakdown counts on Habits page) | 24px (`text-2xl`) | 700 (bold) | 1.2 |
+| Label (row primary — grade name + mastery phrase, card front) | 14px (`text-sm`) | 600 (semibold) | 1.5 |
+| Heading (page title "History", section headers) | 20px (`text-xl`)/24px (`text-2xl`) | 600 (semibold) | 1.2 |
+| Display (FSRS-state breakdown counts on Habits page) | 24px (`text-2xl`) | 600 (semibold) | 1.2 |
 
-Font weights used: 400 (regular body/caption) and 600–700 (semibold/bold for emphasis) — matches the project's existing 2-weight convention (no new weights introduced; `font-medium`/`font-semibold` treated as the same "emphasis" tier already used throughout `HabitsClient.tsx`).
+Font weights used: 400 (regular, for body/caption) and 600 (semibold, for all emphasis roles — labels, grade names, headings, and display) — matches the project's existing 2-weight convention (no new weights introduced; every "emphasis" role in `HabitsClient.tsx` collapses to `font-semibold`).
 
 ---
 
