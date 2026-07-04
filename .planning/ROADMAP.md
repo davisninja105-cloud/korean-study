@@ -108,7 +108,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   2. A lost-response retry of the same grade action produces no duplicate log entry and never double-applies FSRS state (verifiable under throttled/flaky network).
   3. Triggering undo cancels any in-flight background retry, so a stale retry can never silently re-apply a rating after the review has been undone.
 
-**Plans**: 3/3 plans complete
+**Plans**: 3 plans complete + 1 gap-closure plan (17-04)
 
 **Wave 1**
 
@@ -118,6 +118,10 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 
 - [x] 17-02-PLAN.md — Idempotent write path in `app/api/review/route.ts`: idempotencyKey validation + `$transaction([cardReview.update, reviewLog.create])` + P2002-as-success (HIST-01/02)
 - [x] 17-03-PLAN.md — Client key generation + retry cancellation in `components/StudySession.tsx`: per-grade `crypto.randomUUID()` + `AbortController` threaded through `postReviewWithRetry`, aborted on undo (HIST-02/03)
+
+**Gap closure** *(from end-of-phase UAT Test 6 blocker)*
+
+- [ ] 17-04-PLAN.md — Fix idempotent-200 replay: the interactive `$transaction` surfaces the idempotencyKey UNIQUE violation as a raw `DriverAdapterError`, not P2002. New pure `lib/db-errors.ts` (`isUniqueConstraintError`) + unit test; widen the `app/api/review/route.ts` catch to OR-in the raw-shape check (HIST-02)
 
 ### Phase 18: Review History Page
 
