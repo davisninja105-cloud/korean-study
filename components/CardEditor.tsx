@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import HighlightedSentence from './HighlightedSentence'
 import { sentenceMatch } from '@/lib/sentence-match'
 
@@ -219,20 +220,28 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
       </div>
 
       {/* ── Action buttons ── */}
-      <div className="flex gap-2 justify-end">
-        <button
-          onClick={onCancel}
-          className="px-4 py-2 min-h-11 text-sm text-muted hover:bg-surface-3 rounded-lg"
+      <div className="flex gap-2 justify-between">
+        <Link
+          href={`/history?cardId=${card.id}`}
+          className="text-sm text-button hover:text-button-hover self-center"
         >
-          Cancel
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={saving || !front || !back}
-          className="bg-button text-button-foreground px-4 py-2 min-h-11 text-sm rounded-lg hover:bg-button-hover disabled:opacity-50"
-        >
-          {saving ? 'Saving...' : 'Save'}
-        </button>
+          View history →
+        </Link>
+        <div className="flex gap-2">
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 min-h-11 text-sm text-muted hover:bg-surface-3 rounded-lg"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || !front || !back}
+            className="bg-button text-button-foreground px-4 py-2 min-h-11 text-sm rounded-lg hover:bg-button-hover disabled:opacity-50"
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
+        </div>
       </div>
     </div>
   )
