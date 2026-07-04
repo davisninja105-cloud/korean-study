@@ -4,17 +4,17 @@ milestone: v1.4
 milestone_name: Knowledge Graph Quality & History
 current_phase: 17
 current_phase_name: reviewlog-schema-idempotent-write-path
-status: executing
-stopped_at: Phase 17 context gathered
-last_updated: "2026-07-04T06:25:15.891Z"
+status: verifying
+stopped_at: Completed 17-03-PLAN.md
+last_updated: "2026-07-04T06:29:38.972Z"
 last_activity: 2026-07-04
 last_activity_desc: Phase 17 execution started
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 7
-  completed_plans: 6
-  percent: 25
+  completed_plans: 7
+  percent: 50
 ---
 
 # Project State
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 
 Phase: 17 (reviewlog-schema-idempotent-write-path) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-04 — Phase 17 execution started
 
 Progress: [██░░░░░░░░] 25% (1/4 phases complete; Phase 16 done, Phase 17 next)
@@ -63,6 +63,7 @@ Progress: [██░░░░░░░░] 25% (1/4 phases complete; Phase 16 do
 | Phase 16 P04 | ~20min | 3 tasks | 2 files |
 | Phase 17 P01 | 12min | 3 tasks | 2 files |
 | Phase 17 P02 | 6min | 1 tasks | 1 files |
+| Phase 17 P03 | 4min | 1 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -84,6 +85,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 - [Phase 17]: ReviewLog mirrors CardReview's full FSRS field set (D-01) so Phase 18 never needs a backfill migration; cardId is NOT unique (append-only), only idempotencyKey is @unique
 - [Phase 17]: idempotencyKey validation placed after isGrade(rating) check and before the try block, mirroring the existing WR-05 cardId validation idiom exactly
 - [Phase 17]: P2002 catch does not inspect e.meta.target (Pitfall 3) — idempotencyKey is the only reachable unique constraint in this transaction
+- [Phase 17]: idempotencyKey and AbortController generated exactly once in submitReview's event-handler flow, immediately before the undoRef.current snapshot — never inside postReviewWithRetry (would defeat server-side dedup) and never lifted into render/useMemo (react-hooks/purity)
+- [Phase 17]: undo network-failure re-arm path reuses the SAME already-aborted controller rather than creating a new one — retrying undo does not need to un-abort the review's background save
 
 ### Pending Todos
 
@@ -112,9 +115,9 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-04T06:24:11.785Z
-Stopped at: Phase 17 context gathered
-Resume file: .planning/phases/17-reviewlog-schema-idempotent-write-path/17-CONTEXT.md
+Last session: 2026-07-04T06:29:38.966Z
+Stopped at: Completed 17-03-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 

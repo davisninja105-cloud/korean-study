@@ -63,7 +63,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 **Milestone Goal:** Clean up hallucinated prerequisite edges, add a persistent review history with a browsable view page, and automate daily sync so the deck never goes stale. Every phase either raises the trustworthiness of the knowledge graph, makes review history durable and visible, or keeps the deck fresh unattended — reusing existing conventions (pure `lib/` helpers, RSC + DTO + client-shell pages, manual Turso DDL, shared pipeline modules) with zero new npm dependencies.
 
 - [x] **Phase 16: Components[] Filter Fix** - Extraction only keeps prerequisite components that resolve to a real card via `normalizeFront()` deck-lookup, dry-run validated before it touches the write path (completed 2026-07-03)
-- [ ] **Phase 17: ReviewLog Schema & Idempotent Write Path** - Every review writes an append-only `ReviewLog` row via an idempotency-keyed single transaction; undo cancels in-flight retries
+- [x] **Phase 17: ReviewLog Schema & Idempotent Write Path** - Every review writes an append-only `ReviewLog` row via an idempotency-keyed single transaction; undo cancels in-flight retries (completed 2026-07-04)
 - [ ] **Phase 18: Review History Page** - A reverse-chronological, per-card-filterable, cursor-paginated history view reachable from an existing surface (RSC + DTO hydration)
 - [ ] **Phase 19: Vercel Cron Auto-Sync** - A daily cron syncs 1 lesson via a `CRON_SECRET`-authenticated route, with a "last auto-synced" timestamp in Settings ▸ Advanced
 
@@ -108,7 +108,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   2. A lost-response retry of the same grade action produces no duplicate log entry and never double-applies FSRS state (verifiable under throttled/flaky network).
   3. Triggering undo cancels any in-flight background retry, so a stale retry can never silently re-apply a rating after the review has been undone.
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans complete
 
 **Wave 1**
 
@@ -117,7 +117,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 **Wave 2** *(both depend on 17-01; parallel — no file overlap)*
 
 - [x] 17-02-PLAN.md — Idempotent write path in `app/api/review/route.ts`: idempotencyKey validation + `$transaction([cardReview.update, reviewLog.create])` + P2002-as-success (HIST-01/02)
-- [ ] 17-03-PLAN.md — Client key generation + retry cancellation in `components/StudySession.tsx`: per-grade `crypto.randomUUID()` + `AbortController` threaded through `postReviewWithRetry`, aborted on undo (HIST-02/03)
+- [x] 17-03-PLAN.md — Client key generation + retry cancellation in `components/StudySession.tsx`: per-grade `crypto.randomUUID()` + `AbortController` threaded through `postReviewWithRetry`, aborted on undo (HIST-02/03)
 
 ### Phase 18: Review History Page
 
@@ -173,6 +173,6 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 14. Sync Failure Visibility & Caching Performance | v1.3 | 2/2 | Complete | 2026-07-02 |
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 2/2 | Complete | 2026-07-03 |
 | 16. Components[] Filter Fix | v1.4 | 4/4 | Complete    | 2026-07-03 |
-| 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 2/3 | In Progress|  |
+| 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 3/3 | Complete   | 2026-07-04 |
 | 18. Review History Page | v1.4 | 0/TBD | Not started | - |
 | 19. Vercel Cron Auto-Sync | v1.4 | 0/TBD | Not started | - |
