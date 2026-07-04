@@ -5,8 +5,8 @@ milestone_name: Knowledge Graph Quality & History
 current_phase: 17
 current_phase_name: ReviewLog Schema & Idempotent Write Path
 status: verifying
-stopped_at: Phase 16 complete (4/4 plans, all requirements satisfied)
-last_updated: "2026-07-04T04:21:24.672Z"
+stopped_at: Phase 17 context gathered
+last_updated: "2026-07-04T04:29:54.897Z"
 last_activity: 2026-07-04
 last_activity_desc: Phase 16 complete, transitioned to Phase 17
 progress:
@@ -107,9 +107,9 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-03T23:40:00.000Z
-Stopped at: Phase 16 complete (4/4 plans, all requirements satisfied)
-Resume file: None — Phase 16 closed. Next: plan Phase 17 (ReviewLog Schema & Idempotent Write Path)
+Last session: 2026-07-04T04:29:54.885Z
+Stopped at: Phase 17 context gathered
+Resume file: .planning/phases/17-reviewlog-schema-idempotent-write-path/17-CONTEXT.md
 
 ## Operator Next Steps
 
