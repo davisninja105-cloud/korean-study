@@ -113,6 +113,12 @@ for (const card of allCards) {
   const filtered = filterComponents(parsed, deckSet)
   cleanedByCardId.set(card.id, filtered)
 
+  // IN-03: surface unrecognized Card.type values instead of silently folding
+  // them into the vocabulary bucket — mirrors the malformed-JSON warning above
+  // so a data-integrity issue in `type` doesn't get masked in the per-type report.
+  if (!tallies[card.type as CardType]) {
+    console.warn(`  ⚠ Unrecognized card type "${card.type}" on card ${card.id} (${card.normalizedFront}) — tallied as vocabulary`)
+  }
   const type = (tallies[card.type as CardType] ? card.type : 'vocabulary') as CardType
   tallies[type].before += parsed.length
   tallies[type].after += filtered.length
