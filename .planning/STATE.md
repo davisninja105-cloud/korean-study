@@ -5,10 +5,10 @@ milestone_name: Knowledge Graph Quality & History
 current_phase: 17
 current_phase_name: reviewlog-schema-idempotent-write-path
 status: complete
-stopped_at: Completed 17-04-PLAN.md
-last_updated: "2026-07-04T18:00:37.586Z"
+stopped_at: Phase 18 context gathered
+last_updated: "2026-07-04T18:35:49.150Z"
 last_activity: 2026-07-04
-last_activity_desc: Phase 17 complete (gap closure 17-04 verified — HIST-02 satisfied)
+last_activity_desc: Completed 17-04-PLAN.md (gap closure, HIST-02 verified)
 progress:
   total_phases: 4
   completed_phases: 2
@@ -117,9 +117,9 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-04T17:58:53.910Z
-Stopped at: Completed 17-04-PLAN.md
-Resume file: None
+Last session: 2026-07-04T18:35:49.138Z
+Stopped at: Phase 18 context gathered
+Resume file: .planning/phases/18-review-history-page/18-CONTEXT.md
 
 ## Operator Next Steps
 
