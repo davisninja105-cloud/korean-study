@@ -89,6 +89,12 @@ const cleanedByCardId = new Map<string, string[]>()
 // cardId -> new DB value to write (only entries whose value actually changed).
 const pendingUpdates = new Map<string, string | null>()
 let malformedCount = 0
+// WR-03: cards whose components JSON failed to parse — a malformed row is a
+// data-integrity artifact unrelated to whether this card's real prerequisite
+// relationships are valid. Their outgoing edges must be excluded from the
+// prune candidate set below (Phase C), not treated as "zero components" and
+// scheduled for deletion.
+const skipCardIds = new Set<string>()
 
 for (const card of allCards) {
   if (!card.components) continue
@@ -100,6 +106,7 @@ for (const card of allCards) {
   } catch {
     console.warn(`  ⚠ Skipping malformed components JSON on card ${card.id} (${card.normalizedFront})`)
     malformedCount++
+    skipCardIds.add(card.id)
     continue
   }
 
@@ -150,6 +157,11 @@ const existingEdges = (await prisma.cardDependency.findMany({
 
 const existingKeys = new Set(existingEdges.map((e) => `${e.cardId}::${e.prerequisiteId}`))
 const pruneIds = existingEdges
+  // WR-03: never prune an edge sourced from a card whose components JSON was
+  // malformed — that card's edges were never re-derived (no entry in
+  // cleanedByCardId/desired), so they must be left untouched, not treated as
+  // stale.
+  .filter((e) => !skipCardIds.has(e.cardId))
   .filter((e) => !desired.has(`${e.cardId}::${e.prerequisiteId}`))
   .map((e) => e.id)
 const toAdd = desiredPairs.filter((p) => !existingKeys.has(`${p.cardId}::${p.prerequisiteId}`))
