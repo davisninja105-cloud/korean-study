@@ -41,12 +41,17 @@ console.log('Connected to:', url)
 
 // Re-derived from lib/card-key.ts — must mirror it exactly (plain .mjs script
 // cannot import the TypeScript module).
+// WR-04: the Hangul-detection regex MUST stay byte-for-byte identical to
+// lib/card-key.ts's — it previously omitted Hangul Compatibility Jamo,
+// Hangul Jamo Extended-A, and Hangul Jamo Extended-B, which would cause this
+// script's normalizeFront() to diverge from production for any component
+// whose trailing-paren content falls only in one of those ranges.
 function normalizeFront(front) {
   let s = front.normalize('NFC').trim().replace(/\s+/g, ' ')
   const match = s.match(/\s*\(([^)]*)\)\s*$/)
   if (match) {
     const inner = match[1]
-    const hasHangul = /[가-힣ᄀ-ᇿ]/.test(inner)
+    const hasHangul = /[가-힣ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿]/.test(inner)
     const hasAscii  = /[A-Za-z0-9]/.test(inner)
     if (!hasHangul && hasAscii) {
       s = s.slice(0, s.length - match[0].length).trim()
