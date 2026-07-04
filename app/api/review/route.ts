@@ -11,6 +11,12 @@ function isGrade(n: unknown): n is Grade {
   return typeof n === 'number' && Number.isInteger(n) && n >= 1 && n <= 4
 }
 
+// CR-01: sentinel errors used to short-circuit the interactive transaction
+// below and route to the correct HTTP status in the catch block, without
+// relying on string-matching a generic Error.message.
+class CardReviewNotFoundError extends Error {}
+class StaleReviewError extends Error {}
+
 export async function POST(req: NextRequest) {
   // WR-01: parse the body inside a try so malformed JSON returns a structured
   // 400 instead of an unhandled throw (Next.js would otherwise return a raw
@@ -61,25 +67,55 @@ export async function POST(req: NextRequest) {
   // logged server-side only; the client gets a generic message to avoid
   // leaking internal schema details (threat T-13-02).
   try {
-    const cardReview = await prisma.cardReview.findUnique({ where: { cardId } })
-    if (!cardReview) {
-      return NextResponse.json({ error: 'Card review not found' }, { status: 404 })
-    }
+    // CR-01: the read (findUnique) and write (update) must be part of the
+    // same atomic unit, guarded by an optimistic-concurrency check. Without
+    // this, two distinct in-flight reviews of the same card (e.g. a graded
+    // card requeued and re-graded before the first review's background save
+    // finishes retrying) can both read the same stale CardReview row and
+    // compute updates from it — whichever transaction commits last silently
+    // overwrites the other's FSRS state. `reps` + `lastReview` act as a
+    // version fingerprint: if the row moved since we read it, `count` below
+    // is 0 and we abort with a 409 rather than applying a stale update.
+    const review = await prisma.$transaction(async (tx) => {
+      const cardReview = await tx.cardReview.findUnique({ where: { cardId } })
+      if (!cardReview) {
+        throw new CardReviewNotFoundError()
+      }
 
-    const updated = reviewCard(cardReview, rating)
+      const updated = reviewCard(cardReview, rating)
 
-    // HIST-01/HIST-02: write the CardReview update and the ReviewLog audit
-    // row inside one atomic array-form transaction — either both land or
-    // neither does. If reviewLog.create hits the idempotencyKey UNIQUE
-    // constraint (a retried request), the whole transaction rolls back so
-    // cardReview.update never re-applies FSRS state (see catch below).
-    const [review] = await prisma.$transaction([
-      prisma.cardReview.update({ where: { cardId }, data: updated }),
-      prisma.reviewLog.create({ data: { cardId, rating, idempotencyKey, ...updated } }),
-    ])
+      const { count } = await tx.cardReview.updateMany({
+        where: { cardId, reps: cardReview.reps, lastReview: cardReview.lastReview },
+        data: updated,
+      })
+      if (count === 0) {
+        throw new StaleReviewError()
+      }
+
+      // HIST-01/HIST-02: the ReviewLog audit row lands inside the same
+      // transaction as the CardReview update — either both land or neither
+      // does. If this hits the idempotencyKey UNIQUE constraint (a retried
+      // request), the whole transaction rolls back so cardReview.update
+      // never re-applies FSRS state (see catch below).
+      await tx.reviewLog.create({ data: { cardId, rating, idempotencyKey, ...updated } })
+
+      return tx.cardReview.findUniqueOrThrow({ where: { cardId } })
+    })
 
     return NextResponse.json(review)
   } catch (e) {
+    if (e instanceof CardReviewNotFoundError) {
+      return NextResponse.json({ error: 'Card review not found' }, { status: 404 })
+    }
+    if (e instanceof StaleReviewError) {
+      // CR-01: the row was updated concurrently between our read and write.
+      // 409 tells the client this specific attempt was not applied (distinct
+      // from the idempotency-retry 200 below, which IS a successful apply).
+      return NextResponse.json(
+        { error: 'Card review was updated concurrently; please retry' },
+        { status: 409 },
+      )
+    }
     // HIST-02: a duplicate idempotencyKey collides on ReviewLog's UNIQUE
     // index, rolling back the whole transaction — CardReview was NOT
     // re-applied. Treat this as an idempotent success: read back the
