@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Knowledge Graph Quality & History
 current_phase: 17
-current_phase_name: ReviewLog Schema & Idempotent Write Path
-status: verifying
+current_phase_name: reviewlog-schema-idempotent-write-path
+status: executing
 stopped_at: Phase 17 context gathered
-last_updated: "2026-07-04T04:29:54.897Z"
+last_updated: "2026-07-04T06:18:15.656Z"
 last_activity: 2026-07-04
-last_activity_desc: Phase 16 complete, transitioned to Phase 17
+last_activity_desc: Phase 17 execution started
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 4
-  completed_plans: 4
+  total_plans: 7
+  completed_plans: 5
   percent: 25
 ---
 
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 16 — components-filter-fix
+**Current focus:** Phase 17 — reviewlog-schema-idempotent-write-path
 
 ## Current Position
 
-Phase: 17 — ReviewLog Schema & Idempotent Write Path
-Plan: Not started
-Status: COMPLETE — checkpoint approved, production cleanup applied and verified
-Last activity: 2026-07-04 — Phase 16 complete, transitioned to Phase 17
+Phase: 17 (reviewlog-schema-idempotent-write-path) — EXECUTING
+Plan: 2 of 3
+Status: Ready to execute
+Last activity: 2026-07-04 — Phase 17 execution started
 
 Progress: [██░░░░░░░░] 25% (1/4 phases complete; Phase 16 done, Phase 17 next)
 
@@ -61,6 +61,7 @@ Progress: [██░░░░░░░░] 25% (1/4 phases complete; Phase 16 do
 | Phase 16 P02 | 4min | 2 tasks | 2 files |
 | Phase 16 P03 | 15min | 2 tasks | 4 files |
 | Phase 16 P04 | ~20min | 3 tasks | 2 files |
+| Phase 17 P01 | 12min | 3 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -79,6 +80,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 - [Phase 16]: keyToId lookup in app/api/sync/route.ts and scripts/local-resync.mts rescoped to ALL cards (no components-not-null where clause) so real leaf-node cards are resolvable as prerequisites; stale keyToId.delete branch removed
 - [Phase 16]: scripts/retro-filter-cleanup.mts created — dry-run-by-default retroactive corpus cleanup that re-filters every persisted Card.components row and reconciles CardDependency edges (prune stale, add newly-valid), gated behind --apply; production execution is a blocking-human checkpoint per the plan's threat model (T-16-08/T-16-09), not auto-approvable
 - [Phase 16]: Production cleanup approved and applied — 511 cards changed, 2 edges pruned, 4 edges added, corpus now at 1039 cards / 2133 CardDependency edges; dry-run matched the 16-01 baseline exactly and a follow-up dry-run confirmed idempotency (0/0/0). One known-acceptable homonym-collision edge (화나다 → 화 (episode counter)) flagged and explicitly accepted by the user as a pre-existing, out-of-scope data ambiguity. Phase 16 is now fully complete (4/4 plans, GRAPH-01..05 satisfied).
+- [Phase 17]: ReviewLog mirrors CardReview's full FSRS field set (D-01) so Phase 18 never needs a backfill migration; cardId is NOT unique (append-only), only idempotencyKey is @unique
 
 ### Pending Todos
 
@@ -107,7 +109,7 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-04T04:29:54.885Z
+Last session: 2026-07-04T06:17:45.384Z
 Stopped at: Phase 17 context gathered
 Resume file: .planning/phases/17-reviewlog-schema-idempotent-write-path/17-CONTEXT.md
 

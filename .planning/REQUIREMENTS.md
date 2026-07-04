@@ -17,8 +17,8 @@ Requirements for the "Knowledge Graph Quality & History" milestone. Each maps to
 
 ### Review History
 
-- [ ] **HIST-01**: Every FSRS review writes a `ReviewLog` row (timestamp, cardId, rating, resulting FSRS state)
-- [ ] **HIST-02**: `ReviewLog` writes are idempotent — a client-generated idempotency key + `prisma.$transaction([...])` ensures a lost-response retry never produces a duplicate row or double-applies FSRS state
+- [x] **HIST-01**: Every FSRS review writes a `ReviewLog` row (timestamp, cardId, rating, resulting FSRS state)
+- [x] **HIST-02**: `ReviewLog` writes are idempotent — a client-generated idempotency key + `prisma.$transaction([...])` ensures a lost-response retry never produces a duplicate row or double-applies FSRS state
 - [ ] **HIST-03**: In-flight background retries are cancelled when the user triggers undo, preventing a stale retry from silently re-applying a rating after undo
 - [ ] **HIST-04**: User can view a reverse-chronological, cursor-paginated history of their reviews (~20-30/page), reachable from an existing surface (Settings, `/wrapped`, or `CardEditor` — no new bottom-nav tab)
 - [ ] **HIST-05**: User can filter the history view down to a single card
@@ -66,8 +66,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | GRAPH-03 | Phase 16 | Complete |
 | GRAPH-04 | Phase 16 | Complete |
 | GRAPH-05 | Phase 16 | Complete |
-| HIST-01 | Phase 17 | Pending |
-| HIST-02 | Phase 17 | Pending |
+| HIST-01 | Phase 17 | Complete |
+| HIST-02 | Phase 17 | Complete |
 | HIST-03 | Phase 17 | Pending |
 | HIST-04 | Phase 18 | Pending |
 | HIST-05 | Phase 18 | Pending |

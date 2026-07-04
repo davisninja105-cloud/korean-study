@@ -108,11 +108,11 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   2. A lost-response retry of the same grade action produces no duplicate log entry and never double-applies FSRS state (verifiable under throttled/flaky network).
   3. Triggering undo cancels any in-flight background retry, so a stale retry can never silently re-apply a rating after the review has been undone.
 
-**Plans**: 3 plans
+**Plans**: 1/3 plans executed
 
 **Wave 1**
 
-- [ ] 17-01-PLAN.md — ReviewLog Prisma model (full FSRS snapshot, D-01) + `Card.reviewLogs[]` + new `scripts/apply-reviewlog-ddl.mjs` + [BLOCKING] apply DDL to live Turso (HIST-01/02 schema foundation)
+- [x] 17-01-PLAN.md — ReviewLog Prisma model (full FSRS snapshot, D-01) + `Card.reviewLogs[]` + new `scripts/apply-reviewlog-ddl.mjs` + [BLOCKING] apply DDL to live Turso (HIST-01/02 schema foundation)
 
 **Wave 2** *(both depend on 17-01; parallel — no file overlap)*
 
@@ -173,6 +173,6 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 14. Sync Failure Visibility & Caching Performance | v1.3 | 2/2 | Complete | 2026-07-02 |
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 2/2 | Complete | 2026-07-03 |
 | 16. Components[] Filter Fix | v1.4 | 4/4 | Complete    | 2026-07-03 |
-| 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 0/3 | Not started | - |
+| 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 1/3 | In Progress|  |
 | 18. Review History Page | v1.4 | 0/TBD | Not started | - |
 | 19. Vercel Cron Auto-Sync | v1.4 | 0/TBD | Not started | - |
