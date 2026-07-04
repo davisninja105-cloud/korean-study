@@ -356,8 +356,14 @@ export function parseExtractionResponse(
       type:       (c.type ?? 'vocabulary') as ExtractedCard['type'],
       front,
       back:       c.back ?? '',
-      notes:      c.notes,
-      distractors: Array.isArray(c.distractors) ? c.distractors.slice(0, 3) : [],
+      // IN-01: coerce to the declared string|undefined type instead of passing
+      // a malformed non-string value through untouched — otherwise it only
+      // fails later at the Prisma write (a whole-lesson DB-write failure)
+      // rather than being caught cleanly here alongside the other validation.
+      notes:      typeof c.notes === 'string' ? c.notes : undefined,
+      distractors: Array.isArray(c.distractors)
+        ? c.distractors.filter((d): d is string => typeof d === 'string').slice(0, 3)
+        : [],
       sentences: (Array.isArray(c.sentences) ? c.sentences : [])
         .filter((s): s is ExtractedSentence =>
           typeof s === 'object' && s !== null &&

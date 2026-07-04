@@ -41,6 +41,23 @@ describe('parseExtractionResponse', () => {
     expect(result[1].type).toBe('grammar')
   })
 
+  it('coerces a malformed notes value to undefined and filters non-string distractors entries (IN-01)', () => {
+    const card = {
+      type: 'vocabulary',
+      front: '가다',
+      back: 'to go',
+      notes: 12345, // malformed — not a string
+      distractors: ['plausible', { bogus: 'object' }, 'also plausible', 'third'],
+      sentences: [{ korean: '학교에 가다', targetForm: '가다', translation: 'go to school' }],
+      components: [],
+    }
+    const result = parseExtractionResponse(JSON.stringify([card]))
+
+    expect(result).toHaveLength(1)
+    expect(result[0].notes).toBeUndefined()
+    expect(result[0].distractors).toEqual(['plausible', 'also plausible', 'third'])
+  })
+
   it('drops a card with missing/empty front, keeps the valid sibling', () => {
     // Sibling A: valid. Sibling B: front is an empty/whitespace string → dropped.
     const valid = {
