@@ -70,12 +70,12 @@ Per CLAUDE.md's color-system convention: literal Tailwind color utilities are re
 
 Accent reserved for: the "View history →" link arrow/chevron on the Habits page stats section (D-08), and the active-state text of the "All cards ×" clear-filter chip (D-11) when a card filter is applied. Never used for row backgrounds or grade badges.
 
-**Grade color mapping for history rows (D-02)** — reusing the exact literal tokens `FlashcardMode.tsx` already established for its grade buttons, so the same rating always reads the same color everywhere in the app:
+**Grade color mapping for history rows (D-02)** — Again reuses the exact literal red token `FlashcardMode.tsx` already established for its grade buttons. Hard uses the codebase's genuine existing amber-warning precedent from `CardEditor.tsx` (lines 166, 177-181, `warnUnsafe` state) rather than an invented orange — **research (18-RESEARCH.md Pitfall 1) found `FlashcardMode.tsx`'s actual Hard button is neutral gray, and no `orange-*` literal exists anywhere in this codebase; orange would both invent a new color and contradict D-02's ban on literal orange/red utilities. Confirmed with the user: amber is the deliberate choice** (distinct from Again's red, reads as "caution" not "error", satisfies D-02's plural "weak grades stand out" instruction):
 
 | Rating | Grade name | Badge/row treatment |
 |--------|-----------|---------------------|
 | 1 (Again) | "Again" | `bg-red-50 text-red-600 dark:bg-red-500/10 dark:text-red-400` — weak, stands out |
-| 2 (Hard) | "Hard" | `bg-orange-50 text-orange-600 dark:bg-orange-500/10 dark:text-orange-400` — weak, stands out (distinct from Again so the two "struggling" grades are visually differentiable, per D-02's "weak grades" plural) |
+| 2 (Hard) | "Hard" | `bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400` — weak, stands out (distinct from Again so the two "struggling" grades are visually differentiable, per D-02's "weak grades" plural); reuses `CardEditor.tsx`'s existing amber-warning precedent, not a new color |
 | 3 (Good) | "Good" | `bg-surface-2 text-foreground` — neutral, no color coding (D-03) |
 | 4 (Easy) | "Easy" | `bg-surface-2 text-foreground` — neutral, no color coding (D-03) |
 
@@ -112,7 +112,7 @@ Do not reuse `--reward` for Easy rows here — D-03 explicitly keeps Good/Easy n
 - Each history row: `bg-surface-1 rounded-xl p-4 flex flex-col gap-1` (a lighter-weight card than the `rounded-2xl shadow-md p-6` sections elsewhere — rows are list items, not standalone sections, so no shadow; a `border border-border` bottom-divider or `divide-y divide-border` on the list wrapper is acceptable instead of per-row cards, whichever reads cleaner at ~20-30 rows/page. Prefer `divide-y` for a denser, more scannable feed).
 - Row content, top line: rating pill (grade-colored per the Color section) + card front (Korean, `hangul` class, `text-sm font-medium text-foreground`) truncated with `truncate`.
 - Row content, bottom line: `text-xs text-muted` — mastery phrase + timestamp.
-- IntersectionObserver sentinel (D-04): an empty `<div ref={sentinelRef} className="h-4" />` at the list end; while fetching the next page, replace it with a centered small spinner (reuse whatever spinner primitive already exists, e.g. the one in `SyncPanel.tsx`, rather than inventing a new one).
+- IntersectionObserver sentinel (D-04): an empty `<div ref={sentinelRef} className="h-4" />` at the list end; while fetching the next page, replace it with a centered small spinner reusing `AudioButton.tsx`'s existing spinner idiom (line ~112: `<span className="inline-block border-2 border-button border-t-transparent rounded-full animate-spin ...">`) — **research (18-RESEARCH.md Pitfall 4) found `SyncPanel.tsx` has no spinner at all (it only swaps button text to "Syncing…"); `AudioButton.tsx` is the actual reusable spinner primitive in this codebase.**
 
 **Habits page addition (D-07/D-08):**
 - New section inserted between "Averages & consistency" and "Last 30 days" (or immediately after "All-time totals" — planner's call on exact position; keep it high enough to read as a first-class feature, not buried).
