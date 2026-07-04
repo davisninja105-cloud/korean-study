@@ -140,9 +140,11 @@ export async function POST(req: NextRequest) {
               : null
 
             // Check if this card exists so we can decide whether to refresh sentences.
+            // `components` (WR-02) is selected so the UPDATE branch can diff old vs
+            // new components and prune stale CardDependency edges inline.
             const existing = await prisma.card.findUnique({
               where: { normalizedFront: nf },
-              select: { id: true, sentences: { select: { id: true } } },
+              select: { id: true, components: true, sentences: { select: { id: true } } },
             })
 
             if (!existing) {
@@ -185,8 +187,38 @@ export async function POST(req: NextRequest) {
                 back:       card.back,
                 notes:      card.notes ?? null,
                 distractors: distractorsJson,
-                // Always refresh components — new prompt produces better dependency info.
-                components: componentsJson,
+              }
+
+              // WR-02: only overwrite components when this round actually returned
+              // some. An empty/filtered-out result from a routine re-sync must never
+              // silently null out (or shrink) a previously-good value — only the
+              // manual, developer-run retro-filter-cleanup script should shrink data.
+              if (card.components.length > 0) {
+                updateData.components = componentsJson
+
+                // Prune any CardDependency edge sourced from this card whose
+                // prerequisite is no longer listed in the refreshed components —
+                // otherwise a stale edge lingers until someone remembers to run
+                // the offline cleanup script.
+                let previousComponents: string[] = []
+                if (existing.components) {
+                  try {
+                    previousComponents = JSON.parse(existing.components) as string[]
+                  } catch {
+                    previousComponents = []
+                  }
+                }
+                const newKeys = new Set(card.components.map((c) => normalizeFront(c)))
+                const removedKeys = previousComponents
+                  .map((c) => normalizeFront(c))
+                  .filter((k) => !newKeys.has(k))
+                for (const key of removedKeys) {
+                  const staleId = keyToId.get(key)
+                  if (!staleId) continue
+                  await prisma.cardDependency.deleteMany({
+                    where: { cardId: existing.id, prerequisiteId: staleId },
+                  })
+                }
               }
 
               // Refresh sentences only when the card currently has none.
