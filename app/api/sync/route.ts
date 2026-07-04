@@ -168,8 +168,12 @@ export async function POST(req: NextRequest) {
                   review: { create: {} },
                 },
               })
+              // CR-02: register every upserted card unconditionally — mirrors
+              // seedCards' scope (the whole deck, not just cards that carry
+              // components). A brand-new leaf-node card with zero components
+              // must still be resolvable as a same-batch sibling's prerequisite.
+              keyToId.set(nf, newCard.id)
               if (card.components.length > 0) {
-                keyToId.set(nf, newCard.id)
                 linkTargets.push({ id: newCard.id, components: card.components })
               }
               createdThisLesson++
@@ -202,8 +206,11 @@ export async function POST(req: NextRequest) {
                 where: { id: existing.id },
                 data:  updateData,
               })
+              // CR-02: unconditional (see CREATE branch above) — harmless here
+              // since existing.id is already seeded from seedCards, but keeps
+              // both branches symmetric and correct if seeding logic changes.
+              keyToId.set(nf, existing.id)
               if (card.components.length > 0) {
-                keyToId.set(nf, existing.id)
                 linkTargets.push({ id: existing.id, components: card.components })
               }
               // A card losing its own components is still a valid prerequisite
