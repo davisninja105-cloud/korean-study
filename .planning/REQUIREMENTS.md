@@ -20,9 +20,9 @@ Requirements for the "Knowledge Graph Quality & History" milestone. Each maps to
 - [x] **HIST-01**: Every FSRS review writes a `ReviewLog` row (timestamp, cardId, rating, resulting FSRS state)
 - [x] **HIST-02**: `ReviewLog` writes are idempotent — a client-generated idempotency key + `prisma.$transaction([...])` ensures a lost-response retry never produces a duplicate row or double-applies FSRS state
 - [x] **HIST-03**: In-flight background retries are cancelled when the user triggers undo, preventing a stale retry from silently re-applying a rating after undo
-- [ ] **HIST-04**: User can view a reverse-chronological, cursor-paginated history of their reviews (~20-30/page), reachable from an existing surface (Settings, `/wrapped`, or `CardEditor` — no new bottom-nav tab)
-- [ ] **HIST-05**: User can filter the history view down to a single card
-- [ ] **HIST-06**: Undone reviews remain visible in history, unmarked — `ReviewLog` is append-only and never mutated by undo
+- [x] **HIST-04**: User can view a reverse-chronological, cursor-paginated history of their reviews (~20-30/page), reachable from an existing surface (Settings, `/wrapped`, or `CardEditor` — no new bottom-nav tab)
+- [x] **HIST-05**: User can filter the history view down to a single card
+- [x] **HIST-06**: Undone reviews remain visible in history, unmarked — `ReviewLog` is append-only and never mutated by undo
 - [ ] **HIST-07**: History page follows the RSC + DTO + client-shell hydration pattern (real data on first paint, no loading flash)
 
 ### Automatic Sync
@@ -69,9 +69,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | HIST-01 | Phase 17 | Complete |
 | HIST-02 | Phase 17 | Complete |
 | HIST-03 | Phase 17 | Complete |
-| HIST-04 | Phase 18 | Pending |
-| HIST-05 | Phase 18 | Pending |
-| HIST-06 | Phase 18 | Pending |
+| HIST-04 | Phase 18 | Complete |
+| HIST-05 | Phase 18 | Complete |
+| HIST-06 | Phase 18 | Complete |
 | HIST-07 | Phase 18 | Pending |
 | SYNC-02 | Phase 19 | Pending |
 | SYNC-03 | Phase 19 | Pending |

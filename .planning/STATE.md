@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Knowledge Graph Quality & History
-current_phase: 17
-current_phase_name: reviewlog-schema-idempotent-write-path
+current_phase: 18
+current_phase_name: review-history-page
 status: executing
-stopped_at: Phase 18 UI-SPEC approved
-last_updated: "2026-07-04T20:53:05.598Z"
+stopped_at: Completed 18-01-PLAN.md
+last_updated: "2026-07-04T21:07:10.531Z"
 last_activity: 2026-07-04
-last_activity_desc: Completed 17-04-PLAN.md (gap closure, HIST-02 verified)
+last_activity_desc: Phase 18 execution started
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 8
-  completed_plans: 8
+  total_plans: 11
+  completed_plans: 9
   percent: 50
 ---
 
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 18 — Review History Page (Phase 17 complete)
+**Current focus:** Phase 18 — review-history-page
 
 ## Current Position
 
-Phase: 17 (reviewlog-schema-idempotent-write-path) — COMPLETE
-Plan: 4 of 4
+Phase: 18 (review-history-page) — EXECUTING
+Plan: 2 of 3
 Status: Ready to execute
-Last activity: 2026-07-04 — Completed 17-04-PLAN.md (gap closure, HIST-02 verified)
+Last activity: 2026-07-04 — Phase 18 execution started
 
 Progress: [█████░░░░░] 50% (2/4 phases complete; Phase 16 + 17 done, Phase 18 next)
 
@@ -65,6 +65,7 @@ Progress: [█████░░░░░] 50% (2/4 phases complete; Phase 16 + 
 | Phase 17 P02 | 6min | 1 tasks | 1 files |
 | Phase 17 P03 | 4min | 1 tasks | 1 files |
 | Phase 17 P04 | 8min | 2 tasks | 3 files |
+| Phase 18 P01 | 12min | 3 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -89,6 +90,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 - [Phase 17]: idempotencyKey and AbortController generated exactly once in submitReview's event-handler flow, immediately before the undoRef.current snapshot — never inside postReviewWithRetry (would defeat server-side dedup) and never lifted into render/useMemo (react-hooks/purity)
 - [Phase 17]: undo network-failure re-arm path reuses the SAME already-aborted controller rather than creating a new one — retrying undo does not need to un-abort the review's background save
 - [Phase 17]: Widened POST /api/review's idempotent-200 catch to OR isUniqueConstraintError(e, 'idempotencyKey') (new pure lib/db-errors.ts helper) with the existing P2002 check, closing the interactive-transaction DriverAdapterError gap from Phase 17 UAT Test 6
+- [Phase 18]: masteryPhrase gained export only — no logic change; previewIntervalLabels internal call unaffected
+- [Phase 18]: getReviewHistory has no try/catch — lib throws, route catches (mirrors lib/study-cards.ts convention)
+- [Phase 18]: GET /api/reviews never reads a client-controlled take param — always uses server-side PAGE_SIZE=25 (closes T-18-01 DoS threat)
 
 ### Pending Todos
 
@@ -117,9 +121,9 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-04T18:42:54.391Z
-Stopped at: Phase 18 UI-SPEC approved
-Resume file: .planning/phases/18-review-history-page/18-UI-SPEC.md
+Last session: 2026-07-04T21:07:10.525Z
+Stopped at: Completed 18-01-PLAN.md
+Resume file: None
 
 ## Operator Next Steps
 

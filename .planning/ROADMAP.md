@@ -136,11 +136,11 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   3. Undone reviews still appear in the history, unmarked — `ReviewLog` is append-only and never mutated by undo.
   4. The history view shows real data on the first server-rendered paint with no loading flash (RSC + DTO + client-shell hydration).
 
-**Plans**: 3 plans
+**Plans**: 1/3 plans executed
 
 **Wave 1**
 
-- [ ] 18-01-PLAN.md — History data pipeline: export `masteryPhrase`, add `ReviewLogDTO`/`StatsDTO.cardsByState`, `lib/review-history.ts:getReviewHistory()` (cursor pagination + pure helpers) + Wave-0 tests, and `GET /api/reviews` with V5 validation (HIST-04/05/06)
+- [x] 18-01-PLAN.md — History data pipeline: export `masteryPhrase`, add `ReviewLogDTO`/`StatsDTO.cardsByState`, `lib/review-history.ts:getReviewHistory()` (cursor pagination + pure helpers) + Wave-0 tests, and `GET /api/reviews` with V5 validation (HIST-04/05/06)
 
 **Wave 2** *(both depend on 18-01; parallel — no file overlap)*
 
@@ -188,5 +188,5 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 2/2 | Complete | 2026-07-03 |
 | 16. Components[] Filter Fix | v1.4 | 4/4 | Complete    | 2026-07-03 |
 | 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 4/4 | Complete   | 2026-07-04 |
-| 18. Review History Page | v1.4 | 0/TBD | Not started | - |
+| 18. Review History Page | v1.4 | 1/3 | In Progress|  |
 | 19. Vercel Cron Auto-Sync | v1.4 | 0/TBD | Not started | - |
