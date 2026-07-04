@@ -132,6 +132,26 @@ describe('parseExtractionResponse', () => {
     expect(fronts).toEqual(['가다', '오다'])
   })
 
+  it('salvages complete cards when truncation happens mid-way through a nested sentences array (WR-01)', () => {
+    // Two complete card objects, each with a nested "sentences" array (the real
+    // shape every card now has), followed by a third card whose "sentences"
+    // array itself gets cut off mid-element. The last "}," in the raw text
+    // belongs to the truncated nested sentence object, NOT the card boundary —
+    // a depth-unaware lastIndexOf('},') would slice there and produce
+    // bracket-mismatched JSON. The depth-aware scanner must instead find the
+    // last '},' that closes a TOP-LEVEL card object (after "가다"'s sentences
+    // array), recovering both complete cards.
+    const truncatedText = `[
+{"type":"vocabulary","front":"가다","back":"to go","sentences":[{"korean":"학교에 가다","targetForm":"가다","translation":"go to school"}]},
+{"type":"vocabulary","front":"오다","back":"to come","sentences":[{"korean":"집에 오다","targetForm":"오다","translation":"come home"}]},
+{"type":"vocabulary","front":"먹다","back":"to eat","sentences":[{"korean":"밥을 먹다","targetForm":"먹다","translation":"eat rice`
+    const result = parseExtractionResponse(truncatedText)
+
+    expect(result).toHaveLength(2)
+    const fronts = result.map((c) => c.front)
+    expect(fronts).toEqual(['가다', '오다'])
+  })
+
   describe('deckNormalizedFronts filtering (GRAPH-03 write-path wiring)', () => {
     it('drops a spurious component not present in the deck set', () => {
       const card = {

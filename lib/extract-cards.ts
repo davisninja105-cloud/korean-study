@@ -213,18 +213,72 @@ function isValidExtractedCard(c: unknown): c is Partial<ExtractedCard> {
  * pass a deck set simply get all components filtered out; the live caller
  * (extractCardsFromNotes) always passes the real deck set.
  */
+/**
+ * WR-01: scans forward through (possibly truncated) JSON array text,
+ * tracking bracket/brace nesting depth (skipping over string literal
+ * contents, including escaped quotes, so braces inside translated text
+ * don't confuse the count). Returns the index of the last `}` that closes a
+ * TOP-LEVEL card object — i.e. one that is a direct element of the outer
+ * array — never a nested object such as a card's `sentences` array. Returns
+ * -1 if no such boundary is found.
+ *
+ * Depth 1 means "inside the outer `[` only" — so a `}` that brings depth
+ * back down to 1 is closing an object that is a direct child of the array,
+ * exactly the boundary the truncation-salvage logic needs. The previous
+ * approach (`text.lastIndexOf('},')`) assumed the last `},` in the text was
+ * always this boundary, which breaks now that every card nests a
+ * `sentences` array: truncation mid-sentence-object leaves the last `},`
+ * belonging to a nested sentence, not the card, producing bracket-mismatched
+ * JSON when naively sliced and re-closed.
+ */
+function findLastTopLevelCardBoundary(text: string): number {
+  let depth = 0
+  let inString = false
+  let escaped = false
+  let lastBoundary = -1
+
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (ch === '\\') {
+        escaped = true
+      } else if (ch === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (ch === '"') {
+      inString = true
+    } else if (ch === '[' || ch === '{') {
+      depth++
+    } else if (ch === ']' || ch === '}') {
+      depth--
+      if (ch === '}' && depth === 1) {
+        lastBoundary = i
+      }
+    }
+  }
+
+  return lastBoundary
+}
+
 export function parseExtractionResponse(
   text: string,
   deckNormalizedFronts: Set<string> = new Set()
 ): ExtractedCard[] {
   // Tolerant JSON parser: if the full parse fails (e.g. truncated output), trim back
-  // to the last complete object before the array closes so a dense lesson still
-  // yields the cards that did complete rather than losing them all.
+  // to the last complete TOP-LEVEL card object before the array closes so a dense
+  // lesson still yields the cards that did complete rather than losing them all.
   let parsed: Partial<ExtractedCard>[] = []
   const jsonMatch = text.match(/\[[\s\S]*\]/)
   if (!jsonMatch) {
-    // Try to salvage a truncated array: find the last complete '}' and close the array
-    const lastBrace = text.lastIndexOf('},')
+    // Try to salvage a truncated array: find the last top-level card boundary
+    // and close the array there (WR-01: depth-aware, not lastIndexOf('},')).
+    const lastBrace = findLastTopLevelCardBoundary(text)
     if (lastBrace !== -1) {
       try {
         const salvaged = text.slice(0, lastBrace + 1) + ']'
@@ -241,12 +295,23 @@ export function parseExtractionResponse(
     try {
       parsed = JSON.parse(jsonMatch[0]) as Partial<ExtractedCard>[]
     } catch (parseErr) {
-      // Truncated mid-array; try to salvage
+      // Truncated mid-array; try to salvage. WR-01: scan the ORIGINAL full
+      // `text`, not `jsonMatch[0]` — the greedy `/\[[\s\S]*\]/` regex only
+      // matches up to the LAST `]` anywhere in the text, which can itself
+      // land inside a nested `sentences` array and silently exclude a later,
+      // fully-complete top-level card's own closing `}` (e.g. when a further
+      // trailing card is truncated with no closing bracket at all). Scanning
+      // the full text finds the true last top-level card boundary regardless
+      // of where the regex's greedy match happened to stop.
       console.warn('Full JSON parse failed, attempting salvage:', parseErr)
-      const lastBrace = jsonMatch[0].lastIndexOf('},')
+      const lastBrace = findLastTopLevelCardBoundary(text)
       if (lastBrace !== -1) {
         try {
-          parsed = JSON.parse(jsonMatch[0].slice(0, lastBrace + 1) + ']') as Partial<ExtractedCard>[]
+          const salvaged = text.slice(0, lastBrace + 1) + ']'
+          const startBracket = salvaged.indexOf('[')
+          if (startBracket !== -1) {
+            parsed = JSON.parse(salvaged.slice(startBracket)) as Partial<ExtractedCard>[]
+          }
         } catch (salvageErr) {
           console.warn('JSON salvage also failed:', salvageErr)
         }
