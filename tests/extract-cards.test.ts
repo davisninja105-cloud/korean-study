@@ -192,6 +192,34 @@ describe('parseExtractionResponse', () => {
       expect(result[0].components).toEqual([])
     })
 
+    it('retains a component referencing a sibling card in the same extraction batch (CR-01), even though neither card is pre-existing in the deck set', () => {
+      // 학교 and 가다 are both brand-new in this response (deckSet is empty —
+      // neither exists in the DB yet). 학교's components legitimately reference
+      // 가다, a sibling card produced in this same batch. Before CR-01 this was
+      // stripped because filterComponents only checked the pre-batch deck set.
+      const school = {
+        type: 'vocabulary',
+        front: '학교',
+        back: 'school',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '학교에 가다', targetForm: '학교', translation: 'go to school' }],
+        components: ['가다'],
+      }
+      const go = {
+        type: 'vocabulary',
+        front: '가다',
+        back: 'to go',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '학교에 가다', targetForm: '가다', translation: 'go to school' }],
+        components: [],
+      }
+      const deckSet = new Set<string>() // empty — neither card pre-exists in the DB
+      const result = parseExtractionResponse(JSON.stringify([school, go]), deckSet)
+
+      const schoolResult = result.find((c) => c.front === '학교')
+      expect(schoolResult?.components).toEqual(['가다'])
+    })
+
     it('still self-excludes the card\'s own headword before the deck filter runs', () => {
       const card = {
         type: 'vocabulary',

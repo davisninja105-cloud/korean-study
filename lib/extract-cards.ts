@@ -259,6 +259,16 @@ export function parseExtractionResponse(
   // front/back or carry a present-but-invalid type, BEFORE normalization.
   const validCards = parsed.filter(isValidExtractedCard)
 
+  // CR-01: same-lesson siblings aren't in the DB yet (existingNormalizedFronts
+  // was fetched before this extraction call ran) but they ARE valid same-request
+  // prerequisite targets — a single lesson's exhaustive extraction routinely
+  // introduces several cards that legitimately reference each other. Union the
+  // batch's own fronts into the resolution set before filtering each card's
+  // components so a forward reference to a sibling card in this same response
+  // survives instead of being stripped before it's ever persisted.
+  const batchFronts = new Set(validCards.map((c) => normalizeFront(c.front ?? '')))
+  const effectiveDeckSet = new Set([...deckNormalizedFronts, ...batchFronts])
+
   // Defensively normalize so a malformed field from the model can't break sync.
   return validCards.map((c) => {
     const front = c.front ?? ''
@@ -273,9 +283,9 @@ export function parseExtractionResponse(
         .filter((x) => normalizeFront(x) !== myKey)
     )]
     // Deck-lookup filter (GRAPH-03): drop any component that doesn't resolve
-    // to a real deck card. Order matters — cheap self-dedup/self-exclude runs
-    // first, then this filter against the full deck set.
-    const components = filterComponents(dedupedComponents, deckNormalizedFronts)
+    // to a real deck card (including same-batch siblings, CR-01). Order
+    // matters — cheap self-dedup/self-exclude runs first, then this filter.
+    const components = filterComponents(dedupedComponents, effectiveDeckSet)
 
     return {
       type:       (c.type ?? 'vocabulary') as ExtractedCard['type'],
