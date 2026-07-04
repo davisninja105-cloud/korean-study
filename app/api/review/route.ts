@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { reviewCard, type Grade } from '@/lib/fsrs'
+import { Prisma } from '@/app/generated/prisma/client'
 
 // IN-01: named type guard instead of an unchecked `as Grade` cast, so the
 // compiler — not just the runtime check below — enforces the relationship.
@@ -20,7 +21,7 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 })
   }
-  const { cardId, rating } = body ?? {}
+  const { cardId, rating, idempotencyKey } = body ?? {}
 
   if (cardId === undefined || rating === undefined) {
     return NextResponse.json({ error: 'cardId and rating required' }, { status: 400 })
@@ -45,6 +46,16 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // V5 / T-17-03: reject a missing/empty/over-100-char idempotencyKey before
+  // any DB call. Bounds ReviewLog storage growth and guarantees every write
+  // below has a valid dedup key to rely on.
+  if (typeof idempotencyKey !== 'string' || idempotencyKey === '' || idempotencyKey.length > 100) {
+    return NextResponse.json(
+      { error: 'idempotencyKey must be a non-empty string (max 100 chars)' },
+      { status: 400 },
+    )
+  }
+
   // REVIEW-01: wrap the DB + FSRS calls so a Prisma failure returns a
   // structured response instead of an unhandled throw. The raw error is
   // logged server-side only; the client gets a generic message to avoid
@@ -57,13 +68,28 @@ export async function POST(req: NextRequest) {
 
     const updated = reviewCard(cardReview, rating)
 
-    const review = await prisma.cardReview.update({
-      where: { cardId },
-      data: updated,
-    })
+    // HIST-01/HIST-02: write the CardReview update and the ReviewLog audit
+    // row inside one atomic array-form transaction — either both land or
+    // neither does. If reviewLog.create hits the idempotencyKey UNIQUE
+    // constraint (a retried request), the whole transaction rolls back so
+    // cardReview.update never re-applies FSRS state (see catch below).
+    const [review] = await prisma.$transaction([
+      prisma.cardReview.update({ where: { cardId }, data: updated }),
+      prisma.reviewLog.create({ data: { cardId, rating, idempotencyKey, ...updated } }),
+    ])
 
     return NextResponse.json(review)
   } catch (e) {
+    // HIST-02: a duplicate idempotencyKey collides on ReviewLog's UNIQUE
+    // index, rolling back the whole transaction — CardReview was NOT
+    // re-applied. Treat this as an idempotent success: read back the
+    // current (already-correct) state and return it with 200, so the
+    // client's retry wrapper (which treats any non-ok status as a failed
+    // attempt) doesn't spuriously retry an already-successful review.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      const current = await prisma.cardReview.findUnique({ where: { cardId } })
+      return NextResponse.json(current)
+    }
     console.error('POST /api/review failed:', e)
     return NextResponse.json(
       { error: 'Failed to record review' },
