@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildReviewWhere, mapReviewLogToDTO } from '../lib/review-history'
+import { buildReviewWhere, isValidOpaqueId, mapReviewLogToDTO } from '../lib/review-history'
 import { masteryPhrase } from '../lib/fsrs'
 
 describe('mapReviewLogToDTO — gradeName', () => {
@@ -61,5 +61,23 @@ describe('buildReviewWhere — where clause', () => {
 
   it('returns {} for undefined', () => {
     expect(buildReviewWhere(undefined)).toEqual({})
+  })
+})
+
+describe('isValidOpaqueId — length bound', () => {
+  it('rejects empty string', () => {
+    expect(isValidOpaqueId('')).toBe(false)
+  })
+
+  it('accepts a normal cuid-length string', () => {
+    expect(isValidOpaqueId('cljk3x9z10001qzrmn831i7d')).toBe(true)
+  })
+
+  it('accepts exactly 64 characters', () => {
+    expect(isValidOpaqueId('a'.repeat(64))).toBe(true)
+  })
+
+  it('rejects 65 characters', () => {
+    expect(isValidOpaqueId('a'.repeat(65))).toBe(false)
   })
 })

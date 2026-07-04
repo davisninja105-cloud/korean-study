@@ -222,7 +222,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
       {/* ── Action buttons ── */}
       <div className="flex gap-2 justify-between">
         <Link
-          href={`/history?cardId=${card.id}`}
+          href={`/history?cardId=${encodeURIComponent(card.id)}`}
           className="text-sm text-button hover:text-button-hover self-center"
         >
           View history →

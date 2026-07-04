@@ -1,5 +1,5 @@
 // Server component — no client directive
-import { getReviewHistory, PAGE_SIZE } from '@/lib/review-history'
+import { getReviewHistory, isValidOpaqueId, PAGE_SIZE } from '@/lib/review-history'
 import { prisma } from '@/lib/prisma'
 import HistoryClient from '@/components/HistoryClient'
 
@@ -14,7 +14,9 @@ export default async function HistoryPage({
   searchParams: Promise<{ cardId?: string }>
 }) {
   const { cardId: rawCardId } = await searchParams
-  const cardId = rawCardId ?? null
+  // Same length bound as GET /api/reviews — an invalid id is ignored (treated
+  // as "no filter") rather than passed through to the query.
+  const cardId = rawCardId && isValidOpaqueId(rawCardId) ? rawCardId : null
 
   const initialLogs = await getReviewHistory({ cardId, cursor: null })
 
@@ -28,6 +30,10 @@ export default async function HistoryPage({
 
   return (
     <HistoryClient
+      // Re-keyed on cardId so switching or clearing the filter remounts the
+      // client component instead of reusing stale `rows`/`hasMore` state
+      // seeded from the previous initialLogs prop (18-REVIEW.md CR-1).
+      key={cardId ?? 'all'}
       initialLogs={initialLogs}
       cardId={cardId}
       cardFront={filterCardFront}

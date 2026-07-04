@@ -33,6 +33,7 @@ function formatTimestamp(iso: string): string {
     year: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    timeZone: 'UTC', // pin to avoid server/client hydration mismatch (HabitsClient.tsx precedent)
   })
 }
 

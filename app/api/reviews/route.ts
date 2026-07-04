@@ -1,15 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getReviewHistory, PAGE_SIZE } from '@/lib/review-history'
-
-// cursor/cardId are opaque cuid() strings (not integers) — bound their length
-// before they reach Prisma. A garbage id that passes this guard simply matches
-// zero rows (safe no-op); this guard exists to reject grossly malformed input
-// (empty or excessively long strings), not to validate cuid format.
-const MAX_ID_LEN = 64
-
-function isValidOpaqueId(v: string): boolean {
-  return v.length > 0 && v.length <= MAX_ID_LEN
-}
+import { getReviewHistory, isValidOpaqueId, PAGE_SIZE } from '@/lib/review-history'
 
 export async function GET(req: NextRequest) {
   try {

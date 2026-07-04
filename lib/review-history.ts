@@ -9,6 +9,18 @@ import type { ReviewLogDTO } from '@/lib/dto'
 
 export const PAGE_SIZE = 25
 
+// cursor/cardId are opaque cuid() strings (not integers) — bound their length
+// before they reach Prisma. A garbage id that passes this guard simply matches
+// zero rows (safe no-op); this guard exists to reject grossly malformed input
+// (empty or excessively long strings), not to validate cuid format. Shared by
+// GET /api/reviews and app/history/page.tsx so both entry points into this
+// pipeline apply the same bound.
+const MAX_ID_LEN = 64
+
+export function isValidOpaqueId(v: string): boolean {
+  return v.length > 0 && v.length <= MAX_ID_LEN
+}
+
 export interface ReviewHistoryParams {
   cardId?: string | null
   cursor?: string | null   // last-seen ReviewLog.id from the previous page
