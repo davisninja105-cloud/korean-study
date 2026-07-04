@@ -188,5 +188,5 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 2/2 | Complete | 2026-07-03 |
 | 16. Components[] Filter Fix | v1.4 | 4/4 | Complete    | 2026-07-03 |
 | 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 4/4 | Complete   | 2026-07-04 |
-| 18. Review History Page | v1.4 | 3/3 | Complete   | 2026-07-04 |
+| 18. Review History Page | v1.4 | 3/3 | Complete    | 2026-07-04 |
 | 19. Vercel Cron Auto-Sync | v1.4 | 0/TBD | Not started | - |
