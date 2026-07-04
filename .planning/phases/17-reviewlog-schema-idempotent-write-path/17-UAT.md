@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 17-reviewlog-schema-idempotent-write-path
 source: [17-01-SUMMARY.md, 17-02-SUMMARY.md, 17-03-SUMMARY.md]
 started: 2026-07-04T15:35:45Z
@@ -94,7 +94,11 @@ blocked: 0
   reason: "User reported: Automated curl replay against POST /api/review with an identical idempotencyKey returned 500 {\"error\":\"Failed to record review\"} on the duplicate request instead of an idempotent 200. Server log shows the underlying SQLite UNIQUE-constraint violation surfaces as a `DriverAdapterError` (from @prisma/adapter-libsql), not `Prisma.PrismaClientKnownRequestError` with code P2002, so the catch branch in app/api/review/route.ts that's supposed to treat this as an idempotent replay never matches."
   severity: blocker
   test: 6
-  root_cause: ""
-  artifacts: []
-  missing: []
-  debug_session: ""
+  root_cause: "app/api/review/route.ts uses an INTERACTIVE prisma.$transaction(async (tx) => {...}) callback (needed for its optimistic-concurrency read-then-conditional-write logic), not the array-form prisma.$transaction([...]) that was originally planned (per STATE.md decision log) and that the sibling route app/api/cards/[id]/route.ts uses successfully (comment: 'Array-form transaction — safe with the libSQL adapter'). With Prisma 7 + @prisma/adapter-libsql, a SQLite UNIQUE-constraint violation thrown inside an interactive transaction's callback surfaces as a raw, unclassified DriverAdapterError (cause.kind: 'sqlite'), not a Prisma.PrismaClientKnownRequestError/P2002 — so the route's existing P2002 instanceof check never matches, and every duplicate idempotencyKey collision falls through to the generic 500 handler."
+  artifacts:
+    - path: "app/api/review/route.ts"
+      issue: "Catch block only checks `e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002'`, which never matches because the interactive transaction form causes the libsql UNIQUE-constraint error to surface as a raw, unclassified DriverAdapterError instead."
+  missing:
+    - "Widen the catch block to also recognize the raw DriverAdapterError shape for the idempotencyKey UNIQUE-constraint case (keep the existing P2002 check too, for forward-compatibility), OR restructure the write path to avoid the interactive-transaction error-classification gap — recommend the former (lower risk, preserves the CR-01 optimistic-concurrency logic)."
+    - "Re-verify Test 6 (duplicate request → idempotent 200, exactly one ReviewLog row, no re-applied FSRS state) end-to-end after the fix."
+  debug_session: ".planning/debug/reviewlog-p2002-catch-never-fires.md"
