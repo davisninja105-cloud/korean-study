@@ -1,21 +1,22 @@
 ---
 phase: 18-review-history-page
 verified: 2026-07-04T21:50:34Z
-status: human_needed
-score: 8/9 must-haves verified
-behavior_unverified: 1
+status: passed
+score: 9/9 must-haves verified
+behavior_unverified: 0
 overrides_applied: 0
 human_verification:
   - test: "Load /habits and /history via a hard navigation (type the URL, not a <Link> click) in a real browser with DevTools open (Slow 3G / Fast 3G throttling), and watch the initial paint."
     expected: "Real counts/rows appear without a perceptible flash of the bg-surface-3 animate-pulse skeleton."
     why_human: "Direct curl/HTML inspection of the SSR response shows the loading.tsx skeleton is what the server actually flushes into <main> first (wrapped in a Suspense boundary Next.js auto-inserts because loading.tsx exists alongside a force-dynamic page.tsx); the real ReviewLogDTO/StatsDTO data is present in the RSC flight payload but is only painted into the DOM once React hydrates client-side. Whether a human perceives this as a 'flash' depends on hydration speed, which cannot be measured from a static HTML fetch. Critically, /cards and /study (both pre-existing, non-Phase-18 pages using the identical RSC+DTO+loading.tsx pattern) exhibit the exact same server-flush behavior, so this is an app-wide characteristic, not a defect newly introduced by Phase 18 — but it does mean the literal CLAUDE.md claim ('there is never an empty-state or blank-loading flash on first paint') is not literally true at the raw-HTML level for any page in this family, and needs an eyes-on-browser check to confirm it is imperceptible in practice."
+    result: "PASS — resolved via 18-UAT.md. User report: 'There was a slight lag for both but it loads decently fast.' No perceptible jarring flash; consistent with pre-existing app-wide behavior, not a regression."
 ---
 
 # Phase 18: Review History Page Verification Report
 
 **Phase Goal:** The learner can browse their full review history to see what they've studied and which cards keep tripping them up.
 **Verified:** 2026-07-04T21:50:34Z
-**Status:** human_needed
+**Status:** passed (human verification resolved via 18-UAT.md at 2026-07-04T22:05:00Z)
 **Re-verification:** No — initial verification
 
 ## Goal Achievement
