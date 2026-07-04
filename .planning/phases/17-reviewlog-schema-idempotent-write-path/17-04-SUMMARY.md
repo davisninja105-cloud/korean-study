@@ -111,3 +111,12 @@ None - the fix worked on the first implementation and unit test pass; the live r
 ---
 *Phase: 17-reviewlog-schema-idempotent-write-path*
 *Completed: 2026-07-04*
+
+## Self-Check: PASSED
+
+- FOUND: lib/db-errors.ts
+- FOUND: tests/db-errors.test.ts
+- FOUND: .planning/phases/17-reviewlog-schema-idempotent-write-path/17-04-SUMMARY.md
+- FOUND: eda482d (test commit)
+- FOUND: 97bcc0d (fix commit)
+- FOUND: e1c6170 (docs/summary commit)

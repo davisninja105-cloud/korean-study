@@ -4,16 +4,16 @@ milestone: v1.4
 milestone_name: Knowledge Graph Quality & History
 current_phase: 17
 current_phase_name: reviewlog-schema-idempotent-write-path
-status: verifying
-stopped_at: Completed 17-03-PLAN.md
-last_updated: "2026-07-04T06:29:38.972Z"
+status: complete
+stopped_at: Completed 17-04-PLAN.md
+last_updated: "2026-07-04T18:00:37.586Z"
 last_activity: 2026-07-04
-last_activity_desc: Phase 17 execution started
+last_activity_desc: Phase 17 complete (gap closure 17-04 verified — HIST-02 satisfied)
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 7
-  completed_plans: 7
+  total_plans: 8
+  completed_plans: 8
   percent: 50
 ---
 
@@ -24,16 +24,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-02)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 17 — reviewlog-schema-idempotent-write-path
+**Current focus:** Phase 18 — Review History Page (Phase 17 complete)
 
 ## Current Position
 
-Phase: 17 (reviewlog-schema-idempotent-write-path) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-07-04 — Phase 17 execution started
+Phase: 17 (reviewlog-schema-idempotent-write-path) — COMPLETE
+Plan: 4 of 4
+Status: Phase complete — ready to plan Phase 18
+Last activity: 2026-07-04 — Completed 17-04-PLAN.md (gap closure, HIST-02 verified)
 
-Progress: [██░░░░░░░░] 25% (1/4 phases complete; Phase 16 done, Phase 17 next)
+Progress: [█████░░░░░] 50% (2/4 phases complete; Phase 16 + 17 done, Phase 18 next)
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Progress: [██░░░░░░░░] 25% (1/4 phases complete; Phase 16 do
 | Phase 17 P01 | 12min | 3 tasks | 2 files |
 | Phase 17 P02 | 6min | 1 tasks | 1 files |
 | Phase 17 P03 | 4min | 1 tasks | 1 files |
+| Phase 17 P04 | 8min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -87,6 +88,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 - [Phase 17]: P2002 catch does not inspect e.meta.target (Pitfall 3) — idempotencyKey is the only reachable unique constraint in this transaction
 - [Phase 17]: idempotencyKey and AbortController generated exactly once in submitReview's event-handler flow, immediately before the undoRef.current snapshot — never inside postReviewWithRetry (would defeat server-side dedup) and never lifted into render/useMemo (react-hooks/purity)
 - [Phase 17]: undo network-failure re-arm path reuses the SAME already-aborted controller rather than creating a new one — retrying undo does not need to un-abort the review's background save
+- [Phase 17]: Widened POST /api/review's idempotent-200 catch to OR isUniqueConstraintError(e, 'idempotencyKey') (new pure lib/db-errors.ts helper) with the existing P2002 check, closing the interactive-transaction DriverAdapterError gap from Phase 17 UAT Test 6
 
 ### Pending Todos
 
@@ -115,11 +117,11 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-04T06:29:38.966Z
-Stopped at: Completed 17-03-PLAN.md
+Last session: 2026-07-04T17:58:53.910Z
+Stopped at: Completed 17-04-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
 
-- Phase 16 is fully complete. No further action needed for this phase.
-- Next: run `/gsd-plan-phase` (or the equivalent GSD workflow entry point) for Phase 17 — ReviewLog Schema & Idempotent Write Path (HIST-01, HIST-02, HIST-03). Note the research flag: the idempotency-key mechanism's interaction with `handleUndo`'s in-flight retry is a genuine design decision — consider a focused discuss/research pass before planning.
+- Phase 16 and Phase 17 are fully complete. No further action needed for either phase.
+- Next: run `/gsd-plan-phase` (or the equivalent GSD workflow entry point) for Phase 18 — Review History Page (HIST-04, HIST-05, HIST-06, HIST-07).
