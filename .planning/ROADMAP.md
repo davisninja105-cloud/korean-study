@@ -108,7 +108,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   2. A lost-response retry of the same grade action produces no duplicate log entry and never double-applies FSRS state (verifiable under throttled/flaky network).
   3. Triggering undo cancels any in-flight background retry, so a stale retry can never silently re-apply a rating after the review has been undone.
 
-**Plans**: 4/5 plans complete (17-05 gap-closure planned)
+**Plans**: 5/5 plans complete
 
 **Wave 1**
 
@@ -125,7 +125,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 
 **Gap closure** *(from retroactive 17-VERIFICATION.md blocker — second error shape)*
 
-- [ ] 17-05-PLAN.md — Extend `isUniqueConstraintError` to also recognize the classified-P2002 shape whose constraint detail lives at `meta.driverAdapterError.cause.originalMessage` (route unchanged — its catch already ORs the helper in); add a persisted `tests/review-route.test.ts` regression (real POST handler + local SQLite file DB) + `vitest.config.ts` `@/` alias (HIST-02)
+- [x] 17-05-PLAN.md — Extend `isUniqueConstraintError` to also recognize the classified-P2002 shape whose constraint detail lives at `meta.driverAdapterError.cause.originalMessage` (route unchanged — its catch already ORs the helper in); add a persisted `tests/review-route.test.ts` regression (real POST handler + local SQLite file DB) + `vitest.config.ts` `@/` alias (HIST-02)
 
 ### Phase 18: Review History Page
 
@@ -200,6 +200,6 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 14. Sync Failure Visibility & Caching Performance | v1.3 | 2/2 | Complete | 2026-07-02 |
 | 15. StudySession Refactor & Sentence-Selection Memoization | v1.3 | 2/2 | Complete | 2026-07-03 |
 | 16. Components[] Filter Fix | v1.4 | 4/4 | Complete    | 2026-07-03 |
-| 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 4/4 | Complete   | 2026-07-04 |
+| 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 5/5 | Complete   | 2026-07-04 |
 | 18. Review History Page | v1.4 | 3/3 | Complete    | 2026-07-04 |
 | 19. Vercel Cron Auto-Sync | v1.4 | 3/3 | Complete    | 2026-07-05 |

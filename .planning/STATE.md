@@ -3,18 +3,18 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Knowledge Graph Quality & History
 current_phase: 19
+current_phase_name: vercel-cron-auto-sync
 status: milestone_complete
 stopped_at: Phase 19 complete — v1.4 milestone complete
-last_updated: "2026-07-05T17:44:45.803Z"
+last_updated: "2026-07-05T18:33:35.575Z"
 last_activity: 2026-07-05
-last_activity_desc: Phase 19 UAT passed (2/2), security verified (0 open threats), milestone v1.4 complete
+last_activity_desc: Phase 19 UAT passed (2/2), threats verified (0 open), milestone v1.4 complete
 progress:
   total_phases: 4
   completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
+  total_plans: 15
+  completed_plans: 15
   percent: 100
-current_phase_name: vercel-cron-auto-sync
 ---
 
 # Project State
@@ -70,6 +70,7 @@ Progress: [██████████] 100% (4/4 phases complete; Phase 16 +
 | Phase 18 P03 | 18min | 3 tasks | 4 files |
 | Phase 19 P02 | 18min | 3 tasks | 3 files |
 | Phase 19 P03 | ~35min | 3 tasks | 5 files |
+| Phase 17 P05 | 11min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -107,6 +108,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 - [Phase 19]: Cron auth branch inserted in middleware.ts before the cookie check with an early return; matcher left byte-for-byte unchanged so /api/cron/sync stays inside the protected surface (T-19-03)
 - [Phase 19]: setLastAutoSyncedAt is called only as a statement AFTER runSync() resolves without throwing (never inside runSync), so a failed cron sync never masks itself by refreshing the timestamp
 - [Phase 19 UAT]: Deployment confirmed via live UAT — `CRON_SECRET` provisioned in Vercel Production, `vercel crons run /api/cron/sync` used to trigger an on-demand invocation (exercises the same auto-attached bearer-token path as the real schedule without waiting for the 10:00 UTC firing), confirmed 200 + fresh `lastAutoSyncedAt`; manual "Sync now" regression confirmed unchanged via `npm run build && npm start`.
+- [Phase 17]: Extended isUniqueConstraintError to a bounded BFS (node-visit cap) that also descends into meta.driverAdapterError and reads originalMessage, closing the classified-P2002-without-meta.target gap for duplicate idempotencyKey POSTs (HIST-02 second shape)
+- [Phase 17]: Added persisted tests/review-route.test.ts invoking the real POST /api/review handler twice against a local SQLite file DB (schema DDL via prisma migrate diff --from-empty), closing the only-ever-caught-by-hand gap in HIST-02's regression coverage
 
 ### Pending Todos
 
@@ -133,7 +136,7 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-05T17:44:45.803Z
+Last session: 2026-07-05T18:32:20.063Z
 Stopped at: v1.4 milestone complete, ready to complete milestone / plan next
 Resume file: None
 
