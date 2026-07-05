@@ -26,6 +26,7 @@ export default function SettingsPage() {
   const [rewardColor, setRewardColor] = useState(DEFAULT_REWARD_COLOR)
   const [readingTextScale, setReadingTextScale] = useState(1)
   const [readingAid, setReadingAid] = useState(false)
+  const [lastAutoSyncedAt, setLastAutoSyncedAt] = useState<string | null>(null)
   const [theme, setTheme] = useState<Theme>('system')
   const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -46,6 +47,7 @@ export default function SettingsPage() {
         setRewardColor(d.rewardColor ?? DEFAULT_REWARD_COLOR)
         setReadingTextScale(d.readingTextScale ?? 1)
         setReadingAid(d.readingAid ?? false)
+        setLastAutoSyncedAt(d.lastAutoSyncedAt ?? null)
         setTheme(getStoredTheme())
         setLoaded(true)
       })
@@ -462,6 +464,9 @@ export default function SettingsPage() {
           <span className="text-xs opacity-60 transition-transform group-open:rotate-90">▶</span>
         </summary>
         <div className="mt-2">
+          <p className="text-xs text-muted mb-2">
+            Last auto-synced: {lastAutoSyncedAt ? new Date(lastAutoSyncedAt).toLocaleString() : 'Never'}
+          </p>
           <SyncPanel onSynced={() => {}} />
         </div>
       </details>
