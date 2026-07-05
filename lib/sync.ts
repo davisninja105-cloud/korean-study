@@ -1,0 +1,325 @@
+// lib/sync.ts — server-only Google Doc → cards sync pipeline
+// No 'use client' — this module runs server-side only.
+// Extracted from app/api/sync/route.ts so both the manual sync route and the
+// (future) GET /api/cron/sync route call one shared runSync() function.
+
+import { createHash } from 'crypto'
+import { fetchGoogleDoc } from '@/lib/google-docs'
+import { extractCardsFromNotes } from '@/lib/extract-cards'
+import { normalizeFront } from '@/lib/card-key'
+import { resolveDependencyEdges } from '@/lib/link-dependencies'
+import { lessonExcerpt } from '@/lib/lesson-excerpt'
+import { prisma } from '@/lib/prisma'
+
+// Cap how many new lessons we process in a single request so a large backlog
+// can't blow past the function timeout. Remaining lessons are drained on the
+// next sync tap.
+// Opus + exhaustive extraction is slower than the old prompt (~60-120s/lesson),
+// so process 1 lesson per request to stay safely under the function timeout.
+const MAX_LESSONS_PER_SYNC = 1
+
+export interface SyncResult {
+  synced: boolean
+  newLessons: number
+  newCards: number
+  remaining: number
+  failed: number
+  failures?: string[]
+  message?: string
+}
+
+export async function runSync(documentId: string): Promise<SyncResult> {
+  // fetchGoogleDoc now returns { text, emphasized }[] — plain body text plus
+  // any spans the tutor bolded/underlined/highlighted per lesson.
+  const lessonDataList = await fetchGoogleDoc(documentId)
+
+  // 1. Filter to only new lessons by content hash (hash the plain text, same as before)
+  const newLessonData: { text: string; emphasized: string[]; contentHash: string }[] = []
+  for (const lesson of lessonDataList) {
+    const contentHash = createHash('sha256').update(lesson.text).digest('hex')
+    const existing = await prisma.lesson.findUnique({ where: { contentHash } })
+    if (!existing) {
+      newLessonData.push({ text: lesson.text, emphasized: lesson.emphasized, contentHash })
+    }
+  }
+
+  if (newLessonData.length === 0) {
+    return { synced: true, newLessons: 0, newCards: 0, remaining: 0, failed: 0, message: 'No new content since last sync' }
+  }
+
+  // Only process a bounded batch this request; report the rest as remaining.
+  const batch = newLessonData.slice(0, MAX_LESSONS_PER_SYNC)
+  const remaining = newLessonData.length - batch.length
+
+  // Load existing normalized fronts so Claude can avoid obvious duplicates.
+  // (Real dedup is now DB-enforced via normalizedFront @unique + upsert below.)
+  const existingNormalizedFronts = (
+    await prisma.card.findMany({ select: { normalizedFront: true } })
+  ).map((c) => c.normalizedFront)
+
+  // 2. Extract cards from all lessons in the batch FIRST (before touching the DB).
+  //    A lesson is only persisted when extraction succeeds AND yields ≥1 card.
+  //    This prevents orphan Lesson rows with 0 cards from being silently created.
+  const extractResults = await Promise.allSettled(
+    batch.map((data) =>
+      extractCardsFromNotes(data.text, existingNormalizedFronts, data.emphasized)
+    )
+  )
+
+  // 3. Read orderBase after extraction (another sync could have run concurrently).
+  const { _max } = await prisma.lesson.aggregate({ _max: { orderIndex: true } })
+  const orderBase = _max.orderIndex ?? 0
+
+  // 4. Persist each lesson only when its extraction succeeded with ≥1 card.
+  let newCards = 0
+  let newLessons = 0
+  let created = 0 // tracks how many lessons were actually persisted (for orderIndex)
+  const failures: string[] = []
+
+  // Build the normalizedFront → cardId map ONCE per request so the per-lesson
+  // dependency-linking step doesn't re-query the full deck each iteration.
+  // Seeded from ALL cards (same broad shape as existingNormalizedFronts above) —
+  // a card with no components of its own is still a valid prerequisite target
+  // for another card, so the lookup must cover the whole deck, not just cards
+  // that themselves carry components.
+  // `select` drops `components` — component strings now come from the in-memory
+  // extraction result, not a DB re-read. Augmented incrementally during upserts.
+  const keyToId = new Map<string, string>()
+  const seedCards = await prisma.card.findMany({
+    select: { id: true, normalizedFront: true },
+  })
+  for (const c of seedCards) keyToId.set(c.normalizedFront, c.id)
+
+  for (let i = 0; i < extractResults.length; i++) {
+    const result = extractResults[i]
+    // Identify this lesson by its own content so failures[] names something
+    // the user can search for in their Google Doc (SYNC-01).
+    const excerpt = lessonExcerpt(batch[i].text)
+
+    if (result.status === 'rejected') {
+      const msg = result.reason instanceof Error ? result.reason.message : 'Unknown error'
+      console.error(`Failed to extract cards for batch item ${i}:`, msg)
+      failures.push(`"${excerpt}" — extraction failed (will retry on next sync)`)
+      // No Lesson row created → contentHash not stored → auto-retried on next sync.
+      continue
+    }
+
+    const cards = result.value
+
+    if (cards.length === 0) {
+      console.warn(`Batch item ${i}: Claude returned 0 cards — skipping persist.`)
+      failures.push(`"${excerpt}" — no cards extracted (will retry on next sync)`)
+      continue
+    }
+
+    // Extraction succeeded with cards — now create the Lesson and upsert its cards.
+    let lesson: { id: string } | null = null
+    try {
+      lesson = await prisma.lesson.create({
+        data: {
+          orderIndex: orderBase + (++created),
+          title: `Lesson synced ${new Date().toLocaleDateString()}`,
+          rawContent: batch[i].text,
+          contentHash: batch[i].contentHash,
+        },
+      })
+
+      // Upsert each card by normalizedFront (real dedup — DB-enforced unique).
+      //   CREATE: first time this item is seen → attach to this lesson.
+      //   UPDATE: already known → preserve lessonId (first-introduced) and FSRS review.
+      //           Refresh components/sentences only if they were empty (backfill safety).
+      let createdThisLesson = 0
+      // Per-lesson collector of cards that carry components — feeds the
+      // dependency-linking step after Promise.all resolves. Resets each lesson.
+      const linkTargets: { id: string; components: string[] }[] = []
+
+      // WR-05: de-duplicate by normalizeFront before the concurrent upsert below.
+      // Each iteration is a non-atomic check-then-act (findUnique then create);
+      // if Claude's response ever contains two entries that normalize to the same
+      // front (nothing enforces uniqueness on Claude's output), both concurrent
+      // iterations could see existing === null and the second create() would
+      // throw on the DB unique constraint — turning one duplicate front into a
+      // whole-lesson failure (the outer catch deletes the just-created Lesson
+      // row). Keep the first occurrence, consistent with "one card per base form."
+      const seenFronts = new Set<string>()
+      const dedupedCards = cards.filter((card) => {
+        const nf = normalizeFront(card.front)
+        if (seenFronts.has(nf)) return false
+        seenFronts.add(nf)
+        return true
+      })
+
+      await Promise.all(
+        dedupedCards.map(async (card) => {
+          const nf = normalizeFront(card.front)
+          const distractorsJson = card.distractors.length
+            ? JSON.stringify(card.distractors)
+            : null
+          const componentsJson = card.components.length
+            ? JSON.stringify(card.components)
+            : null
+
+          // Check if this card exists so we can decide whether to refresh sentences.
+          // `components` (WR-02) is selected so the UPDATE branch can diff old vs
+          // new components and prune stale CardDependency edges inline.
+          const existing = await prisma.card.findUnique({
+            where: { normalizedFront: nf },
+            select: { id: true, components: true, sentences: { select: { id: true } } },
+          })
+
+          if (!existing) {
+            // CREATE: new card — attach to this lesson.
+            const newCard = await prisma.card.create({
+              data: {
+                type: card.type,
+                front: card.front,
+                back: card.back,
+                notes: card.notes ?? null,
+                normalizedFront: nf,
+                components: componentsJson,
+                distractors: distractorsJson,
+                lessonId: lesson!.id,
+                sentences: {
+                  create: card.sentences.map((s, j) => ({
+                    korean:      s.korean,
+                    targetForm:  s.targetForm,
+                    translation: s.translation,
+                    orderIndex:  j,
+                  })),
+                },
+                review: { create: {} },
+              },
+            })
+            // CR-02: register every upserted card unconditionally — mirrors
+            // seedCards' scope (the whole deck, not just cards that carry
+            // components). A brand-new leaf-node card with zero components
+            // must still be resolvable as a same-batch sibling's prerequisite.
+            keyToId.set(nf, newCard.id)
+            if (card.components.length > 0) {
+              linkTargets.push({ id: newCard.id, components: card.components })
+            }
+            createdThisLesson++
+          } else {
+            // UPDATE: card exists — preserve lessonId + review; refresh components +
+            // sentences if they were previously missing.
+            const updateData: Record<string, unknown> = {
+              // Refresh extraction artifacts if they've changed or were missing.
+              back:       card.back,
+              notes:      card.notes ?? null,
+              distractors: distractorsJson,
+            }
+
+            // WR-02: only overwrite components when this round actually returned
+            // some. An empty/filtered-out result from a routine re-sync must never
+            // silently null out (or shrink) a previously-good value — only the
+            // manual, developer-run retro-filter-cleanup script should shrink data.
+            if (card.components.length > 0) {
+              updateData.components = componentsJson
+
+              // Prune any CardDependency edge sourced from this card whose
+              // prerequisite is no longer listed in the refreshed components —
+              // otherwise a stale edge lingers until someone remembers to run
+              // the offline cleanup script.
+              let previousComponents: string[] = []
+              if (existing.components) {
+                try {
+                  previousComponents = JSON.parse(existing.components) as string[]
+                } catch {
+                  previousComponents = []
+                }
+              }
+              const newKeys = new Set(card.components.map((c) => normalizeFront(c)))
+              const removedKeys = previousComponents
+                .map((c) => normalizeFront(c))
+                .filter((k) => !newKeys.has(k))
+              for (const key of removedKeys) {
+                const staleId = keyToId.get(key)
+                if (!staleId) continue
+                await prisma.cardDependency.deleteMany({
+                  where: { cardId: existing.id, prerequisiteId: staleId },
+                })
+              }
+            }
+
+            // Refresh sentences only when the card currently has none.
+            if (existing.sentences.length === 0 && card.sentences.length > 0) {
+              await prisma.sentence.createMany({
+                data: card.sentences.map((s, j) => ({
+                  cardId:      existing.id,
+                  korean:      s.korean,
+                  targetForm:  s.targetForm,
+                  translation: s.translation,
+                  orderIndex:  j,
+                })),
+              })
+            }
+
+            await prisma.card.update({
+              where: { id: existing.id },
+              data:  updateData,
+            })
+            // CR-02: unconditional (see CREATE branch above) — harmless here
+            // since existing.id is already seeded from seedCards, but keeps
+            // both branches symmetric and correct if seeding logic changes.
+            keyToId.set(nf, existing.id)
+            if (card.components.length > 0) {
+              linkTargets.push({ id: existing.id, components: card.components })
+            }
+            // A card losing its own components is still a valid prerequisite
+            // target for other cards — it stays in keyToId (seeded from ALL
+            // cards above) and is never deleted here.
+          }
+        })
+      )
+
+      // 5. Two-phase dependency linking.
+      //    After all cards in the batch are upserted, resolve component strings →
+      //    card IDs and create CardDependency edges. Running after the upserts means
+      //    forward references within the same sync batch can be resolved.
+      //    `keyToId` was built once before the per-lesson loop and augmented above
+      //    as each card was upserted — no per-lesson full-deck findMany here.
+      //    Resolution itself is shared (IN-02) via lib/link-dependencies.ts.
+      const resolvedEdges = resolveDependencyEdges(keyToId, linkTargets)
+      for (const { cardId, prerequisiteId } of resolvedEdges) {
+        try {
+          await prisma.cardDependency.upsert({
+            where: {
+              cardId_prerequisiteId: { cardId, prerequisiteId },
+            },
+            create: { cardId, prerequisiteId },
+            update: {}, // no-op — just ensure it exists
+          })
+        } catch (linkErr) {
+          // Link failures are non-fatal — card still usable, just unlinked.
+          console.warn(`CardDependency link failed (${cardId} → ${prerequisiteId}):`, linkErr)
+        }
+      }
+
+      newLessons++
+      newCards += createdThisLesson
+    } catch (dbErr: unknown) {
+      // DB write failed after the Lesson row may have been created.
+      // Compensate by deleting the orphan lesson so it retries cleanly next sync.
+      const dbMsg = dbErr instanceof Error ? dbErr.message : 'Unknown DB error'
+      console.error(`DB write failed for batch item ${i}:`, dbMsg)
+      failures.push(`"${excerpt}" — failed to save (will retry on next sync)`)
+      if (lesson) {
+        try {
+          await prisma.lesson.delete({ where: { id: lesson.id } })
+        } catch (delErr) {
+          console.error('Failed to clean up orphan lesson:', delErr)
+        }
+      }
+    }
+  }
+
+  return {
+    synced: true,
+    newLessons,
+    newCards,
+    remaining,
+    failed: failures.length,
+    ...(failures.length > 0 && { failures }),
+    ...(remaining > 0 && { message: `${remaining} more lesson(s) remaining — sync again to continue.` }),
+  }
+}
