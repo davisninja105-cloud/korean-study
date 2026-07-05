@@ -1,9 +1,9 @@
 ---
-status: diagnosed
+status: complete
 phase: 17-reviewlog-schema-idempotent-write-path
 source: [17-01-SUMMARY.md, 17-02-SUMMARY.md, 17-03-SUMMARY.md]
 started: 2026-07-04T15:35:45Z
-updated: 2026-07-04T15:52:00Z
+updated: 2026-07-05T18:58:00Z
 ---
 
 ## Current Test
@@ -102,3 +102,4 @@ blocked: 0
     - "Widen the catch block to also recognize the raw DriverAdapterError shape for the idempotencyKey UNIQUE-constraint case (keep the existing P2002 check too, for forward-compatibility), OR restructure the write path to avoid the interactive-transaction error-classification gap — recommend the former (lower risk, preserves the CR-01 optimistic-concurrency logic)."
     - "Re-verify Test 6 (duplicate request → idempotent 200, exactly one ReviewLog row, no re-applied FSRS state) end-to-end after the fix."
   debug_session: ".planning/debug/reviewlog-p2002-catch-never-fires.md"
+  resolution: "Fixed via Plan 17-04 (closed the raw-DriverAdapterError shape this UAT test found). A retroactive milestone-audit verification on 2026-07-05 found a SECOND, distinct error shape the 17-04 fix missed (classified P2002 with meta.target undefined); closed via Plan 17-05, which generalized lib/db-errors.ts's isUniqueConstraintError into a bounded-BFS traversal covering both shapes, plus a persisted regression test (tests/review-route.test.ts). Independently re-verified (fresh reproduction script, 130/130 full suite, route files confirmed byte-for-byte unchanged) — see 17-VERIFICATION.md (status: passed)."

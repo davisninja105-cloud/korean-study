@@ -1,8 +1,8 @@
 ---
-status: investigating
+status: resolved
 trigger: "UAT Test 6 (phase 17): duplicate POST /api/review with the same idempotencyKey returned 500 instead of an idempotent 200"
 created: 2026-07-04T15:55:00Z
-updated: 2026-07-04T16:10:00Z
+updated: 2026-07-05T18:56:00Z
 ---
 
 ## Current Focus
@@ -10,7 +10,7 @@ updated: 2026-07-04T16:10:00Z
 hypothesis: confirmed — see Resolution
 test: n/a — root cause verified via live reproduction + source inspection
 expecting: n/a
-next_action: hand off to gsd-planner (gap_closure mode) for a fix plan
+next_action: none — fixed, tested, and independently re-verified (see Resolution)
 reasoning_checkpoint: null
 tdd_checkpoint: null
 
@@ -81,18 +81,31 @@ root_cause: |
   collision falls through to the generic 500 handler — defeating HIST-02, the core guarantee this
   phase exists to deliver.
 fix: |
-  Not applied by this debug session (find_root_cause_only). Two viable directions for the fix plan
-  to choose between:
-  (a) Widen the catch block to ALSO recognize the raw unclassified error shape for this specific
-      constraint (e.g. detect `e` is a `DriverAdapterError`/has a `.cause` whose message contains
-      "UNIQUE constraint failed" and "idempotencyKey", in addition to keeping the existing P2002
-      check for forward-compatibility) — minimal blast radius, keeps the interactive transaction and
-      its optimistic-concurrency logic intact.
-  (b) Restructure to avoid the interactive-transaction error-classification gap entirely by moving
-      the stale-read check earlier and using an array-form transaction for the actual write — harder
-      to do without losing the atomic all-or-nothing guarantee between the conditional abort and the
-      writes, needs careful design.
-  Recommend (a) as the lower-risk fix; note (b) as an alternative if the planner judges the
-  interactive-transaction dependency on raw driver errors too fragile long-term.
-verification: pending — to be verified by the fix plan's own execution + a repeat of this UAT test
-files_changed: []
+  Applied via Plan 17-04 (2026-07-04): option (a) — added `lib/db-errors.ts`'s
+  `isUniqueConstraintError()`, OR'd into the existing P2002 catch in
+  `app/api/review/route.ts`. This closed the raw-unclassified-DriverAdapterError
+  shape (the one reproduced by this debug session).
+
+  A SECOND, independently-discovered shape surfaced later during a retroactive
+  milestone-audit verification (2026-07-05): the same underlying SQLite
+  UNIQUE-constraint violation can also be classified by Prisma as `P2002` with
+  `meta.target` undefined, its detail buried at
+  `meta.driverAdapterError.cause.originalMessage` — a path the original 17-04
+  fix's `.cause`-only walk never visited. Closed via Plan 17-05 (2026-07-05):
+  generalized `isUniqueConstraintError` into a bounded-BFS traversal that also
+  descends into `meta.driverAdapterError` and reads both `message` and
+  `originalMessage`. Both shapes are now recognized without regressing the
+  other; see `.planning/phases/17-reviewlog-schema-idempotent-write-path/17-05-SUMMARY.md`.
+verification: |
+  Confirmed via 17-05's persisted regression test (`tests/review-route.test.ts`)
+  AND an independent, freshly-written reproduction script run during the
+  Phase 17 re-verification (not reusing the persisted test) — both invoke the
+  real `POST /api/review` handler twice against a local SQLite file DB and
+  confirm 200/200, exactly one `ReviewLog` row, and unchanged FSRS state.
+  Full suite (130/130) and lint clean. See
+  `.planning/phases/17-reviewlog-schema-idempotent-write-path/17-VERIFICATION.md`
+  (status: passed).
+files_changed:
+  - lib/db-errors.ts
+  - tests/db-errors.test.ts
+  - tests/review-route.test.ts

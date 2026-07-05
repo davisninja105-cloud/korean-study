@@ -3,10 +3,16 @@ created: 2026-07-02T22:40:26.445Z
 title: Fix spurious components in card extraction
 area: general
 resolves_phase: 16
+status: resolved
+resolved: 2026-07-05T18:55:00Z
 files:
   - lib/extract-cards.ts:110-117
   - app/api/sync/route.ts:240-264
 ---
+
+## Resolution
+
+Resolved by v1.4 Phase 16 (Components[] Filter Fix), completed 2026-07-03. Implemented Option 2 from this todo (deterministic post-extraction filter): `lib/filter-components.ts`'s `filterComponents()` resolves each claimed component via `normalizeFront()` deck-lookup (direct match or `splitParticle` stem fallback), never by sentence-text containment — dropping any component that doesn't resolve to a real card in the deck. Wired into `lib/extract-cards.ts`'s `parseExtractionResponse` and inherited by `scripts/local-resync.mts`. Retroactively applied to the whole corpus via `scripts/retro-filter-cleanup.mts` (511 cards changed, 2 stale edges pruned, 4 new edges added). Satisfies GRAPH-01 through GRAPH-05; see `.planning/phases/16-components-filter-fix/16-VERIFICATION.md` (passed, 4/5) and `.planning/v1.4-MILESTONE-AUDIT.md`.
 
 ## Problem
 
