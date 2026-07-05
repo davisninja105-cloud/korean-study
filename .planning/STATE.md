@@ -5,16 +5,16 @@ milestone_name: Knowledge Graph Quality & History
 current_phase: 19
 current_phase_name: vercel-cron-auto-sync
 status: executing
-stopped_at: Completed 19-02-PLAN.md
-last_updated: "2026-07-05T07:41:02.555Z"
+stopped_at: Completed 19-03-PLAN.md
+last_updated: "2026-07-05T07:51:02.925Z"
 last_activity: 2026-07-05
 last_activity_desc: Phase 19 execution started
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 14
-  completed_plans: 13
-  percent: 75
+  completed_plans: 14
+  percent: 100
 ---
 
 # Project State
@@ -29,7 +29,7 @@ See: .planning/PROJECT.md (updated 2026-07-02)
 ## Current Position
 
 Phase: 19 (vercel-cron-auto-sync) — EXECUTING
-Plan: 2 of 3
+Plan: 3 of 3
 Status: Ready to execute
 Last activity: 2026-07-05 — Phase 19 execution started
 
@@ -69,6 +69,7 @@ Progress: [█████░░░░░] 50% (2/4 phases complete; Phase 16 + 
 | Phase 18 P02 | 8min | 2 tasks | 3 files |
 | Phase 18 P03 | 18min | 3 tasks | 4 files |
 | Phase 19 P02 | 18min | 3 tasks | 3 files |
+| Phase 19 P03 | ~35min | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -102,6 +103,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 - [Phase 18]: Error-state copy rendered via a module-level string constant + JSX expression rather than literal JSX text, avoiding react/no-unescaped-entities while keeping a plain apostrophe
 - [Phase 19]: setLastAutoSyncedAt returns void (unlike other setters) because its only caller (cron route) already holds the ISO string it wrote and never round-trips it
 - [Phase 19]: lastAutoSyncedAt is GET-only in app/api/settings/route.ts, omitted entirely from PUT's destructure/has-flag/setter chain so a client PUT can never overwrite it (T-19-05)
+- [Phase 19]: isValidCronAuth expressed as a single boolean conjunction (non-empty secret AND exact Bearer-prefixed match) rather than an if/else, so a missing/empty secret can never fall through to allow (T-19-01 fail-closed)
+- [Phase 19]: Cron auth branch inserted in middleware.ts before the cookie check with an early return; matcher left byte-for-byte unchanged so /api/cron/sync stays inside the protected surface (T-19-03)
+- [Phase 19]: setLastAutoSyncedAt is called only as a statement AFTER runSync() resolves without throwing (never inside runSync), so a failed cron sync never masks itself by refreshing the timestamp
 
 ### Pending Todos
 
@@ -130,11 +134,12 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-05T07:41:02.543Z
-Stopped at: Completed 19-02-PLAN.md
+Last session: 2026-07-05T07:49:42.623Z
+Stopped at: Completed 19-03-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
 
-- Phase 16 and Phase 17 are fully complete. No further action needed for either phase.
-- Next: run `/gsd-plan-phase` (or the equivalent GSD workflow entry point) for Phase 18 — Review History Page (HIST-04, HIST-05, HIST-06, HIST-07).
+- Phases 16, 17, 18, and 19 are all fully complete at the code level (14/14 plans, v1.4 milestone requirements SYNC-02/SYNC-03/SYNC-04 all satisfied).
+- Remaining before v1.4 can be considered fully shipped: complete `.planning/phases/19-vercel-cron-auto-sync/19-03-USER-SETUP.md` (generate `CRON_SECRET`, set it in Vercel Production, deploy, confirm the first Cron Jobs invocation in the Vercel Dashboard).
+- Next: run `/gsd-complete-milestone` (or equivalent) once the USER-SETUP.md items are done, to close out v1.4.

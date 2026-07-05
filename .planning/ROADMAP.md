@@ -65,7 +65,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 - [x] **Phase 16: Components[] Filter Fix** - Extraction only keeps prerequisite components that resolve to a real card via `normalizeFront()` deck-lookup, dry-run validated before it touches the write path (completed 2026-07-03)
 - [x] **Phase 17: ReviewLog Schema & Idempotent Write Path** - Every review writes an append-only `ReviewLog` row via an idempotency-keyed single transaction; undo cancels in-flight retries (completed 2026-07-04)
 - [x] **Phase 18: Review History Page** - A reverse-chronological, per-card-filterable, cursor-paginated history view reachable from an existing surface (RSC + DTO hydration) (completed 2026-07-04)
-- [ ] **Phase 19: Vercel Cron Auto-Sync** - A daily cron syncs 1 lesson via a `CRON_SECRET`-authenticated route, with a "last auto-synced" timestamp in Settings ▸ Advanced
+- [x] **Phase 19: Vercel Cron Auto-Sync** - A daily cron syncs 1 lesson via a `CRON_SECRET`-authenticated route, with a "last auto-synced" timestamp in Settings ▸ Advanced (completed 2026-07-05)
 
 ## Phase Details
 
@@ -161,7 +161,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   2. Cron requests authenticate via a `CRON_SECRET` bearer token checked inside `middleware.ts`, failing closed if the secret is unset — the sync endpoint stays inside the auth matcher and is never publicly reachable.
   3. Settings ▸ Advanced shows a "last auto-synced" timestamp so a silently-failing daily cron is noticeable.
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans complete
 
 **Wave 1** *(parallel — no file overlap)*
 
@@ -170,7 +170,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 
 **Wave 2** *(blocked on Wave 1 — cron route imports `runSync` + `setLastAutoSyncedAt`)*
 
-- [ ] 19-03-PLAN.md — Cron route + fail-closed bearer auth: `isValidCronAuth` (unit-tested) in `lib/auth.ts` + `middleware.ts` branch (matcher unchanged) + `GET /api/cron/sync` (writes timestamp only after `runSync()` resolves) + `vercel.json` daily cron (SYNC-02, SYNC-03)
+- [x] 19-03-PLAN.md — Cron route + fail-closed bearer auth: `isValidCronAuth` (unit-tested) in `lib/auth.ts` + `middleware.ts` branch (matcher unchanged) + `GET /api/cron/sync` (writes timestamp only after `runSync()` resolves) + `vercel.json` daily cron (SYNC-02, SYNC-03)
 
 ## Progress
 
@@ -198,4 +198,4 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 16. Components[] Filter Fix | v1.4 | 4/4 | Complete    | 2026-07-03 |
 | 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 4/4 | Complete   | 2026-07-04 |
 | 18. Review History Page | v1.4 | 3/3 | Complete    | 2026-07-04 |
-| 19. Vercel Cron Auto-Sync | v1.4 | 2/3 | In Progress|  |
+| 19. Vercel Cron Auto-Sync | v1.4 | 3/3 | Complete   | 2026-07-05 |
