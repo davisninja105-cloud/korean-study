@@ -5,6 +5,8 @@ import { setLastAutoSyncedAt } from '@/lib/settings'
 // Each new lesson triggers a Claude call (30-90s with opus + exhaustive output).
 // Vercel's current default max is 300s; set it explicitly so it's clear and
 // so the comment stays accurate if the platform default changes.
+// NB: Vercel Hobby hard-caps functions at 60s regardless of maxDuration — this
+// only matters if the plan is upgraded (see CLAUDE.md Gotchas).
 export const maxDuration = 300
 
 // GET /api/cron/sync — triggered daily by Vercel Cron (see vercel.json).
@@ -25,6 +27,8 @@ export async function GET() {
     // otherwise a failed sync would mask itself as fresh.
     if (result.failed === 0) {
       await setLastAutoSyncedAt(new Date().toISOString())
+    } else {
+      console.warn('Cron sync completed with failures — not updating lastAutoSyncedAt:', result.failures)
     }
     return NextResponse.json(result)
   } catch (err: unknown) {
