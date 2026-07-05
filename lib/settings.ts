@@ -9,6 +9,7 @@ const REWARD_COLOR_KEY = 'rewardColor'
 const SESSION_SIZE_KEY = 'sessionSize'
 const READING_SCALE_KEY = 'readingTextScale'
 const READING_AID_KEY = 'readingAid'
+const LAST_AUTO_SYNCED_KEY = 'lastAutoSyncedAt'
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
 
@@ -88,6 +89,24 @@ export async function setReadingAid(on: boolean): Promise<boolean> {
     update: { value: on ? '1' : '0' },
   })
   return on
+}
+
+// Raw ISO timestamp of the last successful cron-triggered sync. Unlike the
+// setters above, this returns void: its only caller (the cron route) already
+// holds the ISO string it just wrote and never round-trips it through the
+// return value, unlike the Settings page pattern where PUT echoes the
+// clamped/validated value back for client state sync.
+export async function getLastAutoSyncedAt(): Promise<string | null> {
+  const row = await prisma.setting.findUnique({ where: { key: LAST_AUTO_SYNCED_KEY } })
+  return row?.value ?? null
+}
+
+export async function setLastAutoSyncedAt(iso: string): Promise<void> {
+  await prisma.setting.upsert({
+    where: { key: LAST_AUTO_SYNCED_KEY },
+    create: { key: LAST_AUTO_SYNCED_KEY, value: iso },
+    update: { value: iso },
+  })
 }
 
 export async function getButtonColor(): Promise<string> {
