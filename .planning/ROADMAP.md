@@ -161,12 +161,12 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   2. Cron requests authenticate via a `CRON_SECRET` bearer token checked inside `middleware.ts`, failing closed if the secret is unset — the sync endpoint stays inside the auth matcher and is never publicly reachable.
   3. Settings ▸ Advanced shows a "last auto-synced" timestamp so a silently-failing daily cron is noticeable.
 
-**Plans**: 1/3 plans executed
+**Plans**: 2/3 plans executed
 
 **Wave 1** *(parallel — no file overlap)*
 
 - [x] 19-01-PLAN.md — Shared sync core extraction: `POST /api/sync` body → `lib/sync.ts:runSync()` + thin route wrapper, pure refactor preserving `MAX_LESSONS_PER_SYNC=1` (SYNC-02)
-- [ ] 19-02-PLAN.md — "Last auto-synced" timestamp: `Setting`-backed getter/setter (no schema change) + read-only field in `GET /api/settings` + Settings ▸ Advanced display (SYNC-04)
+- [x] 19-02-PLAN.md — "Last auto-synced" timestamp: `Setting`-backed getter/setter (no schema change) + read-only field in `GET /api/settings` + Settings ▸ Advanced display (SYNC-04)
 
 **Wave 2** *(blocked on Wave 1 — cron route imports `runSync` + `setLastAutoSyncedAt`)*
 
@@ -198,4 +198,4 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 16. Components[] Filter Fix | v1.4 | 4/4 | Complete    | 2026-07-03 |
 | 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 4/4 | Complete   | 2026-07-04 |
 | 18. Review History Page | v1.4 | 3/3 | Complete    | 2026-07-04 |
-| 19. Vercel Cron Auto-Sync | v1.4 | 1/3 | In Progress|  |
+| 19. Vercel Cron Auto-Sync | v1.4 | 2/3 | In Progress|  |
