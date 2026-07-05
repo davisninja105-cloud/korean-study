@@ -7,10 +7,11 @@ import {
   getSessionSize, setSessionSize,
   getReadingTextScale, setReadingTextScale,
   getReadingAid, setReadingAid,
+  getLastAutoSyncedAt,
 } from '@/lib/settings'
 
 export async function GET() {
-  const [dailyGoalSeconds, dayStartHour, buttonColor, rewardColor, sessionSize, readingTextScale, readingAid] = await Promise.all([
+  const [dailyGoalSeconds, dayStartHour, buttonColor, rewardColor, sessionSize, readingTextScale, readingAid, lastAutoSyncedAt] = await Promise.all([
     getDailyGoalSeconds(),
     getDayStartHour(),
     getButtonColor(),
@@ -18,8 +19,9 @@ export async function GET() {
     getSessionSize(),
     getReadingTextScale(),
     getReadingAid(),
+    getLastAutoSyncedAt(),
   ])
-  return NextResponse.json({ dailyGoalSeconds, dayStartHour, buttonColor, rewardColor, sessionSize, readingTextScale, readingAid })
+  return NextResponse.json({ dailyGoalSeconds, dayStartHour, buttonColor, rewardColor, sessionSize, readingTextScale, readingAid, lastAutoSyncedAt })
 }
 
 export async function PUT(req: NextRequest) {
