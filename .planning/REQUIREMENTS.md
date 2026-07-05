@@ -27,7 +27,7 @@ Requirements for the "Knowledge Graph Quality & History" milestone. Each maps to
 
 ### Automatic Sync
 
-- [x] **SYNC-02**: A Vercel Cron job runs daily and triggers exactly 1 lesson of sync via the existing `MAX_LESSONS_PER_SYNC=1` path
+- [ ] **SYNC-02**: A Vercel Cron job runs daily and triggers exactly 1 lesson of sync via the existing `MAX_LESSONS_PER_SYNC=1` path (code-complete; awaiting deployment + first scheduled invocation, see 19-UAT.md)
 - [x] **SYNC-03**: Cron-triggered requests authenticate via a `CRON_SECRET` bearer token, checked inside `middleware.ts`, fail-closed if the secret is unset — the cron route stays inside the auth matcher, never excluded from it
 - [x] **SYNC-04**: Settings ▸ Advanced shows a "last auto-synced" timestamp so a silently-failing daily cron doesn't go unnoticed
 
@@ -73,7 +73,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | HIST-05 | Phase 18 | Complete |
 | HIST-06 | Phase 18 | Complete |
 | HIST-07 | Phase 18 | Complete |
-| SYNC-02 | Phase 19 | Complete |
+| SYNC-02 | Phase 19 | Code-complete, awaiting deployment |
 | SYNC-03 | Phase 19 | Complete |
 | SYNC-04 | Phase 19 | Complete |
 
