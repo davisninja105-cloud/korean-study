@@ -197,6 +197,56 @@
 
 ---
 
+## Milestone: v1.4 — Knowledge Graph Quality & History
+
+**Shipped:** 2026-07-05
+**Phases:** 4 (Phases 16–19) | **Plans:** 15 | **Tasks:** 35
+
+### What Was Built
+
+- `lib/filter-components.ts`'s `filterComponents()` — a pure, two-phase deck-lookup filter (`normalizeFront` direct match, then `splitParticle` stem fallback) that drops any Claude-claimed prerequisite that doesn't resolve to a real card, replacing the prior "trust whatever Claude returns" behavior
+- `scripts/retro-filter-cleanup.mts` — dry-run-by-default retroactive corpus cleanup; production run rewrote 511 cards, pruned 2 stale `CardDependency` edges, added 4 newly-valid ones
+- `ReviewLog` Prisma model (append-only, `idempotencyKey` UNIQUE) written inside the same atomic transaction as the `CardReview` update, with client-generated idempotency keys threaded through the retry loop and an `AbortController` that cancels in-flight retries on undo
+- `/history` — reverse-chronological, cursor-paginated, per-card-filterable review history page (RSC + DTO + client-shell hydration, matching the established v1.2 pattern) plus a Habits-page FSRS-state breakdown
+- Daily Vercel Cron auto-sync: fail-closed `CRON_SECRET` bearer check (`isValidCronAuth`), a cron-specific branch in `middleware.ts` ahead of the cookie gate, `GET /api/cron/sync`, and a passive "Last auto-synced" status line in Settings
+- `lib/db-errors.ts`'s `isUniqueConstraintError()` — extended twice in the same milestone to recognize two distinct real error-classification shapes for the identical underlying SQLite UNIQUE-constraint violation (see What Was Inefficient)
+- `tests/review-route.test.ts` — the project's first persisted route-level regression test, invoking the real `POST /api/review` handler against a local SQLite file DB
+
+### What Worked
+
+- **Dependency-driven phase order held up under audit:** Phase 16 (filter fix) before Phase 19 (cron) meant an unattended cron-triggered sync could never re-persist hallucinated components; the integration checker independently confirmed this wiring end-to-end during the milestone audit with zero gaps.
+- **`vercel crons run <path>` for on-demand cron verification:** rather than waiting for the real 10:00 UTC schedule, the CLI's on-demand trigger exercises the identical Vercel-invoked path (including its auto-attached `Authorization: Bearer $CRON_SECRET` header) — closed Phase 19's human-verification UAT items in minutes instead of up to a day.
+- **The milestone audit's retroactive-verification path caught a real, live bug:** Phase 17 had shipped and closed on 2026-07-04 with no `VERIFICATION.md` ever generated. Backfilling it during the `/gsd-audit-milestone` pass — rather than rubber-stamping a "phase complete" status — surfaced a genuinely reproducible 500 in the exact code path (`POST /api/review` idempotency) the phase existed to harden. This is the audit doing its actual job, not a formality.
+- **Independent re-verification, not trusting the fixer's own SUMMARY:** after the gap-closure plan (17-05) executed, re-verification used a freshly-written reproduction script (not the persisted test the same execution had just written) plus a byte-diff confirming the route file was untouched — this is what made the "passed" status trustworthy rather than circular.
+
+### What Was Inefficient
+
+- **The same idempotency bug had to be found and fixed twice.** UAT Test 6 (2026-07-04) found the first shape (raw unclassified `DriverAdapterError`) and Plan 17-04 fixed it — but with zero persisted regression test, so the fix's coverage was never protected going forward. The milestone-completion audit (2026-07-05) then found a second, distinct shape (classified P2002 with `meta.target` undefined) that the first fix's `.cause`-only traversal never visited. Only after the second fix (17-05) did a real regression test (`tests/review-route.test.ts`) finally exist for this path. **Root cause:** both discoveries were made via ad hoc, throwaway reproduction (a manual curl replay, then a debug-session script), and neither one turned itself into a persisted test at the time it was found — so the underlying detection gap kept re-manifesting until a plan was explicitly scoped to add the test, not just the fix.
+- **A phase can silently ship without its own VERIFICATION.md.** Phase 17's 4 original plans + UAT completed and the phase was marked complete in ROADMAP.md/STATE.md without the verification step ever producing an artifact — this went unnoticed until the milestone-audit's phase-verification read found the file simply missing. Nothing in the day-to-day phase-completion flow flagged this at the time.
+- **Nyquist validation coverage is partial:** 3 of 4 phases (16, 17, 18) are `nyquist_compliant: false` in their own VALIDATION.md — informational only this milestone (not a blocker), but a recurring gap worth closing before it accumulates further.
+
+### Patterns Established
+
+- **Deck-lookup, never sentence-text containment, for resolving claimed prerequisites:** abstract grammar-pattern notation (e.g. `~(으)면`) never appears verbatim in a conjugated sentence, so any future "does this component actually apply here" check must resolve via `normalizeFront`/`splitParticle` deck lookup, not substring matching against example text.
+- **Idempotency-key detection logic belongs in one pure helper, generalized as new error shapes are found — not re-solved per shape at the route level.** Both fixes this milestone extended the same `lib/db-errors.ts` function rather than adding parallel special-case branches in `app/api/review/route.ts`; the route needed zero changes for either fix.
+- **When a route-level bug is found via ad hoc reproduction (curl replay, debug script), the very next step is to persist that reproduction as a real test file** — not just fix the code and move on. This milestone's second fix only broke the "found by hand, then regresses" cycle once the test became a checked-in artifact.
+- **Retroactive/backfill verification should independently re-derive evidence, never just re-read the fixer's own SUMMARY.md** — a fresh reproduction script plus a byte-diff of the "should be unchanged" files is what makes a post-gap-closure "passed" status actually mean something.
+
+### Key Lessons
+
+1. A phase closing without a `VERIFICATION.md` is a silent failure mode of the phase-completion flow, not a soft warning — it should be treated as blocking at milestone-audit time (as it now has been), and ideally caught earlier, at the phase-transition step itself.
+2. A bug found via a one-off reproduction script or curl replay is not "fixed" until a persisted regression test exists for it — the fix and the test are two separate deliverables of the same gap-closure plan, not one.
+3. `/gsd-audit-milestone`'s retroactive-verification path is not a formality when a phase artifact is missing — it should actually re-derive the phase's claims from scratch (as it did here), because "the phase's plans and UAT all passed" is not the same guarantee as "the phase's VERIFICATION.md passed."
+4. Vercel-specific on-demand tooling (`vercel crons run <path>`) is worth reaching for before defaulting to "wait for the real schedule" — it collapsed a would-be multi-hour UAT wait into an immediate check.
+
+### Cost Observations
+
+- Model mix: Sonnet (main session), Opus (planner for the gap-closure plan), Haiku (checker, codebase mappers)
+- Sessions: spanning 2026-07-02 to 2026-07-05 (~3 days)
+- Notable: the single largest cost driver this milestone was NOT the 4 originally-planned phases — it was the retroactive Phase 17 re-verification + gap-closure round (diagnose → plan → check → execute → re-verify) triggered by the milestone-completion audit, which took roughly as long as executing a small phase from scratch. Catching the missing-VERIFICATION.md gap earlier (at Phase 17's own close) would have amortized this cost across the milestone instead of concentrating it all at the very end.
+
+---
+
 ## Cross-Milestone Trends
 
 | Milestone | Phases | Plans | Key Pattern | Main Pitfall |
@@ -205,3 +255,4 @@
 | v1.1 UI/UX Polish | 7 | 12 | Dependency-driven phase order + code-only audit | Scope didn't grep corpus-wide first (NAV-01 straggler) |
 | v1.2 Performance & Snappiness | 4 | 9 | RSC + client-shell + DTO pattern, established once and reused | Paint-timing/jitter claims left unverified in a browser for 2 of 4 phases; REQUIREMENTS.md checkboxes unticked again |
 | v1.3 Reliability & Hardening | 3 | 6 | Audit-sourced milestone (zero research phase) + risk-ordered phasing (behavior fixes before structural refactor) | Sibling route with the identical gap (`api/review/undo`) not grepped-for and deferred instead of fixed — same "scope corpus-wide" pitfall as v1.1's NAV-01 |
+| v1.4 Knowledge Graph Quality & History | 4 | 15 | Independent re-verification (fresh reproduction, not the fixer's own test) turns a "passed" status into a real guarantee | A phase (17) shipped and closed with no VERIFICATION.md ever generated — silently unnoticed until the milestone audit's retroactive pass found it and, in fixing it, uncovered a real production bug |
