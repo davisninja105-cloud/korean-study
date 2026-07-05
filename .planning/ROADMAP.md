@@ -108,7 +108,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
   2. A lost-response retry of the same grade action produces no duplicate log entry and never double-applies FSRS state (verifiable under throttled/flaky network).
   3. Triggering undo cancels any in-flight background retry, so a stale retry can never silently re-apply a rating after the review has been undone.
 
-**Plans**: 4/4 plans complete
+**Plans**: 4/5 plans complete (17-05 gap-closure planned)
 
 **Wave 1**
 
@@ -122,6 +122,10 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 **Gap closure** *(from end-of-phase UAT Test 6 blocker)*
 
 - [x] 17-04-PLAN.md — Fix idempotent-200 replay: the interactive `$transaction` surfaces the idempotencyKey UNIQUE violation as a raw `DriverAdapterError`, not P2002. New pure `lib/db-errors.ts` (`isUniqueConstraintError`) + unit test; widen the `app/api/review/route.ts` catch to OR-in the raw-shape check (HIST-02)
+
+**Gap closure** *(from retroactive 17-VERIFICATION.md blocker — second error shape)*
+
+- [ ] 17-05-PLAN.md — Extend `isUniqueConstraintError` to also recognize the classified-P2002 shape whose constraint detail lives at `meta.driverAdapterError.cause.originalMessage` (route unchanged — its catch already ORs the helper in); add a persisted `tests/review-route.test.ts` regression (real POST handler + local SQLite file DB) + `vitest.config.ts` `@/` alias (HIST-02)
 
 ### Phase 18: Review History Page
 
