@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Knowledge Graph Quality & History
-current_phase: 19
-current_phase_name: vercel-cron-auto-sync
-status: milestone_complete
-stopped_at: Phase 19 complete — v1.4 milestone complete
-last_updated: "2026-07-05T18:33:35.575Z"
+current_phase: 4
+status: Awaiting next milestone
+stopped_at: v1.4 milestone complete, ready to complete milestone / plan next
+last_updated: "2026-07-05T18:48:22.254Z"
 last_activity: 2026-07-05
-last_activity_desc: Phase 19 UAT passed (2/2), threats verified (0 open), milestone v1.4 complete
+last_activity_desc: Milestone v1.4 completed and archived
 progress:
   total_phases: 4
   completed_phases: 4
   total_plans: 15
   completed_plans: 15
   percent: 100
+current_phase_name: vercel-cron-auto-sync
 ---
 
 # Project State
@@ -28,12 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-05)
 
 ## Current Position
 
-Phase: 19 (vercel-cron-auto-sync) — COMPLETE
-Plan: 3 of 3 (all code-complete, UAT passed, security verified)
-Status: v1.4 Knowledge Graph Quality & History — all 4 phases (16, 17, 18, 19) complete. 15/15 requirements shipped.
-Last activity: 2026-07-05 — Phase 19 UAT passed (2/2), threats verified (0 open), milestone v1.4 complete
-
-Progress: [██████████] 100% (4/4 phases complete; Phase 16 + 17 + 18 + 19 done)
+Phase: Milestone v1.4 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-05 — Milestone v1.4 completed and archived
 
 ## Performance Metrics
 
@@ -142,5 +140,4 @@ Resume file: None
 
 ## Operator Next Steps
 
-- v1.4 Knowledge Graph Quality & History is fully shipped: all 4 phases (16, 17, 18, 19) complete, 15/15 requirements validated, Phase 19 UAT passed (2/2) and security-verified (0 open threats).
-- Next: run `/gsd-complete-milestone` to archive v1.4 and prepare for the next milestone.
+- Start the next milestone with /gsd-new-milestone

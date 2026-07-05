@@ -2,28 +2,17 @@
 
 ## What This Is
 
-A personal Korean spaced-repetition study app (Next.js + Prisma/Turso, Claude-powered card extraction from a tutor's Google Doc, FSRS scheduling, sentence-centric study, TTS, tap-to-gloss, habit tracking). The app's "foundation-first" promise is real — a learner is never quizzed on a word before its building blocks, and new words are introduced bare before sentence context. The UI has been systematically audited and polished: a warm, encouraging study loop, a three-state home hero, a complete semantic design-system token layer, and full accessibility baseline. The app now also feels instant: every main route shows a content-shaped skeleton on navigation, the cards/study/home/habits pages hydrate with real data on first server-rendered paint (no empty-state flash), `/api/cards/due` runs its queries concurrently, and grading a card during study advances the queue with no perceptible delay. The app is also hardened against failure: the two authenticated write routes never throw unhandled 500s, background review saves retry silently before surfacing a toast, undo restoration is atomic, sync failures name the specific lesson that broke, and `StudySession.tsx` is decomposed into focused, independently-testable mode components with memoized sentence selection.
+A personal Korean spaced-repetition study app (Next.js + Prisma/Turso, Claude-powered card extraction from a tutor's Google Doc, FSRS scheduling, sentence-centric study, TTS, tap-to-gloss, habit tracking). The app's "foundation-first" promise is real — a learner is never quizzed on a word before its building blocks, and new words are introduced bare before sentence context. The UI has been systematically audited and polished: a warm, encouraging study loop, a three-state home hero, a complete semantic design-system token layer, and full accessibility baseline. The app now also feels instant: every main route shows a content-shaped skeleton on navigation, the cards/study/home/habits pages hydrate with real data on first server-rendered paint (no empty-state flash), `/api/cards/due` runs its queries concurrently, and grading a card during study advances the queue with no perceptible delay. The app is also hardened against failure: the two authenticated write routes never throw unhandled 500s, background review saves retry silently before surfacing a toast, undo restoration is atomic, sync failures name the specific lesson that broke, and `StudySession.tsx` is decomposed into focused, independently-testable mode components with memoized sentence selection. The knowledge graph is now trustworthy — a deterministic deck-lookup filter stops Claude from hallucinating prerequisite edges — and every review is durably, idempotently logged to an append-only `ReviewLog`, browsable on a dedicated `/history` page. The deck also stays fresh on its own: a daily Vercel Cron job triggers an automatic sync with no manual trigger required, behind a fail-closed bearer-token auth check.
 
 ## Core Value
 
 When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context. If everything else fails, this must hold.
 
-## Current Milestone: v1.4 Knowledge Graph Quality & History
-
-**Goal:** Clean up hallucinated prerequisite edges, add a persistent review history with a view page, and automate daily sync so the deck never goes stale.
-
-**Target features:**
-- Fix spurious `components[]` hallucinations in card extraction (prompt tightening + deterministic post-extraction filter + Claude self-verification step) — resolves the pending todo from Phase 14 UAT
-- `ReviewLog` table logging every individual review (timestamp, cardId, rating, new FSRS state) + a view/history page to browse it
-- Vercel Cron job for daily automatic sync (1 lesson/day via the existing `MAX_LESSONS_PER_SYNC = 1` path)
-
-**Deferred:** Card retirement/mastery flag — raised in the same CONCERNS.md scan, still out of scope this milestone (belongs in a future features milestone).
-
 ## Current State
 
-**Shipped:** v1.3 Reliability & Hardening (2026-07-03)
+**Shipped:** v1.4 Knowledge Graph Quality & History (2026-07-05)
 
-The app is deployed and fully functional. v1.3 fixed the most pressing correctness/reliability findings from the `.planning/codebase/CONCERNS.md` audit: Phase 13 hardened the two authenticated write routes (`/api/review`, `/api/cards/[id]`) to fail with structured responses instead of unhandled 500s, made the background review save retry silently before surfacing a single toast, and made undo restoration mount-guarded/atomic. Phase 14 shipped sync failure visibility (lessons named by content excerpt, not "Lesson 1" or raw errors), the `keyToId` performance refactor (map built once per request, not per-lesson), and gloss cache preloading from the DB on mount. Phase 15 extracted sentence-selection logic into a pure, unit-tested `lib/sentence-selection.ts` module, memoized it in `StudySession`, and split the 300-line per-mode conditional into dedicated `FlashcardMode`/`MultipleChoiceMode`/`FillBlankMode` components — behavior confirmed identical via live UAT. v1.2 (shipped 2026-07-01) eliminated the blank/empty-state flash across every main route; v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — both remain in place underneath this milestone's work.
+The app is deployed and fully functional. v1.4 cleaned up the knowledge graph, made review history durable and browsable, and automated daily sync. Phase 16 replaced Claude's occasionally-hallucinated `components[]` prerequisite entries with a deterministic deck-lookup filter (`filterComponents`), retroactively cleaning 511 existing cards. Phase 17 added an append-only `ReviewLog` table written inside an idempotency-keyed transaction, so a lost-response retry can never double-apply FSRS state or duplicate a history row — this took two rounds to get fully right (a second, distinct Prisma/`@prisma/adapter-libsql` error-classification shape was found and closed during the milestone-completion audit, backed by the project's first persisted route-level regression test). Phase 18 shipped `/history`, a reverse-chronological, cursor-paginated, per-card-filterable view of that log. Phase 19 added a daily Vercel Cron job that syncs one lesson automatically, authenticated by a fail-closed `CRON_SECRET` bearer check, with a "Last auto-synced" status visible in Settings. v1.3 (shipped 2026-07-03) hardened the two authenticated write routes and refactored `StudySession`; v1.2 (shipped 2026-07-01) eliminated the blank/empty-state flash across every main route; v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — all remain in place underneath this milestone's work.
 
 **Next:** Planning next milestone (run `/gsd-new-milestone`)
 
@@ -77,14 +66,16 @@ The app is deployed and fully functional. v1.3 fixed the most pressing correctne
 
 ### Active
 
-(v1.4 complete — all 15 requirements shipped. Next milestone via `/gsd-new-milestone`)
+(None — v1.4 complete, all 15 requirements shipped. Next milestone requirements defined via `/gsd-new-milestone`.)
 
-**Deferred candidates** (raised during v1.2/v1.3, not committed to any milestone):
+**Deferred candidates** (raised during v1.2/v1.3/v1.4, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
 - Cross-request `unstable_cache` for DB results (staleness risk outweighed gain for this single-user app at v1.2 scale — revisit only if that tradeoff changes)
 - Move `buttonColor`/`rewardColor` fetch out of `app/layout.tsx` (would require re-architecting pre-paint CSS injection)
 - `app/api/review/undo/route.ts` missing try/catch — same shape as the routes hardened in Phase 13, but out of scope for REVIEW-01..05 (deferred at Phase 13 close)
 - Card retirement/mastery flag — considered for v1.4, deferred again (belongs in a future features milestone)
+- HIST-03 (undo-cancels-in-flight-retry) has no persisted automated regression test — currently relies on a manual UAT pass; would benefit from the same route-level test technique introduced in Phase 17-05
+- Broaden Nyquist validation coverage — Phases 16-18 are `nyquist_compliant: false` (informational only, not a blocker); Phase 19 is compliant
 
 ### Out of Scope
 
@@ -102,6 +93,7 @@ The app is deployed and fully functional. v1.3 fixed the most pressing correctne
 - v1.1 shipped 2026-06-29: 20 commits across 7 phases. Major files touched: `app/globals.css`, `components/StudySession.tsx`, `components/Nav.tsx`, `app/layout.tsx`, `app/page.tsx`, `components/Sheet.tsx`, `components/GlossProvider.tsx`, `components/AudioButton.tsx`, `app/cards/page.tsx`, `app/habits/page.tsx`, `app/settings/page.tsx`.
 - v1.2 shipped 2026-07-01: 50 commits across 4 phases (9 plans), 2026-06-29 → 2026-07-01. Source-only diff: 24 files, +2143/-1689 lines. Established the RSC + client-shell + DTO pattern (`app/*/page.tsx` async server components → `*Client.tsx` shells) reused across cards, study, home, and habits. New shared modules: `lib/dto.ts` (CardDTO/SentenceDTO/ReviewDTO/LessonDTO/StatsDTO/ActivityDTO), `lib/study-cards.ts` (`getStudyCards`), `lib/dashboard.ts` (`getStats`/`getActivityData`) — all single sources of truth reused by both the RSC pages and the legacy API routes they used to power exclusively.
 - v1.3 shipped 2026-07-03: 89 commits across 3 phases (6 plans, 15 tasks), 2026-07-01 → 2026-07-02. Source-only diff: 21 files, +1481/-491 lines. Sourced directly from the `.planning/codebase/CONCERNS.md` audit — no research phase. New modules: `lib/sentence-selection.ts` (pure, unit-tested sentence-selection + `hashStr`), `components/FlashcardMode.tsx`/`MultipleChoiceMode.tsx`/`FillBlankMode.tsx` (StudySession mode split), `lib/lesson-excerpt.ts` (sync failure naming), `GET /api/gloss/preload` + `getRecentGlosses` (gloss cache bootstrap).
+- v1.4 shipped 2026-07-05: 148 commits across 4 phases (15 plans), 2026-07-02 → 2026-07-05. Diff since v1.3 tag: 158 files, +16292/-5754 lines. New modules: `lib/filter-components.ts` (`filterComponents` deck-lookup filter), `scripts/dry-run-filter.mjs` + `scripts/retro-filter-cleanup.mts` (corpus diagnostics/cleanup), `ReviewLog` Prisma model + `scripts/apply-reviewlog-ddl.mjs`, `lib/db-errors.ts` (`isUniqueConstraintError`, extended twice — see Key Decisions), `lib/review-history.ts` (`getReviewHistory`), `app/history/page.tsx` + `HistoryClient.tsx`, `lib/sync.ts` (`runSync`, extracted from the route), `app/api/cron/sync/route.ts`, `isValidCronAuth` in `lib/auth.ts`. A retroactive milestone-completion audit found and closed a real HIST-02 gap in Phase 17 (see `.planning/milestones/v1.4-MILESTONE-AUDIT.md`) and added the project's first persisted route-level regression test (`tests/review-route.test.ts`).
 - Key fix discovered during Phase 1 (v1.0): `card.nextReview` was `undefined` for real cards because the route uses `include: { review: true }` — due-date lived at `card.review.nextReview`. Added `nextReviewMs()` helper.
 - Known-word threshold is state ≥ 1 (seen at least once), not ≥ 2. One prior review unlocks in-context presentation.
 - Design-system token pattern established in v1.1: every new token must appear in 3 globals.css blocks; validate with grep == 3 hits.
@@ -171,4 +163,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-05 after Phase 19 (v1.4 milestone complete — all 4 phases shipped)*
+*Last updated: 2026-07-05 after v1.4 milestone shipped (all 4 phases, 15 plans)*

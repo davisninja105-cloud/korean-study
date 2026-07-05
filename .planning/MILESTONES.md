@@ -1,5 +1,29 @@
 # Milestones
 
+## v1.4 Knowledge Graph Quality & History (Shipped: 2026-07-05)
+
+**Phases completed:** 4 phases, 15 plans, 35 tasks
+
+**Key accomplishments:**
+
+- Pure `filterComponents()` deck-lookup filter (normalizeFront + splitParticle stem fallback, mirrors lib/known-words.ts) plus a read-only `dry-run-filter.mjs` corpus diagnostic — human-reviewed and APPROVED against the live corpus (grammar 8.0% / vocabulary 24.9% / phrase 21.5% / whole-corpus 22.5% drop rate), unblocking the downstream wiring plan.
+- Tightened the `components[]` extraction prompt with an explicit prerequisite-dependency rule (GRAPH-01) and extracted a pure, unit-tested `parseExtractionResponse(text: string): ExtractedCard[]` that structurally rejects malformed cards on receipt while preserving the existing truncation-salvage logic byte-for-byte (GRAPH-02).
+- Wired the plan 16-01 deck-lookup filter into `parseExtractionResponse` (single integration point inside `extractCardsFromNotes`) and fixed the pre-existing `keyToId` scoping bug in both `app/api/sync/route.ts` and `scripts/local-resync.mts` so leaf-node cards are resolvable as prerequisites — together closing GRAPH-03 Success Criterion 1.
+- Dry-run-by-default `scripts/retro-filter-cleanup.mts` re-filtered every persisted `Card.components` row and reconciled `CardDependency` edges using an all-cards `keyToId`; the human-approved production run rewrote 511 cards, pruned 2 stale edges, and added 4 newly-valid edges, closing GRAPH-03 Success Criterion 1 against the existing corpus.
+- Added the append-only `ReviewLog` Prisma model with a UNIQUE `idempotencyKey` index, regenerated the Prisma client, and applied the new table live to production Turso via a one-time manual DDL script.
+- Hardened `POST /api/review` into an idempotent, transactional write path: validates a client-supplied `idempotencyKey`, writes `CardReview.update` + `ReviewLog.create` inside one atomic array-form `$transaction`, and catches a duplicate-key `P2002` collision as an idempotent 200 replay instead of double-applying FSRS state.
+- Threaded a client-generated `crypto.randomUUID()` idempotency key through `postReviewWithRetry`'s 3-attempt loop and added an undo-triggered `AbortController` so `handleUndo` cancels any in-flight background retry before it can re-apply a rating after undo.
+- Widened the POST /api/review idempotent-retry catch to also recognize the raw, unclassified `DriverAdapterError` that `@prisma/adapter-libsql` throws for a duplicate `idempotencyKey` inside an interactive transaction — closing the Phase 17 UAT Test 6 gap via a new pure `lib/db-errors.ts` helper.
+- Extended `isUniqueConstraintError` to a bounded BFS that also descends into `meta.driverAdapterError`, closing the classified-P2002-without-`meta.target` gap for duplicate `idempotencyKey` POSTs, and added a persisted `tests/review-route.test.ts` that invokes the real route handler twice against a local SQLite file DB to protect the fix going forward.
+- Shared `getReviewHistory()` cursor-paginated query (Prisma `skip:1` + compound `orderBy`) plus `GET /api/reviews` route and DTO/type plumbing, mirroring the existing `lib/study-cards.ts` shared-function pattern.
+- Added a real-data FSRS-state breakdown ("Card progress": New/Learning/Review/Relearning) to the Habits page as a single whole-section `<Link href="/history">`, backed by a new `cardReview.groupBy` in `getStats()`.
+- `/history` RSC page + `HistoryClient` feed (reverse-chron, grade-colored rows, IntersectionObserver infinite scroll, single-card filter chip) plus a "View history →" deep-link from `CardEditor`, completing the phase's HIST-04..07 surface on top of 18-01's data pipeline and 18-02's Habits entry point.
+- Moved the entire POST /api/sync handler body into lib/sync.ts:runSync(), leaving app/api/sync/route.ts as a thin wrapper — no behavior change.
+- Persisted a `lastAutoSyncedAt` ISO-string setting (no schema change), exposed it read-only via GET /api/settings, and rendered it as a passive status line in Settings > Advanced next to SyncPanel.
+- Added a fail-closed CRON_SECRET bearer check (TDD, unit-tested), wired it into middleware.ts ahead of the cookie gate without touching the matcher, and shipped `GET /api/cron/sync` + `vercel.json` so a daily Vercel Cron job triggers the shared `runSync()` and only advances `lastAutoSyncedAt` on success.
+
+---
+
 ## v1.3 Reliability & Hardening (Shipped: 2026-07-03)
 
 **Phases completed:** 3 phases, 6 plans, 15 tasks

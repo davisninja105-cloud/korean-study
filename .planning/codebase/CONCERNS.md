@@ -1,222 +1,216 @@
 # Codebase Concerns
 
-**Analysis Date:** 2026-07-02
+**Analysis Date:** 2026-07-05
 
 ## Tech Debt
 
-### StudySession.tsx Component Size
-- **Issue:** Single component file is 964 lines; owns three study modes (flashcard, multiple-choice, fill-blank), sentence selection, FSRS integration, activity tracking, undo logic, and UI rendering.
-- **Files:** `components/StudySession.tsx`
-- **Impact:** Difficult to test in isolation, high cognitive load during maintenance, risk of side-effect bugs when adding features.
-- **Fix approach:** Break into smaller sub-components: `<FlashcardMode>`, `<MultipleChoiceMode>`, `<FillBlankMode>`. Extract sentence logic into a pure hook/module. Move activity tracking to custom hook.
+**Complex JSON truncation handling in LLM extraction:**
+- Issue: `lib/extract-cards.ts`'s `findLastTopLevelCardBoundary()` implements a depth-tracking parser to salvage truncated JSON responses from Claude when the model runs out of tokens mid-output.
+- Files: `lib/extract-cards.ts` (lines 234–267, call sites at 281, 307)
+- Impact: Salvage logic is relatively complex (220+ lines combined with parsing). If the JSON structure changes or nesting increases, the depth-tracking logic could fail silently, dropping partially-complete cards from a lesson without user visibility. Dense lessons over the token limit can still yield incomplete results.
+- Fix approach: Unit test the truncation salvage logic explicitly with intentionally-truncated inputs at various nesting levels. Consider logging when salvage is triggered so the user knows some cards may be incomplete. Monitor token consumption in production to predict when truncation occurs.
 
-### Optimistic Review Submission (Fire-and-Forget Save)
-- **Issue:** `submitReview()` in `StudySession.tsx` updates client state immediately, then fires a background `POST /api/review` that is not awaited (`.catch(() => {})`). If the save fails silently, the client and server become out of sync.
-- **Files:** `components/StudySession.tsx` (line ~474-478), `app/api/review/route.ts`
-- **Impact:** User loses the review if network fails or server is down. Undo won't work correctly if the background save already partially succeeded. No user feedback on failure.
-- **Fix approach:** Show a subtle "saving…" indicator. If `/api/review` fails, either queue for retry or roll back the optimistic state and notify the user. At minimum, log the error and surface it in a toast.
+**Prisma 7 + libSQL adapter unique-constraint error classification:**
+- Issue: UNIQUE-constraint violations thrown inside an interactive `prisma.$transaction(async (tx) => {...})` callback surface as raw `DriverAdapterError` with `cause.kind: 'sqlite'`, not as a classified `Prisma.PrismaClientKnownRequestError` with `code: 'P2002'`. This was discovered during Phase 17 UAT and worked around, but the underlying issue remains in the driver/adapter interaction.
+- Files: `lib/db-errors.ts` (single-source-of-truth workaround), `app/api/review/route.ts` (lines 149–153 show both P2002 check AND isUniqueConstraintError fallback)
+- Impact: Error handling is now fragile — relies on a breadth-first traversal of error nested fields to detect constraint violations. If Prisma's error wrapping changes, the workaround may silently stop working. Array-form transactions (`prisma.$transaction([...])`) do not have this problem, so any future routes using interactive transactions face the same risk.
+- Fix approach: Prefer array-form transactions where possible (they correctly classify errors). If interactive-form is necessary for read-then-conditional-write logic, ensure the custom error detector (`isUniqueConstraintError`) is tested against every constraint type used in that route, not just `idempotencyKey`. Monitor for Prisma/libSQL adapter updates that might resolve this upstream.
 
-### Missing Error Handling in `/api/review` Route
-- **Issue:** No `try/catch` wrapper around Prisma queries; any database error will throw an unhandled 500.
-- **Files:** `app/api/review/route.ts`
-- **Impact:** Inconsistent with other API routes (activity, cards, etc. all have error handling). Silent failures if the route crashes.
-- **Fix approach:** Add `try/catch` around the Prisma calls with a proper error response.
+**Gloss cache unbounded insertion:**
+- Issue: `lib/gloss.ts` caps gloss cache at `MAX_GLOSS_CACHE_ENTRIES = 2000` entries but the check is a soft limit — if the count is ≥2000 when `setCachedGloss` runs, the function silently returns without writing, but doesn't evict old entries either.
+- Files: `lib/gloss.ts` (lines 40–57)
+- Impact: Once 2000 entries are reached, no new glosses can be cached. Old entries are never evicted, so cache hits degrade over time if learners look up many unique words. The Setting table itself has no deletion strategy, so stale/corrupt gloss entries can accumulate indefinitely.
+- Fix approach: Implement LRU eviction — track access order and delete oldest entries when at capacity. Alternatively, add a TTL to cached glosses (store a `createdAt` timestamp and expire entries after N days). Add a cleanup route to prune stale entries.
 
-### No Validation of Review Rating
-- **Issue:** Review route does not validate that `rating` is in the range 1–4 (the valid FSRS grades).
-- **Files:** `app/api/review/route.ts`
-- **Impact:** Sending an invalid rating (e.g., `rating: 99`) will be passed to `reviewCard()`, potentially causing undefined FSRS behavior or a throw.
-- **Fix approach:** Validate `rating in [1, 2, 3, 4]` before calling `reviewCard()`.
+**StudySession.tsx component complexity:**
+- Issue: The component is 964+ lines and owns three study modes (flashcard, multiple-choice, fill-blank), sentence selection, FSRS integration, activity tracking, undo logic, and retry handling for background saves.
+- Files: `components/StudySession.tsx`
+- Impact: High cognitive load during maintenance, difficult to unit test individual features, risk of cascading bugs when modifying state management or event handlers.
+- Fix approach: Extract study modes into separate sub-components (`<FlashcardMode>`, `<MultipleChoiceMode>`, `<FillBlankMode>`). Move activity tracking to a custom hook. Extract retry logic into a service module.
 
 ## Known Bugs
 
-### Blank-Safety Guarantee Not Enforced
-- **Symptoms:** If Claude's extraction prompt fails to meet the blank-safety guarantee (first sentence for every card must have targetForm 2+ chars, exactly once), fill-blank and Recall modes will either fail silently or show un-highlighted text.
-- **Files:** `lib/extract-cards.ts` (prompt), `components/StudySession.tsx` (sentence selection)
-- **Trigger:** Lessons where the tutor's sentence examples don't meet the safety criteria (e.g., single-char particles, ambiguous matches).
-- **Workaround:** Manual card edit to add a blank-safe sentence. The prompt is exhaustive but not infallible.
+**Undo racing with in-flight background retry:**
+- Issue: `POST /api/review` submits asynchronously in the background via `postReviewWithRetry()` without exposing an AbortController to the undo handler. If a user grades a card and immediately hits Undo before the background retry completes, the retry's attempt may land after the undo POST, re-applying the graded state to a card that was already reverted.
+- Files: `components/StudySession.tsx` (line 87 defines `postReviewWithRetry`, lines 218–226 store undo snapshot, lines 330+ define `handleUndo` which does NOT abort in-flight retries)
+- Impact: Data corruption risk — card FSRS state can advance past a user-initiated undo, with zero UI indication. If ReviewLog is involved, a ghost review entry appears for an action the user explicitly reversed.
+- Fix approach: Hold the `AbortController` for each card's in-flight review in a ref keyed by `cardId`, and have `handleUndo` abort any pending retry before firing the undo POST. Alternatively, have the undo POST include a flag that causes the server to abort any concurrent review for that card (race to the database), with the undo state winning.
 
-### Card Front Normalization Race Condition
-- **Symptoms:** If a user edits a card's `front` to a value that normalizes to an existing card's `normalizedFront`, the update will fail with a unique constraint violation (uncaught).
-- **Files:** `app/api/cards/[id]/route.ts` (line 20-22), `lib/card-key.ts`
-- **Trigger:** Edit card A's front to match (after normalization) an existing card B's front.
-- **Workaround:** The UI doesn't prevent this; user sees a generic server error.
-- **Fix approach:** Check for `normalizedFront` collision before update. Return a 400 with a user-friendly message like "This front already exists (as a different variant of another card)."
+**Sentence-match conservative particle-splitting limitations:**
+- Issue: `lib/sentence-match.ts` (function `splitParticle`) can still mis-split multi-syllable verb stems with modifier endings (e.g. `기다리는` could be parsed as `기다리 + 는` or `기다 + 리는`), depending on how the function handles that specific ending. The codebase has no morphological analyzer, so this is a known limitation.
+- Files: `lib/sentence-match.ts`, `components/HighlightedSentence.tsx`, `lib/sequence.ts` (uses the same logic for blank-safety)
+- Impact: A sentence deemed "blank-safe" might still fail to render correctly if the substring-matching logic makes the wrong split, producing a wrong highlight or blank.
+- Fix approach: Test `sentenceMatch()` against real card corpus data, especially grammar cards where particle attachment is ambiguous. If failures occur, consider adding a Korean morphological library (e.g. `node-mecab`, `hangul-js`), though this increases bundle size and external dependency risk.
 
-### Undo State Restoration Incomplete
-- **Symptoms:** If `POST /api/review/undo` succeeds but the client-side state restoration is interrupted (e.g., component unmounts), some state (queue, seenCardIds, stats) may be left partially restored.
-- **Files:** `components/StudySession.tsx` (line 511-540)
-- **Impact:** Session stats or queue order could be inconsistent. Unlikely in normal use but possible if user navigates away during undo.
-- **Fix approach:** Batch the state updates into a single `setState` callback or use a reducer to make it atomic.
+**CardDependency edge resolution only works backward:**
+- Issue: At sync time, Claude-generated `components[]` lemmas are resolved to CardIds via `normalizeFront()` lookup, creating directed edges. If a component refers to a card that doesn't exist in the deck yet (e.g., the prerequisite is taught in a later lesson), the edge silently fails to create. Re-running a full resync or using `relink-dependencies.mjs` fixes this, but it's a manual operation.
+- Files: `lib/sync.ts` (lines 275–296), `lib/link-dependencies.ts`
+- Impact: A learner's study session is missing prerequisite edges because the prerequisite card hasn't been synced yet. Foundation-first sequencing silently works with an incomplete graph.
+- Fix approach: After creating edges for all lessons in a batch, run a second pass to detect any `components[]` entries that didn't resolve and log them as "forward references". Document the need to re-run `relink-dependencies.mjs` after a complete corpus sync.
+
+**Known-lemmas query can fail silently:**
+- Issue: `lib/study-cards.ts` (line 39) fetches the pool of due cards and the "known lemmas" set (cards with FSRS state ≥ 1) concurrently via `Promise.allSettled()`. If the known-lemmas query fails, it degrades to an empty Set (line 92), which means every sentence will report `unknownCount = total words - 1` (only the target word is "known"), losing ranking signals.
+- Files: `lib/study-cards.ts` (lines 39–94)
+- Impact: On a database query failure (temporary connection loss, busy database), sentence selection loses the "prefer sentences with known context" signal. Cards may be studied with unnecessarily difficult context, and the study experience degrades without user awareness.
+- Fix approach: Log the known-lemmas failure so administrators can investigate. Implement a fallback cache (store the most-recent known-lemmas set in localStorage or a quick redis store) so a transient DB failure doesn't immediately degrade the signal. Consider returning 503 (Service Unavailable) instead of silently degrading for critical failures.
 
 ## Security Considerations
 
-### HMAC Auth Token Recomputation on Every Request
-- **Risk:** `middleware.ts` computes `computeAuthToken()` for every request. If `AUTH_SECRET` is ever compromised, an attacker can forge valid cookies.
-- **Files:** `middleware.ts`, `lib/auth.ts`
-- **Current mitigation:** `AUTH_SECRET` is a single shared password; token is deterministic (no nonce or timestamp).
-- **Recommendation:** Consider adding a timestamp or request ID to the HMAC so tokens are time-bound (e.g., valid for 1 hour). This is low-priority for a personal app.
+**Single-password authentication:**
+- Risk: The app uses a single shared password (APP_PASSWORD) for all users. All access control is a single HMAC session cookie. If the password is compromised, all user data is accessible by anyone who knows it.
+- Files: `lib/auth.ts`, `middleware.ts`, `app/api/login/route.ts`
+- Current mitigation: HMAC is stateless and resistant to token forgery (requires AUTH_SECRET knowledge). The session cookie has no expiration (valid for the browser's lifetime).
+- Recommendations: Add an optional session timeout (e.g., 30 minutes of inactivity). Implement rate limiting on `/api/login` to slow password-guessing attacks. Log authentication failures. Consider adding a second factor (e.g., TOTP) if multi-user access is added in the future.
 
-### No Rate Limiting on `/api/sync`
-- **Risk:** A malicious actor with the password could spam `/api/sync` calls to exhaust Vercel quota or Google Docs API quota.
-- **Files:** `app/api/sync/route.ts`
-- **Current mitigation:** Single-tenant app with a shared password; Vercel Hobby plan function timeout caps the damage.
-- **Recommendation:** Add a basic rate limit (e.g., one sync per 5 minutes) or check the last sync time in Settings.
+**Cron auth bypass potential:**
+- Risk: The `/api/cron/sync` route is excluded from the cookie-based middleware matcher and instead checks a `CRON_SECRET` bearer token. If `CRON_SECRET` is not set in production (env var missing, or only in Preview but not Production), the bearer-token check fails open — the route is still reachable without authentication.
+- Files: `middleware.ts` (line 11–16), `app/api/cron/sync/route.ts` (line 18)
+- Current mitigation: The cron route checks `if (!documentId)` and returns 500 if the env var is missing, preventing sync. But a clever attacker who sees this error can infer the auth check was skipped.
+- Recommendations: Explicitly return 401 Unauthorized if `CRON_SECRET` is not set, not 500. Log all cron route access (successful and failed) separately from app logs. Verify `CRON_SECRET` is set in Vercel's Production environment during deployment.
 
-### Google Service Account Key in `.env.local`
-- **Risk:** If `.env.local` is ever committed or exposed, the service account's identity is leaked.
-- **Files:** `.env.local` (not committed, but exists locally)
-- **Current mitigation:** `.gitignore` protects the file; GCP scopes limit what the key can do.
-- **Recommendation:** Already in place; no action needed unless the key is rotated.
+**Gloss cache privacy leakage:**
+- Risk: The gloss cache (`Setting` table with `gloss:` prefix keys) stores previously-resolved Korean words. If an attacker gains database access, they can infer which words the user has looked up, revealing study patterns.
+- Files: `lib/gloss.ts`, `/api/gloss/preload` endpoint
+- Current mitigation: The app is single-tenant and password-protected; database access requires breaking into Turso directly or compromising the app's database credentials.
+- Recommendations: If multi-tenant access is added, ensure the gloss cache is scoped per-user (store userId or similar in the cache key). Consider clearing the gloss cache on logout. Document this privacy implication in the settings UI.
 
-### TTS Blob Token Exposure
-- **Risk:** `KOREAN_BLOB_READ_WRITE_TOKEN` (Vercel Blob) is used to cache audio. If leaked, an attacker can read/write arbitrary blobs.
-- **Files:** `app/api/tts/route.ts`, `.env.local`
-- **Current mitigation:** Token is only used server-side; blob access is set to `public` so the URLs themselves are already public.
-- **Recommendation:** Use a read-only token if Vercel Blob supports it. Rotate the token annually.
+**No rate limiting on API routes:**
+- Risk: Routes like `/api/sync`, `/api/review`, `/api/gloss` have no per-user or per-IP rate limits. A determined attacker can hammer these endpoints to burn Anthropic tokens (sync + gloss) or cause database load (review).
+- Files: Multiple API route handlers
+- Current mitigation: Single-tenant app with password protection; database rate-limiting depends on Turso's internal protections.
+- Recommendations: Implement rate limiting middleware (e.g., using a rate-limit-safe library or Vercel's edge middleware) with a sliding-window bucket per IP/session. Set conservative limits (e.g., 10 syncs/hour, 100 reviews/minute, 300 gloss lookups/hour).
 
 ## Performance Bottlenecks
 
-### Sync Extraction Per-Lesson (1 lesson per request)
-- **Problem:** Each `/api/sync` processes only 1 lesson to stay under Vercel's 60-second timeout. A 20-lesson backlog requires 20 sync taps, each taking 60–120s.
-- **Files:** `app/api/sync/route.ts` (line 18), `lib/extract-cards.ts`
-- **Cause:** Claude Opus + exhaustive extraction is slow; the prompt is large (32k tokens max); adaptive thinking adds latency.
-- **Improvement path:** Consider batching 2–3 lessons per request if extraction time can be reduced. Cache the existing normalized fronts so the hint list is smaller for subsequent lessons. Use a background job queue (e.g., Vercel Cron, Bull) instead of per-request processing.
+**Single lesson per sync due to Vercel Hobby 60-second timeout:**
+- Problem: `MAX_LESSONS_PER_SYNC = 1` is hardcoded in `lib/sync.ts` (line 19) because Vercel Hobby plan hard-caps serverless functions at 60 seconds regardless of the `maxDuration` setting. Large lessons with exhaustive card extraction (Claude Opus + streaming) take 30–90 seconds each.
+- Files: `lib/sync.ts` (line 19), `app/api/sync/route.ts` (line 7 documents `maxDuration = 300`)
+- Impact: Syncing a large document with 20+ lessons requires 20+ separate sync taps. Users must repeatedly click "Sync" until `remaining = 0`. Bulk operations (e.g., a complete course import) are time-consuming.
+- Improvement path: `local-resync.mts` bypasses this by running locally (no timeout), processing all lessons at once. Document this script as the recommended path for initial/bulk syncs. For production, evaluate upgrading Vercel plan (Pro plan allows up to 900 seconds). Alternatively, batch multiple lessons per-request by tracking elapsed time and aborting before the deadline.
 
-### CardDependency Query (Full Deck Lookup on Every Sync)
-- **Problem:** After each lesson extraction, the sync route queries all cards with components (line 193–196 in sync route) and builds a full `Map` to resolve dependencies. On a 500+ card deck, this is expensive per lesson.
-- **Files:** `app/api/sync/route.ts` (line 187–231)
-- **Cause:** Two-phase linking needs the full deck to resolve forward references.
-- **Improvement path:** Cache the `normalizedFront → cardId` map during the sync request, or build it incrementally per-lesson.
+**CardDependency query (full deck lookup on every sync):**
+- Problem: After each lesson extraction, the sync route queries all cards to build a `normalizedFront → cardId` lookup map. On a 500+ card deck, this is expensive per lesson, and it happens for every lesson in the batch.
+- Files: `lib/sync.ts` (lines 87–91)
+- Cause: Two-phase linking needs the full deck to resolve forward references, and the map is built once per sync request (not per-lesson), but for large decks this is still a significant cost.
+- Improvement path: Cache the lookup map across sync requests (store in a Setting row or a dedicated table). Pre-warm the cache during app startup. Consider building the map incrementally as cards are upserted, rather than upfront.
 
-### GlossProvider In-Memory Cache Not Persistent
-- **Problem:** Gloss lookups are cached in a `useRef<Map>` which is cleared on page reload or navigation. Popular words are re-fetched from the LLM every session.
-- **Files:** `components/GlossProvider.tsx`, `lib/gloss.ts`
-- **Cause:** Session-scoped memory cache; database cache (`Setting` table) is only written asynchronously.
-- **Improvement path:** Pre-populate the cache from the database on mount. Use `localStorage` for a user-local persistent cache (separate from Settings which is for app config).
+**Vercel Blob TTS cache misses fall back to browser speech:**
+- Problem: If `/api/tts` returns non-200 (e.g., 503 when `KOREAN_BLOB_READ_WRITE_TOKEN` is unset, or a temporary Blob service outage), `AudioButton` falls back to `window.speechSynthesis` (ko-KR, rate 0.9). This fallback works but sounds robotic and loses the TTS provider's voice quality.
+- Files: `components/AudioButton.tsx`, `lib/tts.ts`
+- Impact: If Blob auth fails silently in production, learners hear the degraded browser voice instead of the configured TTS provider, without any indication that the premium TTS is down.
+- Improvement path: Log TTS failures to the server so admins can detect Blob auth issues early. Show a toast notifying the user that TTS is temporarily unavailable (so they know it's not always this robotic). Cache the token validity and fail gracefully if it expires.
 
-### Sentence Selection Loop (Per-Card, Every Review)
-- **Problem:** `chosenIdx` calculation in `StudySession.tsx` (line 326–347) iterates through all sentences to find unknownCount tiers. On a card with 3 sentences, this is fine; but the logic runs during render.
-- **Files:** `components/StudySession.tsx` (line 326–347)
-- **Cause:** Pure computation is good, but could be memoized.
-- **Improvement path:** Memoize the calculation with `useMemo` keyed by `[cardSentences, realCard?.review?.reps]`.
+**RSC hydration assumes server query always succeeds:**
+- Problem: Each RSC page calls an async server function (e.g., `getStudyCards()`) and passes the result directly to a client component. If the query fails (database down, Prisma error), the promise rejects and the entire page returns an error. There is no fallback UI (e.g., a "couldn't load" state) — the user sees a blank page or error boundary.
+- Files: `app/cards/page.tsx`, `app/study/page.tsx`, `app/page.tsx`, `app/habits/page.tsx`
+- Impact: A transient database failure makes the entire study/cards/home page unusable; the user must reload to retry.
+- Improvement path: Wrap RSC fetches in try/catch and return a partial state on failure (e.g., `{ cards: [], error: 'Failed to load' }`). Pass the error to the client component and render a retry button. This is not done uniformly across the app.
 
 ## Fragile Areas
 
-### Card Editor Sentence Editing
-- **Files:** `components/CardEditor.tsx`, `app/api/cards/[id]/route.ts`
-- **Why fragile:** Sentence updates use an atomic transaction `prisma.$transaction([deleteMany, …create])`, but if the API response is lost after the update succeeds, the client won't know the new state. Also, no client-side validation that targetForm actually appears in korean.
-- **Safe modification:** Before persisting, validate every sentence with `sentenceMatch()` to ensure targetForm is found and warn if not blank-safe.
-- **Test coverage:** No tests for sentence CRUD operations.
+**LLM response format dependency:**
+- Issue: Both `lib/extract-cards.ts` (Claude Opus) and `lib/gloss.ts` (Claude Haiku) assume the model returns a specific JSON structure. If Claude changes response format or omits expected fields, the JSON parsing will fail or return partial/malformed data.
+- Files: `lib/extract-cards.ts` (lines 167–173, JSON validation at 185–197), `lib/gloss.ts` (lines 136–143, JSON extraction at 137)
+- Trigger: Change in Claude's default response format, or a model version change that interprets the prompt differently
+- Workaround: The extraction already has a `isValidExtractedCard` guard (lines 185–197) that drops malformed cards. The gloss lookup throws on parse failure, so Haiku failures bubble up to the caller. There is no automatic retry on format mismatch.
+- Risk: Extraction can silently drop cards if Claude's output format drifts. Gloss lookups can fail entirely if Haiku returns non-JSON.
 
-### Google Docs API Tab Discovery
-- **Files:** `lib/google-docs.ts` (line 124–141)
-- **Why fragile:** Recursive tab search assumes all nested tabs are accessible; if a tab is locked or deleted, the function throws with no fallback. Also, the tab title match is exact-string (`.trim() ===`), so a tab with a trailing space won't match.
-- **Safe modification:** Add tolerance for leading/trailing whitespace normalization. Catch tab-not-found and return a more helpful error listing available tabs.
-- **Test coverage:** No tests for the Google Docs integration.
+**Sentence-centric highlight logic:**
+- Files: `lib/sentence-match.ts`, `components/HighlightedSentence.tsx`
+- Why fragile: The rule "targetForm must be ≥2 chars and appear exactly once" protects against blanking a single-char particle or a word that appears twice. However, the implementation is conservative — it can still mis-split multi-syllable verb stems with modifier endings.
+- Test coverage: No systematic tests against real grammar-card corpus data where particle attachment is ambiguous.
 
-### Activity Logging Race Condition
-- **Files:** `components/StudySession.tsx` (activity flush), `app/api/activity/route.ts`
-- **Why fragile:** Multiple `POST /api/activity` calls from rapid session changes could race; the `upsert` with `increment` should be atomic, but concurrent increments could lose data if Prisma batches incorrectly.
-- **Safe modification:** Ensure the database lock/transaction is held across the read-modify-write cycle. Verify with libSQL adapter.
+**Google Docs API rate limiting:**
+- Risk: `lib/google-docs.ts` (line 100) fetches the Google Doc synchronously without rate-limit handling. If Vercel Cron runs every day and the document is large, Google Docs API rate limits (e.g., 300 requests/minute/project) could be hit.
+- Impact: Sync fails with a 403 error from Google Docs API. No built-in retry logic; the sync must be manually retriggered.
+- Mitigation path: Implement exponential backoff in `fetchGoogleDoc()` for 403/429 responses. Cache the fetched document (store the full response in a Setting row) so if the next sync hits a rate limit, it can re-use the cached copy. Add a `Last-Modified` check so re-fetches are cheap.
 
-### GlossProvider Portal Mount
-- **Files:** `components/GlossProvider.tsx` (createPortal call)
-- **Why fragile:** The popover portal mounts to `document.body`, but there's no guarantee `document.body` exists or won't be removed during the component lifecycle.
-- **Safe modification:** Move the portal to a stable ref or guard against missing DOM.
+**CSS token consistency in dark mode:**
+- Files: `app/globals.css`, `app/layout.tsx`
+- Why fragile: Dark mode CSS tokens are defined in two places — inside `@media (prefers-color-scheme: dark)` and inside `:root[data-theme="dark"]`. If a token is added or updated, it must be mirrored in both places or dark mode will have inconsistent colors.
+- Test coverage: Visual regression tests might catch this, but there are no explicit tests verifying token consistency across the two dark-mode paths.
+
+**Sentence selection randomness is deterministic:**
+- Files: `components/StudySession.tsx` (lines 182–191, 68–82)
+- Why fragile: The seed is derived from the pool of due cards (line 183), so it's stable within a session but varies between sessions. For a learner who reviews the same card over many sessions, the sentence order is effectively deterministic across sessions.
+- Impact: Learners may unconsciously memorize sentence order rather than meaning.
 
 ## Scaling Limits
 
-### Sentence Count Per Card
-- **Current capacity:** 1–3 sentences per card (hardcoded max in `lib/extract-cards.ts`).
-- **Limit:** If a card has 4+ potential example sentences, only the first 3 are stored. The learner can't see additional contexts.
-- **Scaling path:** Increase the slice limit to 5–10 and let the UI paginate. Update the sentence rotation logic to handle more.
+**Gloss cache table unbounded growth:**
+- Current capacity: Soft cap at 2000 `gloss:*` Setting rows; no TTL or eviction.
+- Limit: Once 2000 entries are reached, new glosses stop being cached. The Setting table itself has no indexes on `key` prefix other than the primary key, so `startsWith` scans are O(n).
+- Scaling path: Implement LRU eviction or TTL-based cleanup. Move gloss cache to a separate table with proper indexing (`CREATE TABLE GlossCache (word TEXT PRIMARY KEY, entry TEXT, createdAt DateTime)`).
 
-### Card Distractors Fallback
-- **Current capacity:** 3 distractors per card. If fewer than 3 are generated, the system scrapes other cards' answers (line 250–257 in `StudySession.tsx`).
-- **Limit:** On a small deck (<20 cards), fallback distractors may repeat or be irrelevant.
-- **Scaling path:** As the deck grows, distractor quality improves. Pre-compute and cache distractors at sync time for all cards, not just extracted ones.
+**Study pool size capped at 1000 cards:**
+- Current capacity: `lib/study-cards.ts` (line 56) fetches at most 1000 due cards per session.
+- Limit: If a learner has >1000 cards due on a single day, only the first 1000 are considered for session selection. The remaining cards are inaccessible until a later session.
+- Scaling path: Increase the cap to 10000 or higher if learner base grows. Monitor query performance; at 10000 cards, the per-session query cost grows but remains manageable on Turso.
 
-### Dependency Graph Depth
-- **Current capacity:** No explicit limit. The sequence algorithm applies `depth − urgencyBoost` where depth is the longest in-session prereq chain.
-- **Limit:** A deep dependency chain (e.g., 10+ levels) could cause a lesson to be permanently blocked if a root prerequisite is due.
-- **Scaling path:** Cap the depth boost or implement a timeout on the prerequisite expansion in `selectSessionCards()`.
+**Prerequisite graph depth in sequencing:**
+- Current capacity: DFS in `lib/sequence.ts` (lines 117–128) walks the entire prerequisite chain during sorting. No explicit depth limit.
+- Limit: If a learner has a deep prerequisite chain (e.g., 20+ levels), DFS traversal scales linearly with depth. A circular dependency would be detected (visited-stack prevents infinite loops) but the DFS could still be expensive.
+- Scaling path: Add memoization for depth (already done via `depthMemo`). Monitor real-world prerequisite graphs to see if depth exceeds 10 levels in practice. If circular dependencies arise, log them as data inconsistencies to be fixed via the offline `relink-dependencies.mjs` script.
+
+**Sentence count per card (1–3 hardcoded max):**
+- Current capacity: Cards have at most 3 sentences (capped in `lib/extract-cards.ts`, line 376).
+- Limit: If a card needs more than 3 example contexts, only the first 3 are stored. The learner can't see additional perspectives.
+- Scaling path: Increase the slice limit to 5–10 and let the UI paginate through sentences.
 
 ## Dependencies at Risk
 
-### Claude API Model Pinning
-- **Risk:** The app uses `claude-opus-4-8` for extraction (line 51 in `lib/extract-cards.ts`). If Anthropic deprecates this model, syncs will break.
-- **Impact:** Extraction will fail; no new cards can be created.
-- **Migration plan:** Add a fallback model (e.g., `claude-3-5-sonnet`) as a config option. Test the prompt with the fallback before Opus is sunset.
+**Claude API dependency for card extraction and gloss lookups:**
+- Risk: Both extraction (Opus, exhaustive) and gloss (Haiku) rely on Claude API. If Anthropic has an outage or deprecates these models, the app cannot sync or provide tap-to-gloss.
+- Impact: Extraction failures block lesson ingestion. Gloss failures fall back to corpus lookup or a 404, which is okay but degrades UX.
+- Migration plan: Extract-cards already has a fallback corpus lookup (if normalizedFront exists in the deck, use that card's back field). Gloss has a three-tier fallback (corpus → cache → LLM). For extraction, maintain a local fallback prompt (e.g., Claude Mini or a smaller model) to keep syncs working at reduced quality if Opus is unavailable.
 
-### Google Docs API v1
-- **Risk:** Google deprecates APIs; v1 could be sunset.
-- **Impact:** Sync will fail to fetch the document.
-- **Migration plan:** Keep an eye on Google's API roadmap. The Docs API is mature and unlikely to be removed soon, but plan a migration to v2 if it becomes available.
+**Google Docs API availability:**
+- Risk: `lib/google-docs.ts` (line 100) fetches the Google Doc synchronously. If Google Docs API has an outage, all syncs fail.
+- Impact: No new lessons can be imported. Existing app data continues to work.
+- Mitigation: Implement exponential backoff and a cached fallback (see Performance Bottlenecks above). Document manual import paths as a workaround (e.g., export-to-CSV then import).
 
-### Vercel Blob Public Access
-- **Risk:** If Vercel Blob changes its public access model, TTS audio URLs could become private.
-- **Impact:** `AudioButton` won't load cached audio.
-- **Migration plan:** Store MP3s in a dedicated S3 bucket with explicit public ACLs, or embed audio as data URIs for small files.
+**Vercel Blob TTS cache:**
+- Risk: If Vercel Blob service has an outage or auth fails, TTS audio can't be cached. Falls back to browser speech synthesis.
+- Impact: Degraded audio quality but still functional (via fallback).
+- Mitigation: Implement local IndexedDB cache as a secondary fallback. Pre-generate TTS audio for common words during sync.
 
 ## Missing Critical Features
 
-### No Explicit Sync Failure Reporting
-- **Problem:** If a lesson fails to extract, the UI shows a generic "remaining" count but doesn't highlight which lessons failed. The user has to retry all remaining lessons to find out which one is problematic.
-- **Blocks:** Debugging stalled syncs; knowing if the tutor's doc is malformed.
-- **Fix:** Persist failed lesson indices or excerpts in the response and display them in the SyncPanel.
+**No automatic cleanup of orphaned CardDependency edges:**
+- Problem: If a card is deleted, its edges FROM the card (as a prerequisite) are not automatically pruned. A developer must manually run a cleanup script.
+- Impact: Dead edges accumulate in the database, slowing foundation-first sequencing over time.
+- Solution: Add a scheduled cleanup task (Vercel Cron) to prune CardDependency edges whose target card no longer exists. Or add an `ON DELETE CASCADE` to the `prerequisiteId` foreign key.
 
-### No Background Sync / Scheduled Sync
-- **Problem:** All syncs are triggered by user taps. If the user forgets to sync for a week, the content is stale.
-- **Blocks:** Keeping the deck fresh without manual intervention.
-- **Fix:** Add a Vercel Cron job (`app/api/cron/sync`) that runs daily (or weekly) and processes up to N lessons.
-
-### No Card Retirement / Mastery
-- **Problem:** Once a card reaches a high FSRS state, it's still studied. There's no way to "graduate" a card as truly mastered and remove it from the due pool.
-- **Blocks:** Long-term learners can't reduce session size as they progress.
-- **Fix:** Add a `mastered` boolean flag to Card. Filter out mastered cards from the due pool. Allow manual un-mastery.
-
-### No Study History / Review Log
-- **Problem:** Activity is tracked at the day level (StudyDay), but individual card reviews are not logged. The user can't see which cards they reviewed on a specific date.
-- **Blocks:** Analyzing learning patterns, debugging spacing algorithm, exporting review data.
-- **Fix:** Add a `ReviewLog` table with timestamp, cardId, rating, newState.
+**No session timeout or rate limiting:**
+- Problem: Routes like `/api/sync`, `/api/review`, `/api/gloss` have no rate limits. A malicious actor can spam requests.
+- Impact: Cost overruns from repeated sync calls (Anthropic tokens). DoS risk.
+- Solution: Implement per-IP/per-session rate limiting with sliding-window buckets.
 
 ## Test Coverage Gaps
 
-### API Routes Untested
-- **Untested area:** All `app/api/*/route.ts` files (sync, cards, review, activity, tts, gloss, etc.).
-- **Files:** `app/api/**/*.ts`
-- **Risk:** Regressions in error handling, validation, database queries go unnoticed.
-- **Priority:** High — API routes are the source of truth.
-- **Recommendation:** Add integration tests using `vitest` with a test database (or in-memory SQLite). Mock external APIs (Google, Anthropic, Vercel Blob).
+**Untested LLM response handling:**
+- What's not tested: Truncated JSON responses at various nesting levels (the salvage logic in `extract-cards.ts` is complex and handles depth-tracking).
+- Files: `lib/extract-cards.ts` (lines 234–267 have no unit tests for truncation at depths 2, 3, 4, etc.)
+- Risk: A future change to the prompt structure (e.g., adding nested arrays) could break the depth-tracking logic without detection.
+- Priority: High.
 
-### UI Components Not Tested
-- **Untested area:** All client components (StudySession, CardsClient, GlossProvider, AudioButton, etc.).
-- **Files:** `components/**/*.tsx`
-- **Risk:** Regressions in interactivity, state management, edge cases (e.g., empty card lists, network failures).
-- **Priority:** Medium — high user-facing complexity, but users can catch bugs faster than integration tests.
-- **Recommendation:** Add snapshot and interaction tests with `vitest` + `@testing-library/react` for critical components (StudySession, CardsClient).
+**No end-to-end test of review undo racing with retry:**
+- What's not tested: The race condition between `handleUndo` and an in-flight `postReviewWithRetry`. Current tests verify undo works in isolation, but not under network delay.
+- Files: `components/StudySession.tsx` (no test simulates: grade card → POST /api/review starts but hasn't landed → user hits Undo immediately → retry POST lands after undo)
+- Risk: Silent data corruption if this race occurs.
+- Priority: High.
 
-### Google Docs Fetching Untested
-- **Untested area:** Tab discovery, emphasis capture, paragraph parsing.
-- **Files:** `lib/google-docs.ts`
-- **Risk:** Changes to the API response structure could silently break the tab finder or emphasis capture.
-- **Priority:** Medium — unlikely to change, but high-impact if broken.
-- **Recommendation:** Add unit tests with mock Google Docs API responses.
+**API routes integration tests missing:**
+- What's not tested: Sync, cards CRUD, review, activity, gloss, tts routes (all app/api/*.ts).
+- Risk: Regressions in error handling, validation, database queries go unnoticed.
+- Priority: High.
 
-### Extraction Prompt Not Validated
-- **Untested area:** Claude's extraction prompt; only tested via live sync.
-- **Files:** `lib/extract-cards.ts`
-- **Risk:** Prompt drift; Claude returns malformed JSON or violates schema.
-- **Priority:** Medium — the prompt is guarded by JSON parsing, but silent truncation could occur.
-- **Recommendation:** Add a test that calls `extractCardsFromNotes()` with a real lesson and validates the output schema.
-
-### Sequence Algorithm Edge Cases Partially Tested
-- **Untested area:** Circular dependency detection, depth calculation on deep graphs.
-- **Files:** `lib/sequence.ts`
-- **Coverage:** Basic tests exist in `tests/sequence.test.ts`, but no tests for cycle safety or max-depth scenarios.
-- **Priority:** Low — the algorithm is pure and unlikely to regress, but adding a few edge-case tests would increase confidence.
+**Google Docs integration untested:**
+- What's not tested: Tab discovery, emphasis capture, paragraph parsing.
+- Files: `lib/google-docs.ts`
+- Risk: Changes to the API response structure could silently break tab finder or emphasis capture.
+- Priority: Medium.
 
 ---
 
-*Concerns audit: 2026-07-02*
+*Concerns audit: 2026-07-05*

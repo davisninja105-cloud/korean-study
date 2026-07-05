@@ -1,6 +1,6 @@
 # Technology Stack
 
-**Analysis Date:** 2026-07-02
+**Analysis Date:** 2026-07-05
 
 ## Languages
 
@@ -27,6 +27,10 @@
 - React 19.2.4 - UI rendering via functional components and hooks
 - React DOM 19.2.4 - DOM mounting
 
+**Styling:**
+- Tailwind CSS 4.2.2 - Utility-first CSS with `@theme inline` custom semantic tokens
+- `@tailwindcss/postcss` 4.x - PostCSS integration for Tailwind v4
+
 **Testing:**
 - Vitest 4.1.9 - Unit test runner for pure `lib/` functions; `npm test` runs in Node environment
 
@@ -39,7 +43,10 @@
 ## Key Dependencies
 
 **Critical:**
-- `@anthropic-ai/sdk` 0.80.0 - Claude API client for card extraction (opus-4-8 with adaptive thinking), tap-to-gloss lookup (haiku-4-5), and practice generation
+- `@anthropic-ai/sdk` 0.80.0 - Claude API client:
+  - `claude-opus-4-8` with adaptive thinking for exhaustive card extraction
+  - `claude-haiku-4-5-20251001` for tap-to-gloss word lookups
+  - `claude-sonnet-4-6` for practice generation
 - `@prisma/client` 7.6.0 - ORM query client (generated from `prisma/schema.prisma`)
 - `@prisma/adapter-libsql` 7.6.0 - Prisma adapter for libSQL (Turso) connections
 
@@ -56,6 +63,10 @@
 - `canvas-confetti` 1.9.4 - Celebration animations (milestone reach, CEFR band advancement)
 - `dotenv` 17.3.1 - `.env` file parsing (dev/scripts only, not production)
 
+**DevDependencies:**
+- sharp 0.34.5 - Image processing for icon generation (rasterizes `public/icon.svg` to PNG set via `scripts/gen-icons.mjs`)
+- Type definitions: `@types/node` 20.x, `@types/react` 19.x, `@types/react-dom` 19.x, `@types/canvas-confetti` 1.9.0
+
 ## Configuration
 
 **Environment:**
@@ -69,6 +80,8 @@
 - `postcss.config.mjs` - PostCSS config enabling Tailwind v4 via `@tailwindcss/postcss` plugin
 - `next.config.ts` - Next.js config (currently minimal, no custom settings)
 - `vitest.config.ts` - Vitest config (Node.js environment for pure lib testing)
+- `prisma/schema.prisma` - Database schema (source of truth)
+- `vercel.json` - Vercel project config (cron schedule: daily sync at 10:00 UTC)
 
 ## Platform Requirements
 
@@ -77,6 +90,15 @@
 - npm 11+
 - ESLint 9.x compatible shell environment
 - macOS/Linux/Windows
+- `.env` / `.env.local` with required keys:
+  - `ANTHROPIC_API_KEY`
+  - `GOOGLE_SERVICE_ACCOUNT_KEY` (full JSON)
+  - `NEXT_PUBLIC_GOOGLE_DOC_ID`
+  - `DATABASE_URL` (file:./dev.db for local SQLite)
+  - `APP_PASSWORD`, `AUTH_SECRET`
+  - `TTS_PROVIDER` (default: 'google')
+  - `ELEVENLABS_API_KEY` (if TTS_PROVIDER=elevenlabs)
+  - `KOREAN_BLOB_READ_WRITE_TOKEN` or `BLOB_READ_WRITE_TOKEN` (optional, for TTS caching)
 
 **Production:**
 - Vercel Hobby plan (serverless)
@@ -86,7 +108,8 @@
 - Google Cloud project with Docs API + Cloud Text-to-Speech APIs enabled
 - (Optional) ElevenLabs account for TTS (if `TTS_PROVIDER=elevenlabs`)
 - Vercel Blob storage (public store) for TTS audio cache
+- Vercel Cron for daily sync (configured in `vercel.json`)
 
 ---
 
-*Stack analysis: 2026-07-02*
+*Stack analysis: 2026-07-05*
