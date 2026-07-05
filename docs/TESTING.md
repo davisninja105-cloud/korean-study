@@ -8,19 +8,32 @@ Tests use **Vitest 4.1.9** (`devDependencies` in `package.json`), configured in
 
 ```ts
 import { defineConfig } from 'vitest/config'
+import path from 'path'
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './'),
+    },
+  },
   test: {
     environment: 'node',
   },
 })
 ```
 
-No global setup file, mocking library, or database fixture is used — every test
-imports a pure function directly from `lib/` and asserts on its return value. There
-is no `beforeEach`/`afterEach` teardown and no `vi.mock(...)` anywhere in the suite.
-Running `npm install` is the only setup step; tests need no `.env` file, no database
-connection, and no network access.
+The `@` alias mirrors the `tsconfig.json` path mapping so that imported `lib/` and
+`app/` modules (which use `@/` imports internally) resolve under Vitest.
+
+There is no global setup file and no mocking library — no `vi.mock(...)` appears
+anywhere in the suite. Most tests import a pure function directly from `lib/` and
+assert on its return value. The one exception is `tests/review-route.test.ts`, an
+integration test that provisions its own throwaway SQLite file database in
+`beforeAll` (temp dir via `mkdtempSync`, schema applied with
+`npx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script`
+piped through `@libsql/client` `executeMultiple()`) and cleans it up in `afterAll`.
+Running `npm install` is the only setup step; tests need no `.env` file, no external
+database connection, and no network access.
 
 ## Running Tests
 
@@ -31,7 +44,8 @@ npm test
 ```
 
 This runs `vitest run` (see `package.json` `scripts.test`), which executes every
-`*.test.ts` file under `tests/` and exits with a non-zero code on failure.
+`*.test.ts` file under `tests/` (currently 14 files) and exits with a non-zero code
+on failure.
 
 Run a single file directly with the Vitest CLI:
 
@@ -53,9 +67,12 @@ defined in `package.json` — `npm test` is the only test entry point.
 - **Location and naming:** all tests live flat in `tests/` (no nested subdirectories)
   and are named `<module-name>.test.ts`, matching the `lib/` file under test — e.g.
   `tests/sequence.test.ts` tests `lib/sequence.ts`, `tests/card-key.test.ts` tests
-  `lib/card-key.ts`.
+  `lib/card-key.ts`. Route-level tests are named after the route
+  (`tests/review-route.test.ts` tests `app/api/review/route.ts`).
 - **Imports:** tests import directly from the relative `lib/` path (not the `@/`
-  alias), e.g. `import { sequenceCards } from '../lib/sequence'`.
+  alias), e.g. `import { sequenceCards } from '../lib/sequence'`. The `@` alias in
+  `vitest.config.ts` exists so that *transitively* imported project modules resolve
+  (e.g. the review route imports `@/lib/prisma`).
 - **Structure:** one `describe()` block per exported function, with individual
   `it()` cases for each behavior. Files that test a module with multiple exports use
   multiple `describe()` blocks (e.g. `tests/habit.test.ts` has separate blocks for
@@ -68,15 +85,37 @@ defined in `package.json` — `npm test` is the only test entry point.
   the same pattern with a comment noting it mirrors `sequence.test.ts`. There is no
   shared `tests/helpers.ts` file — copy the pattern from the closest existing test
   file when a new fixture builder is needed.
-- **Only pure `lib/` functions are covered.** Per `CLAUDE.md`, `npm test` runs
-  "Vitest unit tests (pure lib functions — no DB/API needed)." API routes
-  (`app/api/**/route.ts`), Prisma-backed modules (`lib/prisma.ts`, `lib/settings.ts`),
-  and Claude/Google/TTS integration code (`lib/extract-cards.ts`, `lib/google-docs.ts`,
-  `lib/tts.ts`, `lib/gloss.ts`) have no automated test coverage — they depend on a
-  live database or external API and are validated manually instead.
-- **Currently covered modules:** `lib/sequence.ts`, `lib/card-key.ts`,
-  `lib/proficiency.ts`, `lib/known-words.ts`, `lib/habit.ts`, `lib/lesson-excerpt.ts`,
-  `lib/sentence-selection.ts`, `lib/sentence-match.ts`.
+- **Integration tests against a real DB:** `tests/review-route.test.ts` is the
+  template for exercising a real route handler. Key pattern: `lib/prisma.ts` reads
+  `process.env.DATABASE_URL` at module-evaluation time and caches a singleton, and
+  ESM static imports are hoisted — so the test sets `DATABASE_URL` to the temp
+  SQLite file *first* and then dynamic-imports `../lib/prisma` and the route module
+  inside `beforeAll` (the same env-ordering technique `CLAUDE.md` documents for
+  `scripts/local-resync.mts`). The handler is invoked directly with a minimal fake
+  request object (`{ json: async () => body }`), not a real `NextRequest`.
+- **Mostly pure `lib/` functions are covered.** Per `CLAUDE.md`, `npm test` runs
+  "Vitest unit tests (pure lib functions — no DB/API needed)." API routes (other
+  than the `/api/review` idempotency regression test above), Prisma-backed modules
+  (`lib/settings.ts`, `lib/dashboard.ts`, `lib/study-cards.ts`), and Claude/Google/
+  TTS integration code (`lib/google-docs.ts`, `lib/tts.ts`, `lib/gloss.ts`) have no
+  automated test coverage — they depend on a live database or external API and are
+  validated manually instead. (`lib/extract-cards.ts` is a partial exception: its
+  pure response-parsing function is tested; the Claude API call is not.)
+- **Currently covered (14 test files):**
+  - `tests/auth.test.ts` → `lib/auth.ts` (`isValidCronAuth`)
+  - `tests/card-key.test.ts` → `lib/card-key.ts`
+  - `tests/db-errors.test.ts` → `lib/db-errors.ts` (`isUniqueConstraintError`)
+  - `tests/extract-cards.test.ts` → `lib/extract-cards.ts` (`parseExtractionResponse` only)
+  - `tests/filter-components.test.ts` → `lib/filter-components.ts`
+  - `tests/habit.test.ts` → `lib/habit.ts`
+  - `tests/known-words.test.ts` → `lib/known-words.ts`
+  - `tests/lesson-excerpt.test.ts` → `lib/lesson-excerpt.ts`
+  - `tests/proficiency.test.ts` → `lib/proficiency.ts`
+  - `tests/review-history.test.ts` → `lib/review-history.ts` (`buildReviewWhere`, `isValidOpaqueId`, `mapReviewLogToDTO`)
+  - `tests/review-route.test.ts` → `app/api/review/route.ts` (integration: idempotent duplicate-replay regression guard, real POST handler against a temp SQLite DB)
+  - `tests/sentence-match.test.ts` → `lib/sentence-match.ts`
+  - `tests/sentence-selection.test.ts` → `lib/sentence-selection.ts`
+  - `tests/sequence.test.ts` → `lib/sequence.ts`
 
 ## Coverage Requirements
 

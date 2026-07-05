@@ -38,7 +38,8 @@ The project is a standard Next.js 16 App Router app using npm (see `package-lock
    `npx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script`,
    then apply only the new `CREATE TABLE`/`ALTER` statements against Turso via a
    throwaway `@libsql/client` `executeMultiple()` script (see existing examples in
-   `scripts/apply-graph-ddl.mjs` and `scripts/apply-sentence-ddl.mjs`). `prisma
+   `scripts/apply-graph-ddl.mjs`, `scripts/apply-sentence-ddl.mjs`, and
+   `scripts/apply-reviewlog-ddl.mjs`). `prisma
    studio` also cannot connect to `libsql://`; inspect data via a script or `turso db
    shell korean-study`.
 
@@ -52,7 +53,7 @@ All commands are run with `npm run <script>` (from `package.json` `scripts`):
 | `npm run build` | Production build. Runs `prisma generate` first, then `next build`. |
 | `npm run start` | Serves the production build produced by `npm run build`. |
 | `npm run lint` | Runs ESLint (`eslint`) over the project. Must pass with zero errors. |
-| `npm test` | Runs the Vitest suite (`vitest run`) — pure `lib/` unit tests, no DB or network access required. |
+| `npm test` | Runs the Vitest suite (`vitest run`) — tests in `tests/`: pure `lib/` unit tests plus API-route regression tests that seed a throwaway local SQLite file DB. No network access required. |
 | `npm run postinstall` | Runs automatically after `npm install`; regenerates the Prisma client (`prisma generate`). Not normally invoked directly. |
 
 Two commands are not in `package.json` scripts but are used routinely:
@@ -61,6 +62,33 @@ Two commands are not in `package.json` scripts but are used routinely:
 npx prisma generate   # regenerate the Prisma client after editing prisma/schema.prisma
 npx tsx scripts/local-resync.mts   # bulk re-extraction of all lessons, run locally (see docs/ARCHITECTURE.md)
 ```
+
+## Operational Scripts (`scripts/`)
+
+One-off and maintenance scripts, run locally against the database configured in
+`.env` (`node scripts/<name>.mjs` for plain JS, `npx tsx scripts/<name>.mts` for
+TypeScript scripts that import `lib/` modules):
+
+| Script | Purpose |
+|---|---|
+| `local-resync.mts` | Full re-extraction of all lessons locally (bypasses the 60 s Vercel function timeout). Idempotent — skips already-synced lessons by contentHash. |
+| `full-resync.mjs` | Drives repeated `POST /api/sync` calls against the live URL until `remaining=0`. Prefer `local-resync.mts` for bulk work. |
+| `relink-dependencies.mjs` | Retroactively rebuilds all `CardDependency` edges from stored `Card.components`. Idempotent. |
+| `retro-filter-cleanup.mts` | Re-applies the `filterComponents()` filter to all persisted `Card.components` rows and reconciles `CardDependency` edges. **Dry-run by default**; mutates data only with `--apply`. Idempotent. |
+| `wipe-card-data.mjs` | Deletes all `CardDependency`, `Sentence`, `CardReview`, `Card`, and `Lesson` rows (keeps `StudyDay` and `Setting`). Safe to re-run. |
+| `find-duplicates.mjs` | Fuzzy scan for near-duplicate card fronts; reports groups for manual review. Read-only. |
+| `check-edges.mjs` | Read-only diagnostic: `CardDependency` counts and most-recent edges. |
+| `dry-run-filter.mjs` | Read-only diagnostic: reports how many stored `components[]` entries the deck-lookup filter would drop, per card type. |
+| `debug-doc-structure.mjs` | Diagnostic: reports lessons with zero cards (ghost lessons from timed-out syncs). |
+| `reextract-lesson.mjs` | Re-runs card extraction for a single lesson by `orderIndex` (for lessons with 0 cards). |
+| `gen-icons.mjs` | Rasterizes `public/icon.svg` into the PNG icon set via `sharp`. Run after editing the SVG, then commit the PNGs. |
+
+One-time scripts already applied to the production database — do **not** re-run:
+`apply-graph-ddl.mjs`, `apply-sentence-ddl.mjs`, `apply-reviewlog-ddl.mjs` (DDL for
+the `CardDependency`, `Sentence`, and `ReviewLog` tables), `backfill-sentences.mjs`
+(converted legacy cloze columns into `Sentence` rows), `add-lesson-order.mjs`
+(backfilled `Lesson.orderIndex`), and `resequence-lessons.mjs` (reassigned
+`orderIndex` to document order).
 
 ## Code Style
 

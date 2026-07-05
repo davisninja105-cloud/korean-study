@@ -60,7 +60,9 @@ variables are strictly required versus which degrade gracefully.
    For a purely local database, `DATABASE_URL=file:./dev.db` is enough — you do not need
    `DATABASE_AUTH_TOKEN` unless `DATABASE_URL` points at a `libsql://` Turso instance. See
    `docs/CONFIGURATION.md` for the complete variable list (including `TTS_PROVIDER`,
-   `ELEVENLABS_API_KEY`, and `KOREAN_BLOB_READ_WRITE_TOKEN`) and what each one does.
+   `ELEVENLABS_API_KEY`, `KOREAN_BLOB_READ_WRITE_TOKEN`, and `CRON_SECRET`) and what each
+   one does. `CRON_SECRET` is production-only — it authenticates the daily Vercel Cron
+   auto-sync (`GET /api/cron/sync`) and is not needed for local development.
 
 4. Apply the database schema. `prisma db push` / `prisma migrate` work normally against a
    local `file:` database (they only fail against `libsql://` Turso — see `CLAUDE.md` §
@@ -90,12 +92,23 @@ directly. Each sync call processes one lesson from the configured Google Doc
 Vercel 60s function-timeout constraint that limits the hosted `/api/sync` endpoint to one
 lesson per call).
 
+In production, sync also runs automatically once a day: `vercel.json` defines a Vercel
+Cron job (`0 10 * * *`, 10:00 UTC) that calls `GET /api/cron/sync`, authenticated via a
+`CRON_SECRET` bearer token checked in `middleware.ts`. This does not run in local dev —
+use the manual sync paths above.
+
+As you study, every grade you submit is recorded in the `ReviewLog` table (in addition to
+the live FSRS state in `CardReview`); the full review history is browsable at `/history`,
+optionally filtered per card.
+
 ## Common Setup Issues
 
-- **Login returns a 500, or the app 500s on any authenticated page.** `APP_PASSWORD` or
-  `AUTH_SECRET` is unset in `.env.local`. `POST /api/login` needs `APP_PASSWORD`, and
-  `computeAuthToken()` (`lib/auth.ts`) throws if `AUTH_SECRET` is missing — this affects
-  every route behind `middleware.ts`, not just login.
+- **Login 500s, or you keep bouncing back to `/login` after entering the password.**
+  `APP_PASSWORD` or `AUTH_SECRET` is unset in `.env.local`. `POST /api/login` returns a
+  500 if `APP_PASSWORD` is missing, and throws if `AUTH_SECRET` is missing
+  (`computeAuthToken()` in `lib/auth.ts` requires it). With `AUTH_SECRET` unset,
+  `middleware.ts` fails closed — the session cookie never validates, so pages redirect
+  back to `/login` and API calls get a 401 even after a "successful" login.
 - **Sync fails or the Google Doc can't be read.** Confirm `GOOGLE_SERVICE_ACCOUNT_KEY` is
   the full service-account JSON as a single-line string, and that the target Google Doc
   (`NEXT_PUBLIC_GOOGLE_DOC_ID`) is shared with that service account's email (link-view or
@@ -104,8 +117,7 @@ lesson per call).
   Turso URL — the Prisma schema engine only speaks `file:`/postgres and cannot push
   schema changes to Turso directly. Use a local `file:` database for `db push`, or follow
   the manual DDL workflow in `CLAUDE.md` § Schema changes for Turso.
-  `npx prisma studio` has the same limitation and will not connect to `libsql://`.
-  either.
+  `npx prisma studio` has the same limitation and will not connect to `libsql://` either.
 - **No audio plays when tapping the speaker icon.** `KOREAN_BLOB_READ_WRITE_TOKEN` (or
   `TTS_PROVIDER`/`ELEVENLABS_API_KEY`) is unset. `GET /api/tts` returns `503` in this
   case and `components/AudioButton.tsx` intentionally falls back to the browser's
@@ -122,6 +134,8 @@ lesson per call).
 - `docs/ARCHITECTURE.md` — system overview, component diagram, and data flow.
 - `CLAUDE.md` — full architecture and conventions reference, including the Turso schema
   DDL workflow and the Vercel 60-second function timeout constraint.
-- `docs/DEVELOPMENT.md` (once available) — local dev workflow, build commands, code
-  style, and PR conventions.
-- `docs/TESTING.md` (once available) — running the Vitest unit test suite (`npm test`).
+- `docs/DEVELOPMENT.md` — local dev workflow, build commands, code style, and
+  conventions.
+- `docs/TESTING.md` — running the Vitest unit test suite (`npm test`).
+- `docs/API.md` — API route reference.
+- `docs/DEPLOYMENT.md` — Vercel + Turso deployment, including the daily cron sync setup.

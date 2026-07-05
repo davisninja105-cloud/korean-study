@@ -14,11 +14,12 @@ these are set as Vercel project environment variables.
 |---|---|---|---|
 | `ANTHROPIC_API_KEY` | Yes | — | Claude API key. Read implicitly by the `Anthropic()` SDK client constructor (`lib/extract-cards.ts`, `lib/generate-practice.ts`, `lib/gloss.ts`) — no explicit `process.env` read in app code, but the SDK throws at call time if unset. |
 | `GOOGLE_SERVICE_ACCOUNT_KEY` | Yes | — | Full Google service-account JSON, as a single-line string. Used to mint OAuth2 tokens for the Google Docs API (`lib/google-docs.ts`, read-only `documents.readonly` scope) and, when `TTS_PROVIDER=google`, for Google Cloud Text-to-Speech (`lib/tts.ts`, `cloud-platform` scope). The target Google Doc must be shared with the service account (link-view or explicit share). |
-| `NEXT_PUBLIC_GOOGLE_DOC_ID` | Yes | — | ID of the Google Doc to sync from. `NEXT_PUBLIC_` prefix makes it available client-side; referenced in `components/HomeClient.tsx` and `components/SyncPanel.tsx`. |
+| `NEXT_PUBLIC_GOOGLE_DOC_ID` | Yes | — | ID of the Google Doc to sync from. `NEXT_PUBLIC_` prefix makes it available client-side; referenced in `components/HomeClient.tsx`, `components/SyncPanel.tsx`, and server-side in `app/api/cron/sync/route.ts` (the cron route returns 500 if it's unset). |
 | `DATABASE_URL` | Yes | `file:./prisma/dev.db` | Database connection string. `libsql://…` for Turso in production; `file:./dev.db` (or the fallback path) for a local SQLite file in dev. Read directly in `lib/prisma.ts` with a fallback applied if unset. |
 | `DATABASE_AUTH_TOKEN` | Conditional | — | Turso auth token. Required whenever `DATABASE_URL` is a `libsql://` URL; not needed for a local `file:` database. Read in `lib/prisma.ts`. |
 | `APP_PASSWORD` | Yes | — | The single shared login password. `POST /api/login` returns 500 if this is unset, and 401 if the submitted password doesn't match (`app/api/login/route.ts`). |
 | `AUTH_SECRET` | Yes | — | Random string used to sign the HMAC-SHA256 session cookie (`lib/auth.ts`). `computeAuthToken()` throws if this is unset. |
+| `CRON_SECRET` | Conditional | — | Bearer token that authenticates the daily Vercel Cron request to `GET /api/cron/sync`. Checked in `middleware.ts` via `isValidCronAuth()` (`lib/auth.ts`), which is **fail-closed**: an unset or empty secret never validates, so without it every cron request is rejected (the rest of the app is unaffected). Vercel sets the matching `Authorization: Bearer <CRON_SECRET>` header on cron invocations automatically when this variable is defined in the project. |
 | `TTS_PROVIDER` | No | `'google'` | Selects the active TTS backend: `'google'` or `'elevenlabs'`. Read in `lib/tts.ts` (`providers[process.env.TTS_PROVIDER ?? 'google']`). Currently set to `'elevenlabs'` in this project's `.env.local`. |
 | `ELEVENLABS_API_KEY` | Conditional | — | Required only when `TTS_PROVIDER=elevenlabs`. Read in `lib/tts.ts`; the ElevenLabs provider throws without it. |
 | `KOREAN_BLOB_READ_WRITE_TOKEN` | No (degrades) | — | Vercel Blob store token used to cache synthesized TTS audio. Must point at a **public** Blob store. `app/api/tts/route.ts` falls back to `BLOB_READ_WRITE_TOKEN` if this is unset, and returns HTTP 503 if neither is set — `components/AudioButton.tsx` then falls back to `window.speechSynthesis`. |
@@ -39,6 +40,9 @@ There is no dedicated JSON/YAML/TOML app-config file. Configuration is split bet
    Turso-specific DDL workflow — `prisma db push`/`migrate` do not work against `libsql://`).
 3. **`Setting` table rows** — runtime-adjustable app preferences, set via the Settings UI
    (`/settings`) or `PUT /api/settings`, not via files.
+4. **`vercel.json`** — declares the single Vercel Cron job: `GET /api/cron/sync`, schedule
+   `0 10 * * *` (daily at 10:00 UTC). The cron request is authenticated by `CRON_SECRET`
+   (see the table above).
 
 There is no `next.config.ts` customization beyond the default scaffold — `next.config.ts`
 currently exports an empty `NextConfig` object.
@@ -57,8 +61,9 @@ valid range before writing, so the DB always holds a valid value.
 | `sessionSize` | number (cards) | `20` | Clamped 5–100 | `getSessionSize` / `setSessionSize` |
 | `readingTextScale` | number | `1` | Clamped 0.9–1.4, rounded to 1 decimal | `getReadingTextScale` / `setReadingTextScale` |
 | `readingAid` | boolean (stored as `'0'`/`'1'`) | `false` | — | `getReadingAid` / `setReadingAid` |
-| `buttonColor` | hex string | `#3b82f6` (blue-500) | Must match `/^#[0-9a-fA-F]{6}$/`; falls back to default if invalid | `getButtonColor` / `setButtonColor` |
-| `rewardColor` | hex string | `#f97316` (orange-500) | Must match `/^#[0-9a-fA-F]{6}$/`; falls back to default if invalid | `getRewardColor` / `setRewardColor` |
+| `buttonColor` | hex string | `#3b82f6` (blue-500) | Must match `/^#[0-9a-fA-F]{6}$/`; stored lowercased; falls back to default if invalid | `getButtonColor` / `setButtonColor` |
+| `rewardColor` | hex string | `#f97316` (orange-500) | Must match `/^#[0-9a-fA-F]{6}$/`; stored lowercased; falls back to default if invalid | `getRewardColor` / `setRewardColor` |
+| `lastAutoSyncedAt` | ISO timestamp string | `null` (never synced) | Written only by `GET /api/cron/sync` after a fully successful cron sync (`failed === 0`); read-only in `GET /api/settings` (not settable via `PUT`) | `getLastAutoSyncedAt` / `setLastAutoSyncedAt` |
 | `gloss:<normalizedWord>` | JSON (`GlossResult`) | — | Non-fatal cache; not exposed in Settings UI | `getCachedGloss` / `setCachedGloss` (`lib/gloss.ts`) |
 
 The `DEFAULT_ACTION_COLOR`/`DEFAULT_REWARD_COLOR` constants live in `lib/palettes.ts`, which
@@ -84,6 +89,10 @@ it is stored client-side in `localStorage` (key `theme`), not in the `Setting` t
 - `DATABASE_AUTH_TOKEN` — required only when `DATABASE_URL` points at `libsql://` (Turso); not
   needed against a local `file:` database.
 - `ELEVENLABS_API_KEY` — required only when `TTS_PROVIDER=elevenlabs`.
+- `CRON_SECRET` — required only for the daily auto-sync: `middleware.ts` rejects `GET
+  /api/cron/sync` when it is unset (fail-closed `isValidCronAuth()`), so cron runs silently
+  do nothing until it is configured. Manual sync (Settings ▸ Advanced, pull-to-refresh) is
+  unaffected.
 
 **Optional, with graceful degradation:**
 - `KOREAN_BLOB_READ_WRITE_TOKEN` / `BLOB_READ_WRITE_TOKEN` — `GET /api/tts` returns 503 when
@@ -118,7 +127,7 @@ Environment separation instead works as follows:
 - **Local `.env` / `.env.local`:** used for `next dev`. There is no `.env.production` or
   `.env.development` file in this repo — Vercel project environment variables are the sole
   source of truth for production.
-- **Vercel environment variables:** <!-- VERIFY: exact production values for DATABASE_URL, DATABASE_AUTH_TOKEN, ANTHROPIC_API_KEY, GOOGLE_SERVICE_ACCOUNT_KEY, APP_PASSWORD, AUTH_SECRET, ELEVENLABS_API_KEY, and KOREAN_BLOB_READ_WRITE_TOKEN are set in the Vercel dashboard for the `jason-d-28-projects/korean-study` project — not discoverable from the repository. --> All required variables listed above must be set for Preview and Production environments in the Vercel project dashboard, or via `npx vercel env add`.
+- **Vercel environment variables:** <!-- VERIFY: exact production values for DATABASE_URL, DATABASE_AUTH_TOKEN, ANTHROPIC_API_KEY, GOOGLE_SERVICE_ACCOUNT_KEY, APP_PASSWORD, AUTH_SECRET, ELEVENLABS_API_KEY, KOREAN_BLOB_READ_WRITE_TOKEN, and CRON_SECRET are set in the Vercel dashboard for the `jason-d-28-projects/korean-study` project — not discoverable from the repository. --> All required variables listed above must be set for Preview and Production environments in the Vercel project dashboard, or via `npx vercel env add`.
 - **DB-backed settings** (`Setting` table) are inherently per-database, so local dev and
   production naturally have independent values — there is no seed/sync step between them.
 

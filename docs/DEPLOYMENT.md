@@ -14,6 +14,7 @@ and no alternate platform config (`netlify.toml`, `fly.toml`, `railway.json`,
 | Signal | Value |
 |---|---|
 | `.vercel/project.json` | Present — project is linked (`projectName: "korean-study"`) |
+| `vercel.json` | Present — defines one cron job (`/api/cron/sync`, daily); no build/routing overrides |
 | Git remote | `https://github.com/davisninja105-cloud/korean-study.git` |
 | Database | Turso (libSQL), via `DATABASE_URL` (`libsql://…`) + `DATABASE_AUTH_TOKEN` |
 | CI config (`.github/workflows/`) | None found in the repository |
@@ -50,6 +51,42 @@ something derivable from repo contents. -->
 scripts (`package.json`) but there is no CI workflow file wiring them into the deploy
 path — running them before pushing is a manual developer step, not enforced automatically.
 
+## Scheduled Jobs (Vercel Cron)
+
+`vercel.json` defines one cron job:
+
+```json
+{
+  "crons": [
+    { "path": "/api/cron/sync", "schedule": "0 10 * * *" }
+  ]
+}
+```
+
+- **What it does:** Vercel invokes `GET /api/cron/sync` once daily at 10:00 UTC. The
+  route (`app/api/cron/sync/route.ts`) runs the same Google Doc sync pipeline as manual
+  sync (`runSync()` from `lib/sync.ts`), reading the document ID from
+  `NEXT_PUBLIC_GOOGLE_DOC_ID`. It accepts no request body or parameters.
+- **Authentication:** `middleware.ts` handles `/api/cron/sync` separately from the
+  session-cookie gate — it requires an `Authorization: Bearer <CRON_SECRET>` header
+  (`isValidCronAuth` in `lib/auth.ts`) and returns a clean `401` (not a `/login`
+  redirect) when the header is missing or wrong. Vercel attaches this bearer header to
+  cron invocations automatically when a `CRON_SECRET` environment variable is set on the
+  project. **If `CRON_SECRET` is unset, all cron requests are rejected** —
+  `isValidCronAuth` fails closed on a missing/empty secret.
+- **Failure semantics:** `runSync()` catches per-lesson failures internally, so the
+  route only stamps the `lastAutoSyncedAt` setting when `result.failed === 0`; a partial
+  failure logs a warning and leaves the timestamp stale rather than masking the failure.
+- **Timeout caveat:** the route sets `maxDuration = 300`, but the Vercel Hobby plan
+  hard-caps functions at 60 seconds regardless — the setting only takes effect on a paid
+  plan. The sync still processes one lesson per invocation, so a single cron run stays
+  within the limit; a multi-lesson backlog drains over successive days (or via manual
+  sync taps / `scripts/local-resync.mts`).
+
+<!-- VERIFY: Whether CRON_SECRET is actually set in the Vercel project's production
+environment (and therefore whether the daily cron currently succeeds) is not
+discoverable from repository contents. -->
+
 ## Environment Setup
 
 Production requires the same environment variables documented in full in
@@ -68,6 +105,7 @@ project's environment variables (Production and Preview):
 | `TTS_PROVIDER` | No (defaults to `'google'`; set to `'elevenlabs'` per `docs/CONFIGURATION.md`) |
 | `ELEVENLABS_API_KEY` | Conditional (required when `TTS_PROVIDER=elevenlabs`) |
 | `KOREAN_BLOB_READ_WRITE_TOKEN` | No — degrades gracefully (`/api/tts` returns 503) |
+| `CRON_SECRET` | Conditional — required for the daily cron sync to run (without it, `/api/cron/sync` returns 401 for every invocation; the rest of the app is unaffected) |
 
 Set these via the Vercel dashboard (Project → Settings → Environment Variables) or the CLI:
 
@@ -96,8 +134,8 @@ client, it does not push DDL).
 ## Rollback Procedure
 
 No rollback automation or scripted procedure exists in the repository (no rollback step in
-any CI workflow, and no `vercel.json` rollback configuration). Rollback relies on Vercel's
-built-in deployment history:
+any CI workflow; `vercel.json` contains only the cron definition, no rollback or routing
+configuration). Rollback relies on Vercel's built-in deployment history:
 
 1. Open the Vercel dashboard for the `korean-study` project → **Deployments**.
 2. Locate the last known-good deployment.

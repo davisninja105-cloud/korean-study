@@ -17,15 +17,17 @@ prerequisite sequencing, dedup keys, Korean text matching) lives in pure,
 side-effect-free `lib/` modules shared by both server pages and API routes. External
 services — Claude (card extraction, tap-to-gloss), Google Docs API (lesson source),
 and a TTS provider (ElevenLabs or Google Neural2) with Vercel Blob caching — are
-called only from server-side code, never directly from the browser.
+called only from server-side code, never directly from the browser. Sync runs either
+on demand (user action) or once daily via a Vercel Cron job.
 
 ## Component Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                     Browser (client components)                      │
-│   HomeClient · StudyClient → StudySession · CardsClient · Habits-    │
-│   Client · GlossProvider · AudioButton · Nav                         │
+│   HomeClient · StudyClient → StudySession (→ Flashcard/Multiple-     │
+│   Choice/FillBlank modes) · CardsClient · HabitsClient ·             │
+│   HistoryClient · GlossProvider · AudioButton · Nav                  │
 └───────────────────────────────┬───────────────────────────────────┘
                                  │ fetch (JSON)
                                  ▼
@@ -52,14 +54,19 @@ called only from server-side code, never directly from the browser.
 └─────────────────────────────────────────────────────────────────────┘
 
 middleware.ts (Edge) — HMAC cookie gate — wraps every request above
+(exception: /api/cron/sync authenticates via a CRON_SECRET bearer token instead)
 ```
 
 ## Data Flow
 
 ### 1. Content ingestion (sync)
 
-1. User triggers a sync (Home pull-to-refresh, or Settings → Advanced).
-2. `POST /api/sync` calls `lib/google-docs.ts` to fetch the `수업 노트` tab of the
+1. A sync is triggered either by the user (Home pull-to-refresh, or Settings →
+   Advanced → `POST /api/sync`) or by the daily Vercel Cron job
+   (`GET /api/cron/sync`, scheduled in `vercel.json`, authenticated by a
+   `CRON_SECRET` bearer check in `middleware.ts`). Both entry points call the same
+   shared pipeline, `runSync()` in `lib/sync.ts`.
+2. `runSync()` calls `lib/google-docs.ts` to fetch the `수업 노트` tab of the
    configured Google Doc, splitting it into lessons at horizontal rules and capturing
    bold/underline/highlight spans per lesson as an `emphasized[]` list.
 3. Each lesson body is hashed (`contentHash`) to detect content that hasn't been
@@ -68,11 +75,17 @@ middleware.ts (Edge) — HMAC cookie gate — wraps every request above
    Vercel's 60s function limit), the lesson text, emphasized terms, and the existing
    deck's normalized fronts are sent to Claude (`claude-opus-4-8`, adaptive thinking,
    streamed) via `lib/extract-cards.ts`. Extraction is exhaustive — every distinct
-   word, grammar pattern, or phrase taught becomes a card.
+   word, grammar pattern, or phrase taught becomes a card. Per-lesson failures are
+   reported with a short doc excerpt (`lib/lesson-excerpt.ts`) so the user can find
+   the failing lesson in their Google Doc.
 5. Cards are upserted by `normalizedFront` (DB-enforced unique dedup key from
-   `lib/card-key.ts`). `Sentence` rows (1–3 per card) are created alongside.
-6. After all upserts, each card's `components[]` prerequisite lemmas are resolved to
-   `CardDependency` edges against other cards' `normalizedFront` values.
+   `lib/card-key.ts`). `Sentence` rows (1–3 per card) are created alongside. Each
+   card's raw `components[]` list is filtered through
+   `lib/filter-components.ts:filterComponents()` so only lemmas that resolve to a
+   real deck card are persisted.
+6. After all upserts, `lib/link-dependencies.ts:resolveDependencyEdges()` resolves
+   each card's `components[]` prerequisite lemmas to `CardDependency` edges against
+   other cards' `normalizedFront` values.
 7. The response reports `remaining` so the client can re-trigger sync until the
    backlog drains. Bulk re-extraction of the whole doc runs locally via
    `scripts/local-resync.mts` (bypasses the Vercel timeout).
@@ -93,10 +106,16 @@ middleware.ts (Edge) — HMAC cookie gate — wraps every request above
 4. Every sentence is annotated with `unknownCount` via `lib/known-words.ts`, and all
    Prisma `Date` fields are serialized to ISO strings per the DTO contract
    (`lib/dto.ts`) before the data reaches the client.
-5. `StudySession.tsx` consumes cards in server order. Grading is optimistic: FSRS is
-   computed client-side (`lib/fsrs.ts:reviewCard()`) and the queue advances
-   immediately; `POST /api/review` persists the result in the background
-   (fire-and-forget).
+5. `StudySession.tsx` consumes cards in server order and owns all session state
+   (queue, stats, undo); the per-mode UIs are presentational sub-components
+   (`FlashcardMode.tsx`, `MultipleChoiceMode.tsx`, `FillBlankMode.tsx`). Grading is
+   optimistic: FSRS is computed client-side (`lib/fsrs.ts:reviewCard()`) and the
+   queue advances immediately; `POST /api/review` persists the result in the
+   background. Each grade carries a client-generated `idempotencyKey` — the route
+   updates `CardReview` and appends a `ReviewLog` row in one transaction, and a
+   retried duplicate returns 200 idempotently (`ReviewLog.idempotencyKey @unique`,
+   with `lib/db-errors.ts` detecting the UNIQUE violation shapes the libSQL adapter
+   produces). A failed background save surfaces a `Toast`.
 6. `GET /api/cards/due` calls the same `getStudyCards()` function, used when the
    client re-fetches after changing the lesson-range filter.
 
@@ -126,21 +145,39 @@ unset).
 `lib/generate-practice.ts` to produce ephemeral extra exercises. Nothing here is
 persisted to the database.
 
+### 6. Review history
+
+`app/history/page.tsx` (an async RSC, `force-dynamic`) renders the first page of the
+review feed via `getReviewHistory()` (`lib/review-history.ts`), optionally filtered
+by `?cardId=`. `HistoryClient.tsx` loads subsequent pages through the
+cursor-paginated `GET /api/reviews` endpoint, which calls the same
+`getReviewHistory()` pipeline (25 rows per page, keyed by the last-seen
+`ReviewLog.id`).
+
 ## Key Abstractions
 
-- **`CardDTO` / `SentenceDTO` / `ReviewDTO` / `LessonDTO` / `StatsDTO` /
-  `ActivityDTO`** (`lib/dto.ts`) — the single serialization contract for every value
-  that crosses the RSC-to-client prop boundary. Every `DateTime` field is typed
-  `string` (ISO), never a raw `Date`.
+- **`CardDTO` / `SentenceDTO` / `ReviewDTO` / `ReviewLogDTO` / `LessonDTO` /
+  `StatsDTO` / `ActivityDTO`** (`lib/dto.ts`) — the single serialization contract
+  for every value that crosses the RSC-to-client prop boundary. Every `DateTime`
+  field is typed `string` (ISO), never a raw `Date`.
 - **`normalizeFront(front)`** (`lib/card-key.ts`) — pure dedup-key function: strips
   trailing English glosses in parentheses, NFC-normalizes, collapses whitespace.
   Backs `Card.normalizedFront @unique` and is reused by sync upserts, the card
   editor, and operational scripts.
+- **`runSync(documentId)`** (`lib/sync.ts`) — the whole Google Doc → cards ingestion
+  pipeline as one server-only function, shared by the manual `POST /api/sync` route
+  and the daily `GET /api/cron/sync` cron route.
 - **`sequenceCards()` / `selectSessionCards()`** (`lib/sequence.ts`) — the
   foundation-first session builder. `selectSessionCards` expands a seed set downward
   through the prerequisite graph before applying the size cap; `sequenceCards` sorts
   ascending by `depth − urgencyBoost` (urgency capped via `URGENCY_SCALE`/
   `MAX_BOOST`). Cycle-safe visited-stack DFS.
+- **`resolveDependencyEdges()`** (`lib/link-dependencies.ts`) — pure resolver from
+  cards' raw `components[]` strings to deduped `{cardId, prerequisiteId}` edges via
+  a `normalizedFront → cardId` map; the single implementation shared by the sync
+  path and the operational relink/cleanup scripts. Paired with
+  `filterComponents()` (`lib/filter-components.ts`), which drops component lemmas
+  that don't resolve to any real deck card before they are persisted.
 - **`reviewCard()`** (`lib/fsrs.ts`) — wraps `ts-fsrs` to turn a grade (1–4) into an
   updated `CardReview` state (stability, difficulty, next review date).
   `formatInterval()` renders the result as mastery-language copy.
@@ -152,45 +189,57 @@ persisted to the database.
   of a card's 1–3 example sentences to show: least-unknown tier first, tie-broken by
   a per-card hash rotation that varies with review count, with a blank-safety
   override for Recall/fill-blank modes.
+- **`getReviewHistory()`** (`lib/review-history.ts`) — server-only cursor-paginated
+  `ReviewLog` feed shared by the `/history` RSC page and `GET /api/reviews`
+  (mirrors the `getStudyCards()` shared-pipeline pattern).
 - **`TtsProvider` interface** (`lib/tts.ts`) — swappable TTS backend; adding a
   provider means a new implementation plus an env flip, call sites never change.
 
 ## Directory Structure Rationale
 
 - **`app/`** — Next.js App Router routes. Each top-level route (`/`, `/study`,
-  `/cards`, `/habits`, `/settings`, `/wrapped`, `/login`) has a thin async
-  `page.tsx` (RSC, data-fetch only, no hooks) that renders exactly one
+  `/cards`, `/habits`, `/history`, `/settings`, `/wrapped`, `/login`) has a thin
+  async `page.tsx` (RSC, data-fetch only, no hooks) that renders exactly one
   `*Client.tsx` component from `components/`.
-- **`app/api/`** — REST-style API route handlers (`sync`, `cards`, `cards/due`,
-  `cards/[id]`, `review`, `review/undo`, `generate`, `gloss`, `gloss/preload`, `tts`,
-  `activity`, `lessons`, `stats`, `settings`, `login`). Handlers validate input,
-  delegate to `lib/`/Prisma, and return JSON; no business logic lives in routes
-  themselves.
+- **`app/api/`** — REST-style API route handlers (`sync`, `cron/sync`, `cards`,
+  `cards/due`, `cards/[id]`, `review`, `review/undo`, `reviews`, `generate`,
+  `gloss`, `gloss/preload`, `tts`, `activity`, `lessons`, `stats`, `settings`,
+  `login`). Handlers validate input, delegate to `lib/`/Prisma, and return JSON; no
+  business logic lives in routes themselves.
 - **`lib/`** — Business logic. Pure, dependency-free modules (e.g. `card-key.ts`,
-  `sequence.ts`, `sentence-match.ts`, `habit.ts`, `palettes.ts`) are safe to import
-  from both server and client code; server-only modules that touch Prisma or the
-  Anthropic/Google SDKs (`prisma.ts`, `extract-cards.ts`, `google-docs.ts`,
-  `study-cards.ts`, `dashboard.ts`) are only ever imported from `app/` or
-  `app/api/`.
+  `sequence.ts`, `sentence-match.ts`, `filter-components.ts`,
+  `link-dependencies.ts`, `db-errors.ts`, `habit.ts`, `palettes.ts`) are safe to
+  import from both server and client code; server-only modules that touch Prisma or
+  the Anthropic/Google SDKs (`prisma.ts`, `sync.ts`, `extract-cards.ts`,
+  `google-docs.ts`, `study-cards.ts`, `review-history.ts`, `dashboard.ts`) are only
+  ever imported from `app/` or `app/api/`.
 - **`components/`** — UI. Presentational/interactive React components; the
-  `*Client.tsx` files (`StudyClient`, `CardsClient`, `HomeClient`, `HabitsClient`)
-  are the client-side shells rendered by their matching RSC page and own all
-  `'use client'` state for that route.
+  `*Client.tsx` files (`StudyClient`, `CardsClient`, `HomeClient`, `HabitsClient`,
+  `HistoryClient`) are the client-side shells rendered by their matching RSC page
+  and own all `'use client'` state for that route. `StudySession.tsx` owns study
+  session state and delegates rendering to the presentational mode components
+  (`FlashcardMode`, `MultipleChoiceMode`, `FillBlankMode`).
 - **`prisma/`** — `schema.prisma`, the single source of truth for the database
-  shape (7 models: `Lesson`, `Card`, `Sentence`, `CardReview`, `CardDependency`,
-  `StudyDay`, `Setting`).
+  shape (8 models: `Lesson`, `Card`, `Sentence`, `CardReview`, `ReviewLog`,
+  `CardDependency`, `StudyDay`, `Setting`).
 - **`scripts/`** — One-time or operational scripts run locally against Turso
-  (`local-resync.mts`, `wipe-card-data.mjs`, `apply-graph-ddl.mjs`,
-  `relink-dependencies.mjs`, `find-duplicates.mjs`, `full-resync.mjs`,
-  `gen-icons.mjs`) — used for bulk operations that would exceed Vercel's function
-  timeout, or one-off schema/data migrations against the libSQL database.
-  `tests/` — Vitest unit tests for pure `lib/` functions (no DB or API dependency).
+  (`local-resync.mts`, `wipe-card-data.mjs`, `relink-dependencies.mjs`,
+  `retro-filter-cleanup.mts`, `find-duplicates.mjs`, `full-resync.mjs`,
+  `gen-icons.mjs`, plus one-off DDL/backfill scripts such as
+  `apply-graph-ddl.mjs`, `apply-reviewlog-ddl.mjs`, `backfill-sentences.mjs`) —
+  used for bulk operations that would exceed Vercel's function timeout, or one-off
+  schema/data migrations against the libSQL database.
+- **`tests/`** — Vitest unit tests for pure `lib/` functions and route-level logic
+  (no DB or API dependency), run via `npm test`.
 - **`middleware.ts`** — Edge middleware; the single authentication gate in front of
-  every page and API route except `/login` and `/api/login`.
+  every page and API route except `/login` and `/api/login`. The `/api/cron/sync`
+  path is authenticated separately via a `CRON_SECRET` bearer token
+  (`lib/auth.ts:isValidCronAuth()`) so Vercel Cron requests never hit the cookie
+  logic.
 
 ## Database Schema Overview
 
-Seven Prisma models, backed by Turso (libSQL) in production and a local SQLite file
+Eight Prisma models, backed by Turso (libSQL) in production and a local SQLite file
 in development, accessed through the same `@prisma/adapter-libsql`-backed client
 (`lib/prisma.ts`):
 
@@ -207,6 +256,9 @@ in development, accessed through the same `@prisma/adapter-libsql`-backed client
   `prerequisiteId`), unique per pair, resolved from `Card.components` at sync time.
 - **`CardReview`** — one-to-one FSRS state per card (stability, difficulty, state,
   reps, lapses, `nextReview`).
+- **`ReviewLog`** — an append-only row per graded review: the grade (1–4), the
+  resulting post-update FSRS snapshot, and a unique `idempotencyKey` so retried
+  saves are deduplicated. Cascade-deleted with its card; backs the `/history` feed.
 - **`StudyDay`** — per-user-local-day active study time and review count, keyed by a
   `"YYYY-MM-DD"` habit-day string (not raw UTC date).
 - **`Setting`** — generic key/value app settings (theme colors, goal seconds,
@@ -225,6 +277,9 @@ in development, accessed through the same `@prisma/adapter-libsql`-backed client
   `prisma migrate diff --from-empty --to-schema … --script`, and applying only the
   new statements against Turso via `@libsql/client`'s `executeMultiple()`.
 - **Single-tenant, one shared password.** There is no user model or per-user data
-  isolation; `middleware.ts` gates the whole app behind one HMAC-signed cookie.
-- **No background workers or queues.** All processing (sync, extraction, gloss,
-  TTS) is triggered synchronously by a user action inside a request handler.
+  isolation; `middleware.ts` gates the whole app behind one HMAC-signed cookie
+  (with the cron route as the sole bearer-token exception).
+- **No background workers or queues.** The only scheduled process is the daily
+  Vercel Cron hit to `/api/cron/sync` (defined in `vercel.json`); all other
+  processing (sync, extraction, gloss, TTS) is triggered synchronously by a user
+  action inside a request handler.
