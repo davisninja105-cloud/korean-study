@@ -74,53 +74,20 @@ Last activity: 2026-07-05 — Milestone v1.4 completed and archived
 
 ### Decisions
 
-Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decisions for v1.4:
-
-- Phase order is dependency-driven (per research SUMMARY.md): (16) filter fix first — standalone, lowest risk, and its correctness gates whether unattended cron sync is safe to enable; (17) ReviewLog schema + idempotent write path before (18) the history page — the DDL-then-code split is a hard Turso constraint and the page is only as trustworthy as the write path; (19) cron last — highest blast-radius (first route reachable without the session cookie).
-- Filter (GRAPH-03/04) resolves components by `normalizeFront()` deck-lookup, NOT literal sentence-text containment — research Reconciliation #2: substring matching would gut abstract grammar-pattern edges, the opposite of the milestone's intent. Dry-run the corpus (GRAPH-05) before wiring into the write path.
-- ReviewLog idempotency (HIST-02) is core scope, not a stretch — client-generated key + `prisma.$transaction([cardReview.update, reviewLog.create])` (array form, sidesteps Turso interactive-transaction uncertainty). Undo cancels in-flight retries (HIST-03); ReviewLog stays append-only, undo never mutates rows (HIST-06).
-- Zero new npm dependencies expected — all three features build on platform config (Vercel Cron + `vercel.json` + `CRON_SECRET`), one Prisma model via the manual Turso-DDL workaround, and reuse of existing pure `lib/` helpers.
-- [Phase 16]: filterComponents retains components purely by deck-lookup (normalizeFront direct match or splitParticle stem fallback), never by sentence-text containment, so abstract grammar patterns like ~(으)면 are preserved (GRAPH-03)
-- [Phase 16]: Human-approved corpus drop-rate baseline: grammar 8.0% (27/337), vocabulary 24.9% (539/2169), phrase 21.5% (53/246), whole-corpus 22.5% (619/2752) — grammar's low drop rate confirms no Pitfall 4 anomaly; plan 16-04 will compare its cleanup counts against this baseline
-- [Phase 16]: parseExtractionResponse exported as single pure entry point for salvage + structural validation; plan 16-03 will extend it with a deckNormalizedFronts Set<string> parameter
-- [Phase 16]: Deck-lookup filter (filterComponents) wired into parseExtractionResponse's per-card pipeline via a single integration point inside extractCardsFromNotes; scripts/local-resync.mts inherits filtering for free (GRAPH-03)
-- [Phase 16]: keyToId lookup in app/api/sync/route.ts and scripts/local-resync.mts rescoped to ALL cards (no components-not-null where clause) so real leaf-node cards are resolvable as prerequisites; stale keyToId.delete branch removed
-- [Phase 16]: scripts/retro-filter-cleanup.mts created — dry-run-by-default retroactive corpus cleanup that re-filters every persisted Card.components row and reconciles CardDependency edges (prune stale, add newly-valid), gated behind --apply; production execution is a blocking-human checkpoint per the plan's threat model (T-16-08/T-16-09), not auto-approvable
-- [Phase 16]: Production cleanup approved and applied — 511 cards changed, 2 edges pruned, 4 edges added, corpus now at 1039 cards / 2133 CardDependency edges; dry-run matched the 16-01 baseline exactly and a follow-up dry-run confirmed idempotency (0/0/0). One known-acceptable homonym-collision edge (화나다 → 화 (episode counter)) flagged and explicitly accepted by the user as a pre-existing, out-of-scope data ambiguity. Phase 16 is now fully complete (4/4 plans, GRAPH-01..05 satisfied).
-- [Phase 17]: ReviewLog mirrors CardReview's full FSRS field set (D-01) so Phase 18 never needs a backfill migration; cardId is NOT unique (append-only), only idempotencyKey is @unique
-- [Phase 17]: idempotencyKey validation placed after isGrade(rating) check and before the try block, mirroring the existing WR-05 cardId validation idiom exactly
-- [Phase 17]: P2002 catch does not inspect e.meta.target (Pitfall 3) — idempotencyKey is the only reachable unique constraint in this transaction
-- [Phase 17]: idempotencyKey and AbortController generated exactly once in submitReview's event-handler flow, immediately before the undoRef.current snapshot — never inside postReviewWithRetry (would defeat server-side dedup) and never lifted into render/useMemo (react-hooks/purity)
-- [Phase 17]: undo network-failure re-arm path reuses the SAME already-aborted controller rather than creating a new one — retrying undo does not need to un-abort the review's background save
-- [Phase 17]: Widened POST /api/review's idempotent-200 catch to OR isUniqueConstraintError(e, 'idempotencyKey') (new pure lib/db-errors.ts helper) with the existing P2002 check, closing the interactive-transaction DriverAdapterError gap from Phase 17 UAT Test 6
-- [Phase 18]: masteryPhrase gained export only — no logic change; previewIntervalLabels internal call unaffected
-- [Phase 18]: getReviewHistory has no try/catch — lib throws, route catches (mirrors lib/study-cards.ts convention)
-- [Phase 18]: GET /api/reviews never reads a client-controlled take param — always uses server-side PAGE_SIZE=25 (closes T-18-01 DoS threat)
-- [Phase 18]: cardsByState groupBy runs on prisma.cardReview, matching the table already queried for dueCards/masteredCount
-- [Phase 18]: Card progress section placed immediately after 'All-time totals' on the Habits page so it reads as a first-class feature
-- [Phase 18]: Hard grade rows use the amber warnUnsafe precedent from CardEditor.tsx, not orange - orange has zero precedent in the codebase and CONTEXT.md D-02 forbids it
-- [Phase 18]: Error-state copy rendered via a module-level string constant + JSX expression rather than literal JSX text, avoiding react/no-unescaped-entities while keeping a plain apostrophe
-- [Phase 19]: setLastAutoSyncedAt returns void (unlike other setters) because its only caller (cron route) already holds the ISO string it wrote and never round-trips it
-- [Phase 19]: lastAutoSyncedAt is GET-only in app/api/settings/route.ts, omitted entirely from PUT's destructure/has-flag/setter chain so a client PUT can never overwrite it (T-19-05)
-- [Phase 19]: isValidCronAuth expressed as a single boolean conjunction (non-empty secret AND exact Bearer-prefixed match) rather than an if/else, so a missing/empty secret can never fall through to allow (T-19-01 fail-closed)
-- [Phase 19]: Cron auth branch inserted in middleware.ts before the cookie check with an early return; matcher left byte-for-byte unchanged so /api/cron/sync stays inside the protected surface (T-19-03)
-- [Phase 19]: setLastAutoSyncedAt is called only as a statement AFTER runSync() resolves without throwing (never inside runSync), so a failed cron sync never masks itself by refreshing the timestamp
-- [Phase 19 UAT]: Deployment confirmed via live UAT — `CRON_SECRET` provisioned in Vercel Production, `vercel crons run /api/cron/sync` used to trigger an on-demand invocation (exercises the same auto-attached bearer-token path as the real schedule without waiting for the 10:00 UTC firing), confirmed 200 + fresh `lastAutoSyncedAt`; manual "Sync now" regression confirmed unchanged via `npm run build && npm start`.
-- [Phase 17]: Extended isUniqueConstraintError to a bounded BFS (node-visit cap) that also descends into meta.driverAdapterError and reads originalMessage, closing the classified-P2002-without-meta.target gap for duplicate idempotencyKey POSTs (HIST-02 second shape)
-- [Phase 17]: Added persisted tests/review-route.test.ts invoking the real POST /api/review handler twice against a local SQLite file DB (schema DDL via prisma migrate diff --from-empty), closing the only-ever-caught-by-hand gap in HIST-02's regression coverage
+Full decision log lives in PROJECT.md Key Decisions table and .planning/RETROSPECTIVE.md (v1.4 section). v1.4 shipped 2026-07-05 (4 phases, 15 plans) — knowledge graph filter fix, idempotent ReviewLog + history page, and Vercel Cron auto-sync. Notable: a retroactive milestone-audit verification found and closed a real HIST-02 idempotency bug in Phase 17 (a second error shape the original fix missed), adding the project's first persisted route-level regression test.
 
 ### Pending Todos
 
-- `2026-07-02-fix-spurious-components-in-card-extraction.md` — now IN SCOPE for v1.4 Phase 16 (GRAPH-01..05). Was deferred at v1.3 close; the roadmap folds it into the Components[] Filter Fix phase.
+None open.
 
 ### Blockers/Concerns
 
-- [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch (same shape as the Phase 13-hardened routes) — out of scope; may be touched incidentally by Phase 17's undo work.
+- [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch (same shape as the Phase 13-hardened routes) — out of scope; deferred candidate for a future milestone.
 
 ### Roadmap Evolution
 
 - v1.3 roadmap: 3 phases (13–15), 11/11 requirements mapped, coarse granularity — shipped 2026-07-03.
-- v1.4 roadmap created 2026-07-02: 4 phases (16–19), 15/15 requirements mapped, coarse granularity. Structure follows research SUMMARY.md's dependency-ordered 4-phase suggestion; boundaries and success criteria owned by roadmapper.
+- v1.4 roadmap: 4 phases (16–19), 15/15 requirements mapped, coarse granularity — shipped 2026-07-05. Archived to `.planning/milestones/v1.4-ROADMAP.md`.
 
 ## Deferred Items
 
