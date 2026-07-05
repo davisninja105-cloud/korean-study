@@ -23,3 +23,11 @@ export async function computeAuthToken(): Promise<string> {
     .map((b) => b.toString(16).padStart(2, '0'))
     .join('')
 }
+
+// Fail-closed bearer-token check for Vercel Cron requests. Pure and
+// synchronous (no Web Crypto needed — plain string comparison), so it is
+// directly unit-testable without mocking crypto or env vars.
+export function isValidCronAuth(authHeader: string | null, cronSecret: string | undefined): boolean {
+  // Fail closed: an unset/empty secret must NEVER validate, regardless of authHeader.
+  return typeof cronSecret === 'string' && cronSecret.length > 0 && authHeader === `Bearer ${cronSecret}`
+}
