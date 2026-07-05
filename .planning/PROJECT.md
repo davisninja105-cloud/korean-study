@@ -69,10 +69,15 @@ The app is deployed and fully functional. v1.3 fixed the most pressing correctne
 - ✓ Brand-new words are introduced bare (word-front first in Exposure mode); the example sentence becomes back-of-card context — v1.0
 - ✓ When a sentence is shown, the one with fewest unknown (not-yet-learned) words is preferred (least-unknown ranking via `countUnknownWords`) — v1.0
 - ✓ Pure helpers (`selectSessionCards`, `countUnknownWords`) are unit-tested; behavior confirmed in a real dev study session — v1.0
+- ✓ Deterministic post-extraction `components[]` filter + prompt tightening resolves spurious prerequisite hallucinations (GRAPH-01/02/03) — Phase 16
+- ✓ `retro-filter-cleanup.mts` retroactively reconciles existing `CardDependency` edges (GRAPH-04/05) — Phase 16
+- ✓ `ReviewLog` table logs every review (timestamp, cardId, rating, resulting FSRS state) via idempotent transaction (HIST-01/02/03) — Phase 17
+- ✓ Reverse-chronological, cursor-paginated review history page with per-card filter, RSC + DTO hydration (HIST-04/05/06/07) — Phase 18
+- ✓ Vercel Cron daily auto-sync: fail-closed `CRON_SECRET` bearer auth, cron path stays inside the auth matcher, "last auto-synced" timestamp surfaced in Settings ▸ Advanced (SYNC-02/03/04) — Phase 19, deployed + confirmed via `vercel crons run`
 
 ### Active
 
-(Defined via `/gsd-new-milestone` v1.4 — see `.planning/REQUIREMENTS.md` for REQ-IDs once written)
+(v1.4 complete — all 15 requirements shipped. Next milestone via `/gsd-new-milestone`)
 
 **Deferred candidates** (raised during v1.2/v1.3, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
@@ -141,6 +146,11 @@ The app is deployed and fully functional. v1.3 fixed the most pressing correctne
 | Gloss preload: fixed server-side `take: 300`, `gloss:` prefix scoping, per-row `JSON.parse` try/catch | Threats T-14-04/05/06: bounded payload, no app-config settings exposed, corrupt cache rows never crash the preload | ✓ Phase 14 (PERF-02) |
 | `lessonExcerpt` extracted to `lib/lesson-excerpt.ts` for unit testability | Pure helper was inline in the route file; Nyquist validation gap filled by extracting + adding 9 unit tests | ✓ Phase 14 (Nyquist) |
 | `@source not "../.planning"` in `globals.css` | Tailwind v4 auto-scanned `.planning/` markdown docs, found truncated class names like `pb-[env(...)]`, and generated invalid CSS; excluding the directory fixes the parse error | ✓ Phase 14 UAT |
+| `isValidCronAuth` is one boolean conjunction (`typeof cronSecret === 'string' && cronSecret.length > 0 && authHeader === Bearer ${cronSecret}`), never an if/else | Eliminates any code path where a missing/empty `CRON_SECRET` could validate — fail-closed by construction (T-19-01) | ✓ Phase 19 |
+| Cron auth branch sits at the very top of `middleware()`, before the cookie check, with early returns for both allow and deny | A cron request carries no `ks_auth` cookie and must get a clean 401, never a `/login` redirect | ✓ Phase 19 |
+| `lastAutoSyncedAt` is GET-only on `/api/settings` — omitted from the PUT destructure entirely | Only the cron route can stamp it; a crafted client PUT can't forge a "fresh" timestamp that would mask a silently-failing cron (T-19-05) | ✓ Phase 19 |
+| Rate limiting on `/api/cron/sync` explicitly out of scope; ≥16-char random `CRON_SECRET` is the sole mitigation | Single-tenant app, Vercel Hobby timeout already bounds damage — same posture as the existing shared-password auth (T-19-02, accepted) | ✓ Phase 19 |
+| `vercel crons run /api/cron/sync` used to verify the deployed cron on-demand rather than waiting for the 10:00 UTC schedule | Exercises the real Vercel-invoked path (including its auto-attached `Authorization: Bearer $CRON_SECRET` header) without waiting a full day for the first real firing | ✓ Verified in Phase 19 UAT |
 
 ## Evolution
 
@@ -161,4 +171,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-02 after starting v1.4 Knowledge Graph Quality & History milestone*
+*Last updated: 2026-07-05 after Phase 19 (v1.4 milestone complete — all 4 phases shipped)*

@@ -65,7 +65,7 @@ See `.planning/milestones/v1.3-ROADMAP.md` for full phase details.
 - [x] **Phase 16: Components[] Filter Fix** - Extraction only keeps prerequisite components that resolve to a real card via `normalizeFront()` deck-lookup, dry-run validated before it touches the write path (completed 2026-07-03)
 - [x] **Phase 17: ReviewLog Schema & Idempotent Write Path** - Every review writes an append-only `ReviewLog` row via an idempotency-keyed single transaction; undo cancels in-flight retries (completed 2026-07-04)
 - [x] **Phase 18: Review History Page** - A reverse-chronological, per-card-filterable, cursor-paginated history view reachable from an existing surface (RSC + DTO hydration) (completed 2026-07-04)
-- [ ] **Phase 19: Vercel Cron Auto-Sync** - A daily cron syncs 1 lesson via a `CRON_SECRET`-authenticated route, with a "last auto-synced" timestamp in Settings ▸ Advanced (code-complete, awaiting human UAT — see 19-UAT.md)
+- [x] **Phase 19: Vercel Cron Auto-Sync** - A daily cron syncs 1 lesson via a `CRON_SECRET`-authenticated route, with a "last auto-synced" timestamp in Settings ▸ Advanced (deployed, UAT passed, security verified) (completed 2026-07-05)
 
 ## Phase Details
 
@@ -198,4 +198,4 @@ Phases execute in numeric order: 16 → 17 → 18 → 19
 | 16. Components[] Filter Fix | v1.4 | 4/4 | Complete    | 2026-07-03 |
 | 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 4/4 | Complete   | 2026-07-04 |
 | 18. Review History Page | v1.4 | 3/3 | Complete    | 2026-07-04 |
-| 19. Vercel Cron Auto-Sync | v1.4 | 3/3 | Complete   | 2026-07-05 |
+| 19. Vercel Cron Auto-Sync | v1.4 | 3/3 | Complete    | 2026-07-05 |

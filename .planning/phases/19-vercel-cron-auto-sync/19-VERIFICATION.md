@@ -1,14 +1,16 @@
 ---
 phase: 19-vercel-cron-auto-sync
 verified: 2026-07-05T08:50:02Z
-status: human_needed
+status: passed
 score: 12/13 must-haves verified
 behavior_unverified: 1
 overrides_applied: 0
 human_verification:
+
   - test: "Complete .planning/phases/19-vercel-cron-auto-sync/19-03-USER-SETUP.md: generate CRON_SECRET, set it as a Production env var in the Vercel Dashboard, deploy (git push origin main) so vercel.json's cron registers, then check Vercel Dashboard → Cron Jobs for the scheduled job and its first invocation log (expect 200, not 401) after 10:00 UTC."
     expected: "The cron job appears under Vercel's Cron Jobs page, its first invocation returns 200, and Settings ▸ Advanced subsequently shows a fresh 'Last auto-synced' timestamp without any manual sync tap."
     why_human: "Vercel Cron scheduling cannot be exercised via next dev/next start (RESEARCH Pitfall 2, confirmed in 19-03-PLAN.md) — it only fires against a deployed Production environment with CRON_SECRET provisioned. This is the actual delivery of Roadmap Success Criterion 1 ('automated sync ... with no manual trigger') and is currently unexercised: 19-03-USER-SETUP.md is still marked 'Status: Incomplete'."
+
   - test: "Manual regression: Settings ▸ Advanced ▸ 'Sync now' — trigger a real sync and visually confirm the response/UI shape is unchanged, and separately confirm the 'Last auto-synced' status line renders as expected in the browser."
     expected: "Manual sync behaves identically to pre-refactor (same shape, ≤1 lesson/tap); the Advanced disclosure shows 'Last auto-synced: Never' before any cron run and a formatted local date/time after one."
     why_human: "19-01-SUMMARY.md and 19-02-SUMMARY.md's own coverage explicitly flag the live-browser/live-Claude-call portions of these checks as human_judgment: true — not exercised by the automated Vitest/build suite. Code inspection shows the refactor is a verbatim body-move (diff-verified) and the display wiring is correct, but no browser screenshot or live UI confirmation exists in this session."
@@ -106,6 +108,7 @@ No `scripts/*/tests/probe-*.sh` conventional probes found for this phase; no pro
 None. Scanned all 10 phase-modified files (`lib/sync.ts`, `app/api/cron/sync/route.ts`, `lib/auth.ts`, `middleware.ts`, `lib/settings.ts`, `app/api/settings/route.ts`, `app/settings/page.tsx`, `vercel.json`, `tests/auth.test.ts`, `app/api/sync/route.ts`) for `TBD`/`FIXME`/`XXX`/`TODO`/`HACK`/`PLACEHOLDER`/empty-implementation patterns — zero matches.
 
 **Deferred (non-blocking, per 19-REVIEW.md, already disposed):**
+
 - WR-01 (`lib/auth.ts:32`): non-constant-time string comparison of the bearer secret — a timing side-channel in theory. Explicitly deferred by the code review as an accepted risk given `CRON_SECRET` is high-entropy, HTTPS-only, and fixing it would require either breaking Edge-middleware compatibility (Node `crypto.timingSafeEqual`) or a hand-rolled loop. Not a blocker for this phase's goal.
 - WR-02 (`lib/sync.ts` new-lesson check): no mutual exclusion between a cron-triggered and a manual sync running concurrently — a pre-existing non-atomic check-then-act race, now reachable by two independent triggers instead of one. Explicitly deferred as a design question for a future phase, not a drive-by fix.
 - IN-02 (`lib/settings.ts:104`): `setLastAutoSyncedAt` has no input validation, explicitly and deliberately by design (opaque ISO string, single trusted call site) — not a defect.

@@ -3,37 +3,37 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Knowledge Graph Quality & History
 current_phase: 19
-current_phase_name: vercel-cron-auto-sync
-status: awaiting_uat
-stopped_at: Completed 19-03-PLAN.md; verification human_needed
-last_updated: "2026-07-05T08:55:00.000Z"
+status: milestone_complete
+stopped_at: Phase 19 complete — v1.4 milestone complete
+last_updated: "2026-07-05T17:44:45.803Z"
 last_activity: 2026-07-05
-last_activity_desc: Phase 19 code-complete and verified (12/13 must-haves); 2 items await human UAT (deployment + live UI check)
+last_activity_desc: Phase 19 UAT passed (2/2), security verified (0 open threats), milestone v1.4 complete
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 14
   completed_plans: 14
-  percent: 75
+  percent: 100
+current_phase_name: vercel-cron-auto-sync
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-02)
+See: .planning/PROJECT.md (updated 2026-07-05)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 19 — vercel-cron-auto-sync
+**Current focus:** v1.4 milestone complete — planning next milestone
 
 ## Current Position
 
-Phase: 19 (vercel-cron-auto-sync) — AWAITING UAT
-Plan: 3 of 3 (all code-complete)
-Status: Verified 12/13 must-haves at the code level; 2 items require human sign-off (see 19-UAT.md) — run /gsd-verify-work 19
-Last activity: 2026-07-05 — Phase 19 verification ran (human_needed)
+Phase: 19 (vercel-cron-auto-sync) — COMPLETE
+Plan: 3 of 3 (all code-complete, UAT passed, security verified)
+Status: v1.4 Knowledge Graph Quality & History — all 4 phases (16, 17, 18, 19) complete. 15/15 requirements shipped.
+Last activity: 2026-07-05 — Phase 19 UAT passed (2/2), threats verified (0 open), milestone v1.4 complete
 
-Progress: [███████░░░] 75% (3/4 phases complete; Phase 16 + 17 + 18 done, Phase 19 awaiting UAT)
+Progress: [██████████] 100% (4/4 phases complete; Phase 16 + 17 + 18 + 19 done)
 
 ## Performance Metrics
 
@@ -49,7 +49,7 @@ Progress: [███████░░░] 75% (3/4 phases complete; Phase 16 + 
 | 16 | 4 | - | - |
 | 17 | 0/TBD | - | - |
 | 18 | 3 | - | - |
-| 19 | 0/TBD | - | - |
+| 19 | 3 | - | - |
 
 **Recent Trend:**
 
@@ -106,6 +106,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 - [Phase 19]: isValidCronAuth expressed as a single boolean conjunction (non-empty secret AND exact Bearer-prefixed match) rather than an if/else, so a missing/empty secret can never fall through to allow (T-19-01 fail-closed)
 - [Phase 19]: Cron auth branch inserted in middleware.ts before the cookie check with an early return; matcher left byte-for-byte unchanged so /api/cron/sync stays inside the protected surface (T-19-03)
 - [Phase 19]: setLastAutoSyncedAt is called only as a statement AFTER runSync() resolves without throwing (never inside runSync), so a failed cron sync never masks itself by refreshing the timestamp
+- [Phase 19 UAT]: Deployment confirmed via live UAT — `CRON_SECRET` provisioned in Vercel Production, `vercel crons run /api/cron/sync` used to trigger an on-demand invocation (exercises the same auto-attached bearer-token path as the real schedule without waiting for the 10:00 UTC firing), confirmed 200 + fresh `lastAutoSyncedAt`; manual "Sync now" regression confirmed unchanged via `npm run build && npm start`.
 
 ### Pending Todos
 
@@ -113,8 +114,6 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 
 ### Blockers/Concerns
 
-- [Phase 17 → research flag] The idempotency-key mechanism + its interaction with `handleUndo`'s in-flight retry is a genuine design decision, not a copy-paste. Recommend a focused discuss/research pass on the idempotency/undo interaction before planning (see research SUMMARY.md Research Flags).
-- [Phase 19 → research flag] The Vercel Cron auth pattern (middleware bearer-token branch alongside the existing cookie gate) is architecturally new for this codebase (MEDIUM confidence). Worth a final direct-docs check at plan time.
 - [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch (same shape as the Phase 13-hardened routes) — out of scope; may be touched incidentally by Phase 17's undo work.
 
 ### Roadmap Evolution
@@ -134,12 +133,11 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-05T07:49:42.623Z
-Stopped at: Completed 19-03-PLAN.md
+Last session: 2026-07-05T17:44:45.803Z
+Stopped at: v1.4 milestone complete, ready to complete milestone / plan next
 Resume file: None
 
 ## Operator Next Steps
 
-- Phases 16, 17, 18, and 19 are all fully complete at the code level (14/14 plans, v1.4 milestone requirements SYNC-02/SYNC-03/SYNC-04 all satisfied).
-- Remaining before v1.4 can be considered fully shipped: complete `.planning/phases/19-vercel-cron-auto-sync/19-03-USER-SETUP.md` (generate `CRON_SECRET`, set it in Vercel Production, deploy, confirm the first Cron Jobs invocation in the Vercel Dashboard).
-- Next: run `/gsd-complete-milestone` (or equivalent) once the USER-SETUP.md items are done, to close out v1.4.
+- v1.4 Knowledge Graph Quality & History is fully shipped: all 4 phases (16, 17, 18, 19) complete, 15/15 requirements validated, Phase 19 UAT passed (2/2) and security-verified (0 open threats).
+- Next: run `/gsd-complete-milestone` to archive v1.4 and prepare for the next milestone.
