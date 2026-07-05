@@ -5,8 +5,8 @@ milestone_name: Knowledge Graph Quality & History
 current_phase: 19
 current_phase_name: vercel-cron-auto-sync
 status: executing
-stopped_at: Completed 18-02-PLAN.md
-last_updated: "2026-07-05T07:39:39.514Z"
+stopped_at: Completed 19-02-PLAN.md
+last_updated: "2026-07-05T07:41:02.555Z"
 last_activity: 2026-07-05
 last_activity_desc: Phase 19 execution started
 progress:
@@ -68,6 +68,7 @@ Progress: [█████░░░░░] 50% (2/4 phases complete; Phase 16 + 
 | Phase 18 P01 | 12min | 3 tasks | 6 files |
 | Phase 18 P02 | 8min | 2 tasks | 3 files |
 | Phase 18 P03 | 18min | 3 tasks | 4 files |
+| Phase 19 P02 | 18min | 3 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -99,6 +100,8 @@ Decisions are logged in PROJECT.md Key Decisions table. Roadmap-shaping decision
 - [Phase 18]: Card progress section placed immediately after 'All-time totals' on the Habits page so it reads as a first-class feature
 - [Phase 18]: Hard grade rows use the amber warnUnsafe precedent from CardEditor.tsx, not orange - orange has zero precedent in the codebase and CONTEXT.md D-02 forbids it
 - [Phase 18]: Error-state copy rendered via a module-level string constant + JSX expression rather than literal JSX text, avoiding react/no-unescaped-entities while keeping a plain apostrophe
+- [Phase 19]: setLastAutoSyncedAt returns void (unlike other setters) because its only caller (cron route) already holds the ISO string it wrote and never round-trips it
+- [Phase 19]: lastAutoSyncedAt is GET-only in app/api/settings/route.ts, omitted entirely from PUT's destructure/has-flag/setter chain so a client PUT can never overwrite it (T-19-05)
 
 ### Pending Todos
 
@@ -127,8 +130,8 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-05T07:39:39.507Z
-Stopped at: Completed 18-02-PLAN.md
+Last session: 2026-07-05T07:41:02.543Z
+Stopped at: Completed 19-02-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
