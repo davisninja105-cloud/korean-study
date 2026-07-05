@@ -19,9 +19,13 @@ export async function GET() {
     }
 
     const result = await runSync(documentId)
-    // Only reached if runSync() resolved without throwing — a failed/errored
-    // sync must never refresh the timestamp (that would mask the failure).
-    await setLastAutoSyncedAt(new Date().toISOString())
+    // runSync() catches per-lesson extraction/DB failures internally and still
+    // resolves (result.failed > 0) rather than throwing — so "didn't throw" is
+    // not the same as "succeeded". Only stamp the timestamp when nothing failed,
+    // otherwise a failed sync would mask itself as fresh.
+    if (result.failed === 0) {
+      await setLastAutoSyncedAt(new Date().toISOString())
+    }
     return NextResponse.json(result)
   } catch (err: unknown) {
     console.error('Cron sync error:', err)
