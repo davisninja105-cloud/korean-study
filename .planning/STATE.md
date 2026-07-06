@@ -2,9 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Extraction Quality & Reliability
-status: planning
-last_updated: "2026-07-06T09:00:00.000Z"
+current_phase: 20
+current_phase_name: Extraction Pipeline Hardening
+status: executing
+stopped_at: v1.5 roadmap created (Phases 20–23); files written (ROADMAP.md, STATE.md, REQUIREMENTS.md traceability)
+last_updated: "2026-07-06T21:43:47.901Z"
 last_activity: 2026-07-06
+last_activity_desc: v1.5 roadmap created (Phases 20–23), 12/12 requirements mapped
 progress:
   total_phases: 4
   completed_phases: 0
@@ -26,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-07-05)
 
 Phase: 20 of 23 (Extraction Pipeline Hardening) — first v1.5 phase
 Plan: — (not yet planned)
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-07-06 — v1.5 roadmap created (Phases 20–23), 12/12 requirements mapped
 
 Progress: [░░░░░░░░░░] 0%
@@ -61,6 +65,7 @@ Progress: [░░░░░░░░░░] 0%
 Full decision log lives in PROJECT.md Key Decisions table and .planning/RETROSPECTIVE.md.
 
 v1.5 roadmap shaping decisions (2026-07-06):
+
 - Coarse granularity: research's 9-phase suggestion compressed to 4 delivery-coherent phases (20–23).
 - Extraction hardening (Phase 20) and reliability bugs (Phase 23) are independent tracks; the audit→prompt/fix track (21 → 22) is strictly serial and findings-first.
 - Prompt review + validation + corpus fixes combined into Phase 22 (one "act on the findings" workflow); validation must show audit-check counts drop before fixes are applied.
