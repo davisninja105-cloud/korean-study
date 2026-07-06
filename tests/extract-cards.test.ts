@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseExtractionResponse, ExtractionSchema } from '../lib/extract-cards'
+import { parseExtractionResponse, ExtractionSchema, normalizeExtractedCards } from '../lib/extract-cards'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { AnthropicError } from '@anthropic-ai/sdk'
 
@@ -90,6 +90,38 @@ describe('schema shape (EXTRACT-01)', () => {
     }
     expect(parsed.cards).toHaveLength(1)
     expect(parsed.cards[0]).not.toHaveProperty('bogus')
+  })
+
+  it('happy-path object input (normalizeExtractedCards) and salvaged text input (parseExtractionResponse) produce identical normalized output (EXTRACT-01 path equivalence)', () => {
+    const rawCards = [
+      {
+        type: 'vocabulary',
+        front: '가다',
+        back: 'to go',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '학교에 가다', targetForm: '가다', translation: 'go to school' }],
+        components: ['학교'],
+      },
+      {
+        type: 'grammar',
+        front: '~(으)면',
+        back: 'if/when',
+        distractors: ['x', 'y', 'z'],
+        sentences: [{ korean: '가면 좋다', targetForm: '가면', translation: 'good if you go' }],
+        components: ['가다'],
+      },
+    ]
+    const deckSet = new Set(['학교'])
+
+    // Happy path: parsed_output.cards is a raw JS object array, consumed
+    // directly by normalizeExtractedCards — no JSON.parse in between.
+    const happyPathResult = normalizeExtractedCards(rawCards, deckSet)
+
+    // Salvage/text path: the same cards serialized to the {cards:[...]}
+    // wrapper text and re-parsed by parseExtractionResponse.
+    const textPathResult = parseExtractionResponse(JSON.stringify({ cards: rawCards }), deckSet)
+
+    expect(happyPathResult).toEqual(textPathResult)
   })
 })
 
