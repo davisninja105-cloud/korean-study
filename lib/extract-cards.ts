@@ -1,7 +1,40 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { z } from 'zod'
 import { sentenceMatch } from './sentence-match'
 import { normalizeFront } from './card-key'
 import { filterComponents } from './filter-components'
+
+// EXTRACT-01: zod schemas for native structured outputs (output_config.format +
+// zodOutputFormat). Deliberately permissive — no `.max()`/`.length()` on any
+// array, no `.min(1)` on any string, anywhere in these three schemas. The
+// SDK's transformJSONSchema whitelists only a few keywords server-side
+// (additionalProperties:false forced everywhere, array minItems only when 0
+// or 1); everything else (enum, maxItems, minLength) is demoted to a
+// description-only hint, while zod's own client-side safeParse still
+// enforces every constraint and throws for the WHOLE response on a single
+// violation. Encoding "exactly 3 distractors" or "non-empty string" here
+// would turn one bad card into a whole-lesson salvage-quality degradation —
+// those rules stay prompt-side + the existing post-hoc coercion in
+// normalizeExtractedCards. The one exception is `sentences.min(1)`, which
+// IS server-enforced (minItems 0|1 survives the whitelist) and is the only
+// real constraint worth encoding here (RESEARCH.md SDK Behavior Findings 3/5).
+const ExtractedSentenceSchema = z.object({
+  korean:      z.string(),
+  targetForm:  z.string(),
+  translation: z.string(),
+})
+
+const ExtractedCardSchema = z.object({
+  type:        z.enum(['vocabulary', 'grammar', 'phrase']),
+  front:       z.string(),
+  back:        z.string(),
+  notes:       z.string().optional(),
+  distractors: z.array(z.string()),
+  sentences:   z.array(ExtractedSentenceSchema).min(1),
+  components:  z.array(z.string()),
+})
+
+export const ExtractionSchema = z.object({ cards: z.array(ExtractedCardSchema) })
 
 export interface ExtractedSentence {
   korean:      string   // full sentence, no blank — targetForm appears verbatim
