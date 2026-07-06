@@ -1,5 +1,97 @@
 import { describe, it, expect } from 'vitest'
-import { parseExtractionResponse } from '../lib/extract-cards'
+import { parseExtractionResponse, ExtractionSchema } from '../lib/extract-cards'
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
+import { AnthropicError } from '@anthropic-ai/sdk'
+
+describe('schema shape (EXTRACT-01)', () => {
+  // Walks a JSON-Schema tree (including $defs) collecting every node whose
+  // "type" is "object" — used to assert additionalProperties:false is forced
+  // on ALL of them (root wrapper, card item, and the sentence $defs ref),
+  // not just the top level.
+  function collectObjectNodes(node: unknown, acc: Record<string, unknown>[] = []): Record<string, unknown>[] {
+    if (typeof node !== 'object' || node === null) return acc
+    const obj = node as Record<string, unknown>
+    if (obj.type === 'object') acc.push(obj)
+    for (const value of Object.values(obj)) {
+      if (Array.isArray(value)) {
+        value.forEach((v) => collectObjectNodes(v, acc))
+      } else if (typeof value === 'object' && value !== null) {
+        collectObjectNodes(value, acc)
+      }
+    }
+    return acc
+  }
+
+  it('generates a wire schema where every object node forces additionalProperties:false, sentences keeps minItems:1, and notes is absent from required', () => {
+    const wireSchema = zodOutputFormat(ExtractionSchema).schema as Record<string, unknown>
+
+    // Root is a wrapper object whose only property is a cards array.
+    expect(wireSchema.type).toBe('object')
+    const properties = wireSchema.properties as Record<string, unknown>
+    expect(Object.keys(properties)).toEqual(['cards'])
+
+    // Every object node (root, card item, and any $defs entries) forces
+    // additionalProperties:false.
+    const objectNodes = collectObjectNodes(wireSchema)
+    expect(objectNodes.length).toBeGreaterThanOrEqual(2) // at least root + card item ($defs sentence too)
+    for (const node of objectNodes) {
+      expect(node.additionalProperties).toBe(false)
+    }
+
+    // sentences array keeps minItems: 1 (server-enforced whitelist survivor).
+    const cardsSchema = properties.cards as Record<string, unknown>
+    const cardItemSchema = cardsSchema.items as Record<string, unknown>
+    const cardProperties = cardItemSchema.properties as Record<string, unknown>
+    const sentencesSchema = cardProperties.sentences as Record<string, unknown>
+    expect(sentencesSchema.minItems).toBe(1)
+
+    // notes is absent from the card object's required list (optional field).
+    const required = cardItemSchema.required as string[]
+    expect(required).not.toContain('notes')
+  })
+
+  it('throws AnthropicError when parsing mid-card truncated wrapper text (SDK-parse-throw drift guard)', () => {
+    const truncated = '{"cards":[{"type":"vocabulary"'
+    expect(() => zodOutputFormat(ExtractionSchema).parse(truncated)).toThrow(AnthropicError)
+  })
+
+  it('throws AnthropicError when parsing valid JSON that violates the schema (empty sentences array)', () => {
+    const violatesSchema = JSON.stringify({
+      cards: [
+        {
+          type: 'vocabulary',
+          front: 'a',
+          back: 'b',
+          distractors: [],
+          sentences: [], // violates .min(1) — client-side zod enforces this
+          components: [],
+        },
+      ],
+    })
+    expect(() => zodOutputFormat(ExtractionSchema).parse(violatesSchema)).toThrow(AnthropicError)
+  })
+
+  it('parses a valid wrapper string and strips unknown extra keys (documents zod v4 SDK-observed behavior)', () => {
+    const withExtraKey = JSON.stringify({
+      cards: [
+        {
+          type: 'vocabulary',
+          front: 'a',
+          back: 'b',
+          distractors: [],
+          sentences: [{ korean: 'x', targetForm: 'x', translation: 'y' }],
+          components: [],
+          bogus: 'should be stripped',
+        },
+      ],
+    })
+    const parsed = zodOutputFormat(ExtractionSchema).parse(withExtraKey) as {
+      cards: Array<Record<string, unknown>>
+    }
+    expect(parsed.cards).toHaveLength(1)
+    expect(parsed.cards[0]).not.toHaveProperty('bogus')
+  })
+})
 
 describe('parseExtractionResponse', () => {
   it('returns well-formed cards with normalized fields (distractors sliced, sentences filtered, components deduped/self-excluded)', () => {
