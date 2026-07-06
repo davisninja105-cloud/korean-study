@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Extraction Quality & Reliability
 status: planning
-last_updated: "2026-07-06T03:20:08.856Z"
+last_updated: "2026-07-06T09:00:00.000Z"
 last_activity: 2026-07-06
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,57 +20,51 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-05)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** v1.4 milestone complete — planning next milestone
+**Current focus:** v1.5 roadmap created — Phase 20 (Extraction Pipeline Hardening) ready to plan
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-07-06 — Milestone v1.5 started
+Phase: 20 of 23 (Extraction Pipeline Hardening) — first v1.5 phase
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-07-06 — v1.5 roadmap created (Phases 20–23), 12/12 requirements mapped
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed (v1.4): 4
-- Prior milestone (v1.3): 4 plans, ~7.5 min avg, ~0.5 h total
+- Total plans completed (v1.4): 15 plans across 4 phases (16–19)
+- Prior milestone (v1.3): 6 plans across 3 phases
 
-**By Phase:**
+**By Phase (v1.5):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 16 | 4 | - | - |
-| 17 | 0/TBD | - | - |
-| 18 | 3 | - | - |
-| 19 | 3 | - | - |
+| 20 | 0/TBD | - | - |
+| 21 | 0/TBD | - | - |
+| 22 | 0/TBD | - | - |
+| 23 | 0/TBD | - | - |
 
 **Recent Trend:**
 
-- Last milestone: v1.3 Reliability & Hardening shipped 2026-07-03 (3 phases, 6 plans)
+- Last milestone: v1.4 Knowledge Graph Quality & History shipped 2026-07-05 (4 phases, 15 plans)
 - Trend: —
 
 *Updated after each plan completion*
-| Phase 16 P01 | 35min | 3 tasks | 3 files |
-| Phase 16 P02 | 4min | 2 tasks | 2 files |
-| Phase 16 P03 | 15min | 2 tasks | 4 files |
-| Phase 16 P04 | ~20min | 3 tasks | 2 files |
-| Phase 17 P01 | 12min | 3 tasks | 2 files |
-| Phase 17 P02 | 6min | 1 tasks | 1 files |
-| Phase 17 P03 | 4min | 1 tasks | 1 files |
-| Phase 17 P04 | 8min | 2 tasks | 3 files |
-| Phase 18 P01 | 12min | 3 tasks | 6 files |
-| Phase 18 P02 | 8min | 2 tasks | 3 files |
-| Phase 18 P03 | 18min | 3 tasks | 4 files |
-| Phase 19 P02 | 18min | 3 tasks | 3 files |
-| Phase 19 P03 | ~35min | 3 tasks | 5 files |
-| Phase 17 P05 | 11min | 2 tasks | 3 files |
 
 ## Accumulated Context
 
 ### Decisions
 
-Full decision log lives in PROJECT.md Key Decisions table and .planning/RETROSPECTIVE.md (v1.4 section). v1.4 shipped 2026-07-05 (4 phases, 15 plans) — knowledge graph filter fix, idempotent ReviewLog + history page, and Vercel Cron auto-sync. Notable: a retroactive milestone-audit verification found and closed a real HIST-02 idempotency bug in Phase 17 (a second error shape the original fix missed), adding the project's first persisted route-level regression test.
+Full decision log lives in PROJECT.md Key Decisions table and .planning/RETROSPECTIVE.md.
+
+v1.5 roadmap shaping decisions (2026-07-06):
+- Coarse granularity: research's 9-phase suggestion compressed to 4 delivery-coherent phases (20–23).
+- Extraction hardening (Phase 20) and reliability bugs (Phase 23) are independent tracks; the audit→prompt/fix track (21 → 22) is strictly serial and findings-first.
+- Prompt review + validation + corpus fixes combined into Phase 22 (one "act on the findings" workflow); validation must show audit-check counts drop before fixes are applied.
+- Hard rule for the milestone (research pitfall): all corpus fixes mutate cards in place by `id` — never delete+recreate (cascades wipe FSRS state + ReviewLog history).
 
 ### Pending Todos
 
@@ -82,8 +76,8 @@ None open.
 
 ### Roadmap Evolution
 
-- v1.3 roadmap: 3 phases (13–15), 11/11 requirements mapped, coarse granularity — shipped 2026-07-03.
-- v1.4 roadmap: 4 phases (16–19), 15/15 requirements mapped, coarse granularity — shipped 2026-07-05. Archived to `.planning/milestones/v1.4-ROADMAP.md`.
+- v1.4 roadmap: 4 phases (16–19), 15/15 requirements mapped, coarse. Archived to `.planning/milestones/v1.4-ROADMAP.md`.
+- v1.5 roadmap: 4 phases (20–23), 12/12 requirements mapped, coarse granularity — created 2026-07-06.
 
 ## Deferred Items
 
@@ -91,16 +85,16 @@ Carried forward, informational only:
 
 | Category | Item | Status |
 |----------|------|--------|
-| hardening | `app/api/review/undo/route.ts` missing try/catch (deferred in Phase 13) | Open — may be addressed incidentally in Phase 17 |
-| feature | Card retirement/mastery flag (MASTERY-01) | Deferred to v2 — see REQUIREMENTS.md |
-| gap | "Last cron sync" visibility raised by two research passes | Confirmed IN scope as SYNC-04 (Settings ▸ Advanced timestamp) |
+| hardening | `app/api/review/undo/route.ts` missing try/catch (deferred in Phase 13) | Open |
+| feature | Card retirement/mastery flag (MASTERY-01) | Deferred to v2 |
+| gap | Near-duplicate card *merging* (FSRS history absorption) | Out of scripted scope for Phase 22; becomes its own decision if the audit finds a large cluster |
 
 ## Session Continuity
 
-Last session: 2026-07-05T18:32:20.063Z
-Stopped at: v1.4 milestone complete, ready to complete milestone / plan next
+Last session: 2026-07-06T09:00:00.000Z
+Stopped at: v1.5 roadmap created (Phases 20–23); files written (ROADMAP.md, STATE.md, REQUIREMENTS.md traceability)
 Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Plan the first phase: `/gsd-plan-phase 20`

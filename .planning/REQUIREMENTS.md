@@ -63,24 +63,30 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EXTRACT-01 | TBD | Pending |
-| EXTRACT-02 | TBD | Pending |
-| EXTRACT-03 | TBD | Pending |
-| AUDIT-01 | TBD | Pending |
-| AUDIT-02 | TBD | Pending |
-| PROMPT-01 | TBD | Pending |
-| PROMPT-02 | TBD | Pending |
-| FIX-01 | TBD | Pending |
-| FIX-02 | TBD | Pending |
-| RELIABILITY-01 | TBD | Pending |
-| RELIABILITY-02 | TBD | Pending |
-| RELIABILITY-03 | TBD | Pending |
+| EXTRACT-01 | Phase 20 | Pending |
+| EXTRACT-02 | Phase 20 | Pending |
+| EXTRACT-03 | Phase 20 | Pending |
+| AUDIT-01 | Phase 21 | Pending |
+| AUDIT-02 | Phase 21 | Pending |
+| PROMPT-01 | Phase 22 | Pending |
+| PROMPT-02 | Phase 22 | Pending |
+| FIX-01 | Phase 22 | Pending |
+| FIX-02 | Phase 22 | Pending |
+| RELIABILITY-01 | Phase 23 | Pending |
+| RELIABILITY-02 | Phase 23 | Pending |
+| RELIABILITY-03 | Phase 23 | Pending |
 
 **Coverage:**
 - v1.5 requirements: 12 total
-- Mapped to phases: 0 (pending roadmap creation)
-- Unmapped: 12 ⚠️ (will be resolved by `/gsd-roadmapper`)
+- Mapped to phases: 12 ✓ (Phases 20–23)
+- Unmapped: 0 ✓
+
+**Phase → Requirement rollup:**
+- Phase 20 (Extraction Pipeline Hardening): EXTRACT-01, EXTRACT-02, EXTRACT-03
+- Phase 21 (Card Database Quality Audit): AUDIT-01, AUDIT-02
+- Phase 22 (Findings-Driven Prompt Improvement & Corpus Fixes): PROMPT-01, PROMPT-02, FIX-01, FIX-02
+- Phase 23 (Reliability Bug Fixes): RELIABILITY-01, RELIABILITY-02, RELIABILITY-03
 
 ---
 *Requirements defined: 2026-07-06*
-*Last updated: 2026-07-06 after initial definition*
+*Last updated: 2026-07-06 after roadmap creation — 12/12 requirements mapped to Phases 20–23*
