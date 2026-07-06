@@ -217,6 +217,112 @@ describe('parseExtractionResponse', () => {
     })
   })
 
+  describe('blank-safety enforcement (EXTRACT-03)', () => {
+    it('drops a card whose sentences all fail .found, keeps a valid sibling', () => {
+      const noMatchCard = {
+        type: 'vocabulary',
+        front: '이상한',
+        back: 'strange',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '학교에 가다', targetForm: '없는말', translation: 'no match' }],
+        components: [],
+      }
+      const validCard = {
+        type: 'vocabulary',
+        front: '오다',
+        back: 'to come',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '집에 오다', targetForm: '오다', translation: 'come home' }],
+        components: [],
+      }
+      const result = parseExtractionResponse(JSON.stringify({ cards: [noMatchCard, validCard] }))
+
+      expect(result).toHaveLength(1)
+      expect(result[0].front).toBe('오다')
+    })
+
+    it('drops a card whose only sentence has a single-character targetForm (found-but-unsafe)', () => {
+      const card = {
+        type: 'vocabulary',
+        front: '물',
+        back: 'water',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '물을 사다', targetForm: '물', translation: 'buy water' }],
+        components: [],
+      }
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }))
+
+      expect(result).toHaveLength(0)
+    })
+
+    it('drops a card whose only sentence has a targetForm occurring twice (found-but-unsafe)', () => {
+      const card = {
+        type: 'vocabulary',
+        front: '가다',
+        back: 'to go',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '가다 또 가다', targetForm: '가다', translation: 'go again' }],
+        components: [],
+      }
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }))
+
+      expect(result).toHaveLength(0)
+    })
+
+    it('promotes a safe sentence to index 0 and RETAINS the unsafe survivor after it (stable partition, not dropped)', () => {
+      const card = {
+        type: 'grammar',
+        front: '~(으)면',
+        back: 'if/when',
+        distractors: ['a', 'b', 'c'],
+        sentences: [
+          { korean: '가다 또 가다', targetForm: '가다', translation: 'unsafe — occurs twice' },
+          { korean: '가면 좋다', targetForm: '가면', translation: 'good if you go' },
+        ],
+        components: [],
+      }
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }))
+
+      expect(result).toHaveLength(1)
+      expect(result[0].sentences).toHaveLength(2)
+      expect(result[0].sentences[0].targetForm).toBe('가면')
+      expect(result[0].sentences[1].targetForm).toBe('가다')
+    })
+
+    it('drops a card with an empty sentences array (possible on the salvage path)', () => {
+      const card = {
+        type: 'vocabulary',
+        front: '가다',
+        back: 'to go',
+        distractors: ['a', 'b', 'c'],
+        sentences: [],
+        components: [],
+      }
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }))
+
+      expect(result).toHaveLength(0)
+    })
+
+    it('caps the returned sentences at 3 even when 4 are blank-safe', () => {
+      const card = {
+        type: 'grammar',
+        front: '~고',
+        back: 'and (connector)',
+        distractors: ['a', 'b', 'c'],
+        sentences: [
+          { korean: '가고 싶다', targetForm: '가고', translation: 's1' },
+          { korean: '먹고 싶다', targetForm: '먹고', translation: 's2' },
+          { korean: '보고 싶다', targetForm: '보고', translation: 's3' },
+          { korean: '자고 싶다', targetForm: '자고', translation: 's4' },
+        ],
+        components: [],
+      }
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }))
+
+      expect(result[0].sentences).toHaveLength(3)
+    })
+  })
+
   describe('deckNormalizedFronts filtering (GRAPH-03 write-path wiring)', () => {
     it('drops a spurious component not present in the deck set', () => {
       const card = {
