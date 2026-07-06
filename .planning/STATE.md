@@ -1,20 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.4
-milestone_name: Knowledge Graph Quality & History
-current_phase: 4
-status: Awaiting next milestone
-stopped_at: v1.4 milestone complete, ready to complete milestone / plan next
-last_updated: "2026-07-05T18:48:22.254Z"
-last_activity: 2026-07-05
-last_activity_desc: Milestone v1.4 completed and archived
+milestone: v1.5
+milestone_name: Extraction Quality & Reliability
+status: planning
+last_updated: "2026-07-06T03:20:08.856Z"
+last_activity: 2026-07-06
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 15
-  completed_plans: 15
-  percent: 100
-current_phase_name: vercel-cron-auto-sync
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -28,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-07-05)
 
 ## Current Position
 
-Phase: Milestone v1.4 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-05 — Milestone v1.4 completed and archived
+Status: Defining requirements
+Last activity: 2026-07-06 — Milestone v1.5 started
 
 ## Performance Metrics
 

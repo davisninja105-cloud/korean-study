@@ -14,7 +14,16 @@ When you study, what you're meant to learn is always learnable in the moment —
 
 The app is deployed and fully functional. v1.4 cleaned up the knowledge graph, made review history durable and browsable, and automated daily sync. Phase 16 replaced Claude's occasionally-hallucinated `components[]` prerequisite entries with a deterministic deck-lookup filter (`filterComponents`), retroactively cleaning 511 existing cards. Phase 17 added an append-only `ReviewLog` table written inside an idempotency-keyed transaction, so a lost-response retry can never double-apply FSRS state or duplicate a history row — this took two rounds to get fully right (a second, distinct Prisma/`@prisma/adapter-libsql` error-classification shape was found and closed during the milestone-completion audit, backed by the project's first persisted route-level regression test). Phase 18 shipped `/history`, a reverse-chronological, cursor-paginated, per-card-filterable view of that log. Phase 19 added a daily Vercel Cron job that syncs one lesson automatically, authenticated by a fail-closed `CRON_SECRET` bearer check, with a "Last auto-synced" status visible in Settings. v1.3 (shipped 2026-07-03) hardened the two authenticated write routes and refactored `StudySession`; v1.2 (shipped 2026-07-01) eliminated the blank/empty-state flash across every main route; v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — all remain in place underneath this milestone's work.
 
-**Next:** Planning next milestone (run `/gsd-new-milestone`)
+**Next:** In progress — v1.5 Extraction Quality & Reliability
+
+## Current Milestone: v1.5 Extraction Quality & Reliability
+
+**Goal:** Audit the extraction pipeline for card-quality issues, then close two known reliability bugs identified in `.planning/codebase/CONCERNS.md`.
+
+**Target features:**
+- Audit existing card DB for quality issues (categorization, sentence quality, components accuracy) — findings-first, then review the `extract-cards.ts` prompt against current card schema/capabilities and the DB audit findings; apply high-confidence fixes found
+- Log known-lemmas query failures in `lib/study-cards.ts` (currently degrades silently to an empty Set)
+- Auto-relink forward-reference `CardDependency` edges once the sync backlog fully drains (`remaining=0`) — replaces the manual `relink-dependencies.mjs` invocation
 
 ## Requirements
 
@@ -66,7 +75,7 @@ The app is deployed and fully functional. v1.4 cleaned up the knowledge graph, m
 
 ### Active
 
-(None — v1.4 complete, all 15 requirements shipped. Next milestone requirements defined via `/gsd-new-milestone`.)
+(Defined in `.planning/REQUIREMENTS.md` for v1.5 — see Current Milestone above.)
 
 **Deferred candidates** (raised during v1.2/v1.3/v1.4, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
@@ -163,4 +172,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-05 after v1.4 milestone shipped (all 4 phases, 15 plans)*
+*Last updated: 2026-07-06 after starting v1.5 milestone*
