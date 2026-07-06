@@ -10,8 +10,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### Extraction Reliability
 
 - [ ] **EXTRACT-01**: Extraction uses native structured outputs (zod schema + `output_config.format`/`zodOutputFormat`) instead of asking for JSON in a text response and regex/salvage-parsing it
-- [ ] **EXTRACT-02**: Truncation-salvage logic is preserved as a fallback for genuine mid-stream cutoffs, adjusted for the new `{ cards: [...] }` response wrapper shape
-- [ ] **EXTRACT-03**: `parseExtractionResponse` structurally enforces blank-safety (consults `safeToBlank`, not just `sentenceMatch().found`) and rejects zero-sentence cards, rather than relying on prompt instruction alone
+- [x] **EXTRACT-02**: Truncation-salvage logic is preserved as a fallback for genuine mid-stream cutoffs, adjusted for the new `{ cards: [...] }` response wrapper shape
+- [x] **EXTRACT-03**: `parseExtractionResponse` structurally enforces blank-safety (consults `safeToBlank`, not just `sentenceMatch().found`) and rejects zero-sentence cards, rather than relying on prompt instruction alone
 
 ### Extraction Quality Audit
 
@@ -64,8 +64,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | EXTRACT-01 | Phase 20 | Pending |
-| EXTRACT-02 | Phase 20 | Pending |
-| EXTRACT-03 | Phase 20 | Pending |
+| EXTRACT-02 | Phase 20 | Complete |
+| EXTRACT-03 | Phase 20 | Complete |
 | AUDIT-01 | Phase 21 | Pending |
 | AUDIT-02 | Phase 21 | Pending |
 | PROMPT-01 | Phase 22 | Pending |
@@ -77,11 +77,13 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RELIABILITY-03 | Phase 23 | Pending |
 
 **Coverage:**
+
 - v1.5 requirements: 12 total
 - Mapped to phases: 12 ✓ (Phases 20–23)
 - Unmapped: 0 ✓
 
 **Phase → Requirement rollup:**
+
 - Phase 20 (Extraction Pipeline Hardening): EXTRACT-01, EXTRACT-02, EXTRACT-03
 - Phase 21 (Card Database Quality Audit): AUDIT-01, AUDIT-02
 - Phase 22 (Findings-Driven Prompt Improvement & Corpus Fixes): PROMPT-01, PROMPT-02, FIX-01, FIX-02
