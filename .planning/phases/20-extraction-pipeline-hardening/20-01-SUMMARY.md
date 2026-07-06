@@ -130,6 +130,17 @@ None - no external service configuration required.
 - `extractCardsFromNotes`'s live prompt still expects a bare JSON array per its current instructions — it is contract-mismatched with the now wrapper-only `parseExtractionResponse` until Plan 02 migrates the prompt + call to `output_config.format`/`zodOutputFormat`. This is expected and documented in the plan (task 1, step 4); no live sync call should be exercised against `main` until Plan 02 lands.
 - Full test suite (140 tests) and lint (0 errors) are green as of this plan's completion.
 
+## Self-Check: PASSED
+
+- FOUND: lib/extract-cards.ts
+- FOUND: tests/extract-cards.test.ts
+- FOUND: .planning/phases/20-extraction-pipeline-hardening/20-01-SUMMARY.md
+- FOUND: 4910d1d (test — migrate fixtures, add EXTRACT-02 cases)
+- FOUND: cb341f7 (feat — rewrite parseExtractionResponse, extract normalizeExtractedCards)
+- FOUND: cf5ea31 (test — add blank-safety enforcement cases)
+- FOUND: 7944e69 (feat — implement blank-safety partition + rejection)
+- FOUND: 84d6bb3 (docs — this SUMMARY.md commit)
+
 ---
 *Phase: 20-extraction-pipeline-hardening*
 *Completed: 2026-07-06*
