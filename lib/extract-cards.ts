@@ -235,7 +235,10 @@ export function normalizeExtractedCards(
   const effectiveDeckSet = new Set([...deckSet, ...batchFronts])
 
   // Defensively normalize so a malformed field from the model can't break sync.
-  return validCards.map((c) => {
+  // EXTRACT-03: a card without a code-verified blank-safe first sentence must
+  // never reach the returned array, so this step uses flatMap ([] to reject
+  // the whole card, [card] to keep it) rather than map.
+  return validCards.flatMap((c) => {
     const front = c.front ?? ''
     const myKey = normalizeFront(front)
 
@@ -252,7 +255,45 @@ export function normalizeExtractedCards(
     // matters — cheap self-dedup/self-exclude runs first, then this filter.
     const components = filterComponents(dedupedComponents, effectiveDeckSet)
 
-    return {
+    // EXTRACT-03 sentence pipeline: (a) structural shape checks + the .found
+    // filter — a non-found sentence renders un-highlighted and produces a
+    // wrong fill-blank answer, always drop; (b) compute sentenceMatch once
+    // per surviving sentence, then stable-partition into safe-first /
+    // non-safe-after (both halves preserve relative order) using the single-
+    // source blank-safety predicate (lib/sentence-match.ts); (c) cap at 3;
+    // (d) coerce translation. Non-safe survivors are RETAINED after safe ones
+    // (not dropped) — only blank modes need a safe sentence, and the
+    // selection layer already falls back to the first blank-safe sentence
+    // when blanking, while Exposure mode rotates across all sentences for
+    // variety (see RESEARCH.md "Blank-Safety Enforcement Design").
+    const found = (Array.isArray(c.sentences) ? c.sentences : [])
+      .filter((s): s is ExtractedSentence =>
+        typeof s === 'object' && s !== null &&
+        typeof s.korean === 'string' && s.korean.length > 0 &&
+        typeof s.targetForm === 'string' && s.targetForm.length > 0 &&
+        sentenceMatch(s.korean, s.targetForm).found
+      )
+      .map((s) => ({ s, match: sentenceMatch(s.korean, s.targetForm) }))
+
+    const safe = found.filter(({ match }) => match.safeToBlank).map(({ s }) => s)
+    const unsafe = found.filter(({ match }) => !match.safeToBlank).map(({ s }) => s)
+
+    if (safe.length === 0) {
+      // Subsumes the zero-sentences-at-all case (found.length === 0) and the
+      // all-fail-found case. Warn for sync-log observability, then reject
+      // the whole card — never persist a card with no code-verified
+      // blank-safe first sentence.
+      console.warn(`Dropping card without a blank-safe sentence: ${front}`)
+      return []
+    }
+
+    const sentences = [...safe, ...unsafe].slice(0, 3).map((s) => ({
+      korean:      s.korean,
+      targetForm:  s.targetForm,
+      translation: typeof s.translation === 'string' ? s.translation : '',
+    }))
+
+    return [{
       type:       (c.type ?? 'vocabulary') as ExtractedCard['type'],
       front,
       back:       c.back ?? '',
@@ -264,23 +305,9 @@ export function normalizeExtractedCards(
       distractors: Array.isArray(c.distractors)
         ? c.distractors.filter((d): d is string => typeof d === 'string').slice(0, 3)
         : [],
-      sentences: (Array.isArray(c.sentences) ? c.sentences : [])
-        .filter((s): s is ExtractedSentence =>
-          typeof s === 'object' && s !== null &&
-          typeof s.korean === 'string' && s.korean.length > 0 &&
-          typeof s.targetForm === 'string' && s.targetForm.length > 0 &&
-          // Drop sentences where targetForm isn't verbatim in korean — they would
-          // render as un-highlighted and produce a wrong fill-blank answer.
-          sentenceMatch(s.korean, s.targetForm).found
-        )
-        .slice(0, 3)
-        .map((s) => ({
-          korean:      s.korean,
-          targetForm:  s.targetForm,
-          translation: typeof s.translation === 'string' ? s.translation : '',
-        })),
+      sentences,
       components,
-    }
+    }]
   })
 }
 
