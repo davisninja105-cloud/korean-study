@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Extraction Quality & Reliability
 current_phase: 20
-current_phase_name: Extraction Pipeline Hardening
+current_phase_name: extraction-pipeline-hardening
 status: executing
 stopped_at: v1.5 roadmap created (Phases 20–23); files written (ROADMAP.md, STATE.md, REQUIREMENTS.md traceability)
-last_updated: "2026-07-06T21:43:47.901Z"
+last_updated: "2026-07-06T21:51:26.282Z"
 last_activity: 2026-07-06
-last_activity_desc: v1.5 roadmap created (Phases 20–23), 12/12 requirements mapped
+last_activity_desc: Phase 20 execution started
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
+  total_plans: 2
   completed_plans: 0
   percent: 0
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-05)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** v1.5 roadmap created — Phase 20 (Extraction Pipeline Hardening) ready to plan
+**Current focus:** Phase 20 — extraction-pipeline-hardening
 
 ## Current Position
 
-Phase: 20 of 23 (Extraction Pipeline Hardening) — first v1.5 phase
-Plan: — (not yet planned)
-Status: Ready to execute
-Last activity: 2026-07-06 — v1.5 roadmap created (Phases 20–23), 12/12 requirements mapped
+Phase: 20 (extraction-pipeline-hardening) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 20
+Last activity: 2026-07-06 — Phase 20 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
