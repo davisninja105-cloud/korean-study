@@ -29,7 +29,7 @@ describe('parseExtractionResponse', () => {
     // Deck set includes "학교" so this test isolates dedup/self-exclusion behavior
     // from the deck-lookup filter (GRAPH-03, covered separately below).
     const deckSet = new Set(['학교'])
-    const result = parseExtractionResponse(JSON.stringify([cardA, cardB]), deckSet)
+    const result = parseExtractionResponse(JSON.stringify({ cards: [cardA, cardB] }), deckSet)
 
     expect(result).toHaveLength(2)
     expect(result[0].front).toBe('가다')
@@ -51,7 +51,7 @@ describe('parseExtractionResponse', () => {
       sentences: [{ korean: '학교에 가다', targetForm: '가다', translation: 'go to school' }],
       components: [],
     }
-    const result = parseExtractionResponse(JSON.stringify([card]))
+    const result = parseExtractionResponse(JSON.stringify({ cards: [card] }))
 
     expect(result).toHaveLength(1)
     expect(result[0].notes).toBeUndefined()
@@ -69,7 +69,7 @@ describe('parseExtractionResponse', () => {
       components: [],
     }
     const badFront = { ...valid, front: '   ' }
-    const result = parseExtractionResponse(JSON.stringify([valid, badFront]))
+    const result = parseExtractionResponse(JSON.stringify({ cards: [valid, badFront] }))
 
     expect(result).toHaveLength(1)
     expect(result[0].front).toBe('오다')
@@ -85,7 +85,7 @@ describe('parseExtractionResponse', () => {
       components: [],
     }
     const badBack = { ...valid, front: '마시다', back: '' }
-    const result = parseExtractionResponse(JSON.stringify([valid, badBack]))
+    const result = parseExtractionResponse(JSON.stringify({ cards: [valid, badBack] }))
 
     expect(result).toHaveLength(1)
     expect(result[0].front).toBe('먹다')
@@ -106,7 +106,9 @@ describe('parseExtractionResponse', () => {
     const invalidType = { ...validVocab, front: '노트', type: 'noun' }
     const absentType: Record<string, unknown> = { ...validVocab, front: '책' }
     delete absentType.type
-    const result = parseExtractionResponse(JSON.stringify([validVocab, invalidType, absentType]))
+    const result = parseExtractionResponse(
+      JSON.stringify({ cards: [validVocab, invalidType, absentType] })
+    )
 
     expect(result).toHaveLength(2)
     const fronts = result.map((c) => c.front)
@@ -126,21 +128,25 @@ describe('parseExtractionResponse', () => {
       sentences: [{ korean: '가방을 사다', targetForm: '사다', translation: 'buy a bag' }],
       components: [],
     }
-    const result = parseExtractionResponse(JSON.stringify([valid, 'just a string', null]))
+    const result = parseExtractionResponse(
+      JSON.stringify({ cards: [valid, 'just a string', null] })
+    )
 
     expect(result).toHaveLength(1)
     expect(result[0].front).toBe('사다')
   })
 
-  it('preserves the existing truncation-salvage logic — a raw response with no closing bracket still yields its complete cards', () => {
-    // Raw text mimics a truncated Claude stream: 2 complete card objects (no nested
-    // arrays, so no stray "]" characters confuse the outer-array regex) followed by a
-    // partial third object with no closing "]" anywhere in the string. The tolerant
-    // salvage parser (lib/extract-cards.ts) must trim back to the last complete "},"
-    // and re-close the array so the 2 complete cards are still recovered and validated.
-    const truncatedText = `[
-{"type":"vocabulary","front":"가다","back":"to go"},
-{"type":"vocabulary","front":"오다","back":"to come"},
+  it('preserves the existing truncation-salvage logic — a raw wrapper response with no closing brace still yields its complete cards', () => {
+    // Raw text mimics a truncated Claude stream inside the {cards:[...]} wrapper:
+    // 2 complete card objects (each given a blank-safe sentence per EXTRACT-02
+    // migration note — keeps Task 2's zero-sentence-rejection diff purely
+    // behavioral) followed by a partial third object with no closing brace
+    // anywhere in the string. The tolerant salvage parser must trim back to the
+    // last complete top-level card boundary (depth === 2) and re-close both the
+    // cards array and the wrapper object so the 2 complete cards are recovered.
+    const truncatedText = `{"cards":[
+{"type":"vocabulary","front":"가다","back":"to go","sentences":[{"korean":"학교에 가다","targetForm":"가다","translation":"go to school"}]},
+{"type":"vocabulary","front":"오다","back":"to come","sentences":[{"korean":"집에 오다","targetForm":"오다","translation":"come home"}]},
 {"type":"vocabulary","front":"먹다","back":"to eat`
     const result = parseExtractionResponse(truncatedText)
 
@@ -156,9 +162,9 @@ describe('parseExtractionResponse', () => {
     // belongs to the truncated nested sentence object, NOT the card boundary —
     // a depth-unaware lastIndexOf('},') would slice there and produce
     // bracket-mismatched JSON. The depth-aware scanner must instead find the
-    // last '},' that closes a TOP-LEVEL card object (after "가다"'s sentences
-    // array), recovering both complete cards.
-    const truncatedText = `[
+    // last '},' that closes a TOP-LEVEL card object (depth === 2, after "가다"'s
+    // sentences array), recovering both complete cards.
+    const truncatedText = `{"cards":[
 {"type":"vocabulary","front":"가다","back":"to go","sentences":[{"korean":"학교에 가다","targetForm":"가다","translation":"go to school"}]},
 {"type":"vocabulary","front":"오다","back":"to come","sentences":[{"korean":"집에 오다","targetForm":"오다","translation":"come home"}]},
 {"type":"vocabulary","front":"먹다","back":"to eat","sentences":[{"korean":"밥을 먹다","targetForm":"먹다","translation":"eat rice`
@@ -167,6 +173,154 @@ describe('parseExtractionResponse', () => {
     expect(result).toHaveLength(2)
     const fronts = result.map((c) => c.front)
     expect(fronts).toEqual(['가다', '오다'])
+  })
+
+  describe('wrapper-shape truncation salvage (EXTRACT-02)', () => {
+    it('salvages card 1 when truncation cuts mid-card-2 inside the wrapper', () => {
+      const truncatedText = `{"cards":[
+{"type":"vocabulary","front":"가다","back":"to go","sentences":[{"korean":"학교에 가다","targetForm":"가다","translation":"go to school"}]},
+{"type":"vocabulary","front":"오다","back":"to come","sentences":[{"korean":"집에 오다","targetForm":"오다","translation":"come home`
+      const result = parseExtractionResponse(truncatedText)
+
+      expect(result).toHaveLength(1)
+      expect(result[0].front).toBe('가다')
+    })
+
+    it('throws when the cut happens mid-first-card (no complete top-level card boundary exists)', () => {
+      const truncatedText = `{"cards":[
+{"type":"vocabulary","front":"가다","back":"to go","sentences":[{"korean":"학교에 가다","targetForm":"가다","translation":"go to school`
+      expect(() => parseExtractionResponse(truncatedText)).toThrow()
+    })
+
+    it('still parses all cards when truncation happens after the cards array closes but before the wrapper object closes', () => {
+      // Ends with the cards array's closing "]" but is missing the wrapper's
+      // final "}" — full JSON.parse fails, but the depth-2 salvage scanner finds
+      // the last complete card's boundary and the re-close (']}') still succeeds.
+      const truncatedText =
+        '{"cards":[{"type":"vocabulary","front":"가다","back":"to go","sentences":[{"korean":"학교에 가다","targetForm":"가다","translation":"go to school"}]}]'
+      const result = parseExtractionResponse(truncatedText)
+
+      expect(result).toHaveLength(1)
+      expect(result[0].front).toBe('가다')
+    })
+
+    it('throws on legacy bare-array input (no wrapper) — the contract is wrapper-only now', () => {
+      const legacyBareArray = JSON.stringify([
+        {
+          type: 'vocabulary',
+          front: '가다',
+          back: 'to go',
+          sentences: [{ korean: '학교에 가다', targetForm: '가다', translation: 'go to school' }],
+        },
+      ])
+      expect(() => parseExtractionResponse(legacyBareArray)).toThrow()
+    })
+  })
+
+  describe('blank-safety enforcement (EXTRACT-03)', () => {
+    it('drops a card whose sentences all fail .found, keeps a valid sibling', () => {
+      const noMatchCard = {
+        type: 'vocabulary',
+        front: '이상한',
+        back: 'strange',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '학교에 가다', targetForm: '없는말', translation: 'no match' }],
+        components: [],
+      }
+      const validCard = {
+        type: 'vocabulary',
+        front: '오다',
+        back: 'to come',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '집에 오다', targetForm: '오다', translation: 'come home' }],
+        components: [],
+      }
+      const result = parseExtractionResponse(JSON.stringify({ cards: [noMatchCard, validCard] }))
+
+      expect(result).toHaveLength(1)
+      expect(result[0].front).toBe('오다')
+    })
+
+    it('drops a card whose only sentence has a single-character targetForm (found-but-unsafe)', () => {
+      const card = {
+        type: 'vocabulary',
+        front: '물',
+        back: 'water',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '물을 사다', targetForm: '물', translation: 'buy water' }],
+        components: [],
+      }
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }))
+
+      expect(result).toHaveLength(0)
+    })
+
+    it('drops a card whose only sentence has a targetForm occurring twice (found-but-unsafe)', () => {
+      const card = {
+        type: 'vocabulary',
+        front: '가다',
+        back: 'to go',
+        distractors: ['a', 'b', 'c'],
+        sentences: [{ korean: '가다 또 가다', targetForm: '가다', translation: 'go again' }],
+        components: [],
+      }
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }))
+
+      expect(result).toHaveLength(0)
+    })
+
+    it('promotes a safe sentence to index 0 and RETAINS the unsafe survivor after it (stable partition, not dropped)', () => {
+      const card = {
+        type: 'grammar',
+        front: '~(으)면',
+        back: 'if/when',
+        distractors: ['a', 'b', 'c'],
+        sentences: [
+          { korean: '가다 또 가다', targetForm: '가다', translation: 'unsafe — occurs twice' },
+          { korean: '가면 좋다', targetForm: '가면', translation: 'good if you go' },
+        ],
+        components: [],
+      }
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }))
+
+      expect(result).toHaveLength(1)
+      expect(result[0].sentences).toHaveLength(2)
+      expect(result[0].sentences[0].targetForm).toBe('가면')
+      expect(result[0].sentences[1].targetForm).toBe('가다')
+    })
+
+    it('drops a card with an empty sentences array (possible on the salvage path)', () => {
+      const card = {
+        type: 'vocabulary',
+        front: '가다',
+        back: 'to go',
+        distractors: ['a', 'b', 'c'],
+        sentences: [],
+        components: [],
+      }
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }))
+
+      expect(result).toHaveLength(0)
+    })
+
+    it('caps the returned sentences at 3 even when 4 are blank-safe', () => {
+      const card = {
+        type: 'grammar',
+        front: '~고',
+        back: 'and (connector)',
+        distractors: ['a', 'b', 'c'],
+        sentences: [
+          { korean: '가고 싶다', targetForm: '가고', translation: 's1' },
+          { korean: '먹고 싶다', targetForm: '먹고', translation: 's2' },
+          { korean: '보고 싶다', targetForm: '보고', translation: 's3' },
+          { korean: '자고 싶다', targetForm: '자고', translation: 's4' },
+        ],
+        components: [],
+      }
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }))
+
+      expect(result[0].sentences).toHaveLength(3)
+    })
   })
 
   describe('deckNormalizedFronts filtering (GRAPH-03 write-path wiring)', () => {
@@ -180,7 +334,7 @@ describe('parseExtractionResponse', () => {
         components: ['학교', '완전히-지어낸단어'],
       }
       const deckSet = new Set(['학교'])
-      const result = parseExtractionResponse(JSON.stringify([card]), deckSet)
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }), deckSet)
 
       expect(result[0].components).toEqual(['학교'])
     })
@@ -195,7 +349,7 @@ describe('parseExtractionResponse', () => {
         components: ['학교'],
       }
       const deckSet = new Set(['학교'])
-      const result = parseExtractionResponse(JSON.stringify([card]), deckSet)
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }), deckSet)
 
       expect(result[0].components).toEqual(['학교'])
     })
@@ -210,7 +364,7 @@ describe('parseExtractionResponse', () => {
         components: ['~(으)면'],
       }
       const deckSet = new Set(['~(으)면'])
-      const result = parseExtractionResponse(JSON.stringify([card]), deckSet)
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }), deckSet)
 
       expect(result[0].components).toEqual(['~(으)면'])
     })
@@ -224,7 +378,7 @@ describe('parseExtractionResponse', () => {
         sentences: [{ korean: '학교에 가다', targetForm: '가다', translation: 'go to school' }],
         components: ['학교', '이다'],
       }
-      const result = parseExtractionResponse(JSON.stringify([card]))
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }))
 
       expect(result[0].components).toEqual([])
     })
@@ -251,7 +405,7 @@ describe('parseExtractionResponse', () => {
         components: [],
       }
       const deckSet = new Set<string>() // empty — neither card pre-exists in the DB
-      const result = parseExtractionResponse(JSON.stringify([school, go]), deckSet)
+      const result = parseExtractionResponse(JSON.stringify({ cards: [school, go] }), deckSet)
 
       const schoolResult = result.find((c) => c.front === '학교')
       expect(schoolResult?.components).toEqual(['가다'])
@@ -269,7 +423,7 @@ describe('parseExtractionResponse', () => {
         components: ['가다', '학교'],
       }
       const deckSet = new Set(['가다', '학교'])
-      const result = parseExtractionResponse(JSON.stringify([card]), deckSet)
+      const result = parseExtractionResponse(JSON.stringify({ cards: [card] }), deckSet)
 
       expect(result[0].components).toEqual(['학교'])
     })

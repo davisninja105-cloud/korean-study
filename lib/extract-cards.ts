@@ -197,39 +197,136 @@ function isValidExtractedCard(c: unknown): c is Partial<ExtractedCard> {
 }
 
 /**
- * Pure parser for Claude's raw extraction response text. Runs the tolerant
- * JSON salvage parser (unchanged from prior behavior — a dense/truncated
- * lesson still yields the cards that did complete) THEN per-card structural
- * validation (GRAPH-02: a malformed card object is dropped, never coerced
- * into an empty-string card) BEFORE the existing normalization step. No
- * Anthropic call inside — safe to unit test in isolation.
+ * Shared pure normalization pipeline (lifted out of parseExtractionResponse
+ * so both the salvage-parse path and the future structured-outputs happy
+ * path — Plan 02 — flow through one pipeline, one test surface). Runs
+ * per-card structural validation (GRAPH-02: a malformed card object is
+ * dropped, never coerced into an empty-string card), the CR-01 same-batch
+ * component resolution union, the GRAPH-03 deck-lookup component filter, and
+ * field coercion (IN-01). No Anthropic call inside — safe to unit test in
+ * isolation; imports only sentence-match/card-key/filter-components so it
+ * stays free of Prisma/SDK usage.
  *
- * `deckNormalizedFronts` (GRAPH-03) is the full set of every card's
- * normalizedFront already in the deck. After the existing self-dedup/
- * self-exclude step produces a card's components array, filterComponents()
- * drops any entry that does not resolve to a real deck card (direct
- * normalizeFront match or particle-stem fallback) — never by sentence-text
- * containment. Defaults to an empty Set so existing callers/tests that don't
- * pass a deck set simply get all components filtered out; the live caller
- * (extractCardsFromNotes) always passes the real deck set.
+ * `deckSet` (GRAPH-03) is the full set of every card's normalizedFront
+ * already in the deck. After the self-dedup/self-exclude step produces a
+ * card's components array, filterComponents() drops any entry that does not
+ * resolve to a real deck card (direct normalizeFront match or particle-stem
+ * fallback) — never by sentence-text containment. Defaults to an empty Set
+ * so callers/tests that don't pass a deck set simply get all components
+ * filtered out; the live caller (extractCardsFromNotes) always passes the
+ * real deck set.
  */
+export function normalizeExtractedCards(
+  rawCards: unknown[],
+  deckSet: Set<string> = new Set()
+): ExtractedCard[] {
+  // Structural validation (GRAPH-02): drop cards that are missing/empty
+  // front/back or carry a present-but-invalid type, BEFORE normalization.
+  const validCards = rawCards.filter(isValidExtractedCard)
+
+  // CR-01: same-lesson siblings aren't in the DB yet (existingNormalizedFronts
+  // was fetched before this extraction call ran) but they ARE valid same-request
+  // prerequisite targets — a single lesson's exhaustive extraction routinely
+  // introduces several cards that legitimately reference each other. Union the
+  // batch's own fronts into the resolution set before filtering each card's
+  // components so a forward reference to a sibling card in this same response
+  // survives instead of being stripped before it's ever persisted.
+  const batchFronts = new Set(validCards.map((c) => normalizeFront(c.front ?? '')))
+  const effectiveDeckSet = new Set([...deckSet, ...batchFronts])
+
+  // Defensively normalize so a malformed field from the model can't break sync.
+  // EXTRACT-03: a card without a code-verified blank-safe first sentence must
+  // never reach the returned array, so this step uses flatMap ([] to reject
+  // the whole card, [card] to keep it) rather than map.
+  return validCards.flatMap((c) => {
+    const front = c.front ?? ''
+    const myKey = normalizeFront(front)
+
+    // Clean components: array of non-empty strings, deduped, self-excluded.
+    const rawComponents = Array.isArray(c.components) ? c.components : []
+    const dedupedComponents = [...new Set(
+      rawComponents
+        .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+        .map((x) => x.trim())
+        .filter((x) => normalizeFront(x) !== myKey)
+    )]
+    // Deck-lookup filter (GRAPH-03): drop any component that doesn't resolve
+    // to a real deck card (including same-batch siblings, CR-01). Order
+    // matters — cheap self-dedup/self-exclude runs first, then this filter.
+    const components = filterComponents(dedupedComponents, effectiveDeckSet)
+
+    // EXTRACT-03 sentence pipeline: (a) structural shape checks + the .found
+    // filter — a non-found sentence renders un-highlighted and produces a
+    // wrong fill-blank answer, always drop; (b) compute sentenceMatch once
+    // per surviving sentence, then stable-partition into safe-first /
+    // non-safe-after (both halves preserve relative order) using the single-
+    // source blank-safety predicate (lib/sentence-match.ts); (c) cap at 3;
+    // (d) coerce translation. Non-safe survivors are RETAINED after safe ones
+    // (not dropped) — only blank modes need a safe sentence, and the
+    // selection layer already falls back to the first blank-safe sentence
+    // when blanking, while Exposure mode rotates across all sentences for
+    // variety (see RESEARCH.md "Blank-Safety Enforcement Design").
+    const found = (Array.isArray(c.sentences) ? c.sentences : [])
+      .filter((s): s is ExtractedSentence =>
+        typeof s === 'object' && s !== null &&
+        typeof s.korean === 'string' && s.korean.length > 0 &&
+        typeof s.targetForm === 'string' && s.targetForm.length > 0 &&
+        sentenceMatch(s.korean, s.targetForm).found
+      )
+      .map((s) => ({ s, match: sentenceMatch(s.korean, s.targetForm) }))
+
+    const safe = found.filter(({ match }) => match.safeToBlank).map(({ s }) => s)
+    const unsafe = found.filter(({ match }) => !match.safeToBlank).map(({ s }) => s)
+
+    if (safe.length === 0) {
+      // Subsumes the zero-sentences-at-all case (found.length === 0) and the
+      // all-fail-found case. Warn for sync-log observability, then reject
+      // the whole card — never persist a card with no code-verified
+      // blank-safe first sentence.
+      console.warn(`Dropping card without a blank-safe sentence: ${front}`)
+      return []
+    }
+
+    const sentences = [...safe, ...unsafe].slice(0, 3).map((s) => ({
+      korean:      s.korean,
+      targetForm:  s.targetForm,
+      translation: typeof s.translation === 'string' ? s.translation : '',
+    }))
+
+    return [{
+      type:       (c.type ?? 'vocabulary') as ExtractedCard['type'],
+      front,
+      back:       c.back ?? '',
+      // IN-01: coerce to the declared string|undefined type instead of passing
+      // a malformed non-string value through untouched — otherwise it only
+      // fails later at the Prisma write (a whole-lesson DB-write failure)
+      // rather than being caught cleanly here alongside the other validation.
+      notes:      typeof c.notes === 'string' ? c.notes : undefined,
+      distractors: Array.isArray(c.distractors)
+        ? c.distractors.filter((d): d is string => typeof d === 'string').slice(0, 3)
+        : [],
+      sentences,
+      components,
+    }]
+  })
+}
+
 /**
- * WR-01: scans forward through (possibly truncated) JSON array text,
+ * WR-01/EXTRACT-02: scans forward through (possibly truncated) JSON text,
  * tracking bracket/brace nesting depth (skipping over string literal
  * contents, including escaped quotes, so braces inside translated text
  * don't confuse the count). Returns the index of the last `}` that closes a
- * TOP-LEVEL card object — i.e. one that is a direct element of the outer
- * array — never a nested object such as a card's `sentences` array. Returns
- * -1 if no such boundary is found.
+ * TOP-LEVEL card object — i.e. one that is a direct element of the `cards`
+ * array inside the `{ cards: [...] }` wrapper — never a nested object such
+ * as a card's `sentences` array. Returns -1 if no such boundary is found.
  *
- * Depth 1 means "inside the outer `[` only" — so a `}` that brings depth
- * back down to 1 is closing an object that is a direct child of the array,
- * exactly the boundary the truncation-salvage logic needs. The previous
- * approach (`text.lastIndexOf('},')`) assumed the last `},` in the text was
- * always this boundary, which breaks now that every card nests a
- * `sentences` array: truncation mid-sentence-object leaves the last `},`
- * belonging to a nested sentence, not the card, producing bracket-mismatched
- * JSON when naively sliced and re-closed.
+ * Depth arithmetic for the wrapper shape: the wrapper `{` is depth 1, the
+ * `cards` array's `[` is depth 2, and each card object's `{` is depth 3 (its
+ * nested `sentences` array is depth 4, sentence objects depth 5). A `}` that
+ * brings depth back down to 2 is closing a card that is a direct element of
+ * the `cards` array — exactly the boundary the truncation-salvage logic
+ * needs. (Before the EXTRACT-02 wrapper migration, the response root was a
+ * bare array and this rule was `depth === 1`.)
  */
 function findLastTopLevelCardBoundary(text: string): number {
   let depth = 0
@@ -257,7 +354,7 @@ function findLastTopLevelCardBoundary(text: string): number {
       depth++
     } else if (ch === ']' || ch === '}') {
       depth--
-      if (ch === '}' && depth === 1) {
+      if (ch === '}' && depth === 2) {
         lastBoundary = i
       }
     }
@@ -266,120 +363,45 @@ function findLastTopLevelCardBoundary(text: string): number {
   return lastBoundary
 }
 
+/**
+ * Pure parser for Claude's raw extraction response text (EXTRACT-02). Expects
+ * the `{ cards: [...] }` wrapper shape — legacy bare-array responses now
+ * throw. On a clean full parse, delegates directly to
+ * normalizeExtractedCards(). On a parse failure (genuine mid-stream
+ * truncation), scans for the last complete top-level card boundary
+ * (depth === 2) and re-closes both the `cards` array and the wrapper object
+ * before re-parsing, salvaging every card that fully completed. No Anthropic
+ * call inside — safe to unit test in isolation.
+ */
 export function parseExtractionResponse(
   text: string,
   deckNormalizedFronts: Set<string> = new Set()
 ): ExtractedCard[] {
-  // Tolerant JSON parser: if the full parse fails (e.g. truncated output), trim back
-  // to the last complete TOP-LEVEL card object before the array closes so a dense
-  // lesson still yields the cards that did complete rather than losing them all.
-  let parsed: Partial<ExtractedCard>[] = []
-  const jsonMatch = text.match(/\[[\s\S]*\]/)
-  if (!jsonMatch) {
-    // Try to salvage a truncated array: find the last top-level card boundary
-    // and close the array there (WR-01: depth-aware, not lastIndexOf('},')).
+  let rawCards: unknown[] = []
+
+  try {
+    const full = JSON.parse(text.trim()) as { cards?: unknown }
+    if (full && Array.isArray(full.cards)) rawCards = full.cards
+  } catch (parseErr) {
+    // Truncated mid-stream: find the last COMPLETE top-level card and
+    // re-close BOTH the cards array and the wrapper object.
+    console.warn('Full JSON parse failed, attempting salvage:', parseErr)
     const lastBrace = findLastTopLevelCardBoundary(text)
     if (lastBrace !== -1) {
       try {
-        const salvaged = text.slice(0, lastBrace + 1) + ']'
-        const startBracket = salvaged.indexOf('[')
-        if (startBracket !== -1) {
-          parsed = JSON.parse(salvaged.slice(startBracket)) as Partial<ExtractedCard>[]
+        const salvaged = text.slice(0, lastBrace + 1) + ']}'
+        const start = salvaged.indexOf('{')
+        if (start !== -1) {
+          const full = JSON.parse(salvaged.slice(start)) as { cards?: unknown }
+          if (full && Array.isArray(full.cards)) rawCards = full.cards
         }
-      } catch (err) {
-        console.warn('JSON salvage (no-bracket path) failed:', err)
+      } catch (salvageErr) {
+        console.warn('JSON salvage failed:', salvageErr)
       }
-    }
-    if (parsed.length === 0) throw new Error('No JSON array found in response')
-  } else {
-    try {
-      parsed = JSON.parse(jsonMatch[0]) as Partial<ExtractedCard>[]
-    } catch (parseErr) {
-      // Truncated mid-array; try to salvage. WR-01: scan the ORIGINAL full
-      // `text`, not `jsonMatch[0]` — the greedy `/\[[\s\S]*\]/` regex only
-      // matches up to the LAST `]` anywhere in the text, which can itself
-      // land inside a nested `sentences` array and silently exclude a later,
-      // fully-complete top-level card's own closing `}` (e.g. when a further
-      // trailing card is truncated with no closing bracket at all). Scanning
-      // the full text finds the true last top-level card boundary regardless
-      // of where the regex's greedy match happened to stop.
-      console.warn('Full JSON parse failed, attempting salvage:', parseErr)
-      const lastBrace = findLastTopLevelCardBoundary(text)
-      if (lastBrace !== -1) {
-        try {
-          const salvaged = text.slice(0, lastBrace + 1) + ']'
-          const startBracket = salvaged.indexOf('[')
-          if (startBracket !== -1) {
-            parsed = JSON.parse(salvaged.slice(startBracket)) as Partial<ExtractedCard>[]
-          }
-        } catch (salvageErr) {
-          console.warn('JSON salvage also failed:', salvageErr)
-        }
-      }
-      if (parsed.length === 0) throw new Error('Failed to parse JSON response')
     }
   }
 
-  // Structural validation (GRAPH-02): drop cards that are missing/empty
-  // front/back or carry a present-but-invalid type, BEFORE normalization.
-  const validCards = parsed.filter(isValidExtractedCard)
+  if (rawCards.length === 0) throw new Error('No cards found in extraction response')
 
-  // CR-01: same-lesson siblings aren't in the DB yet (existingNormalizedFronts
-  // was fetched before this extraction call ran) but they ARE valid same-request
-  // prerequisite targets — a single lesson's exhaustive extraction routinely
-  // introduces several cards that legitimately reference each other. Union the
-  // batch's own fronts into the resolution set before filtering each card's
-  // components so a forward reference to a sibling card in this same response
-  // survives instead of being stripped before it's ever persisted.
-  const batchFronts = new Set(validCards.map((c) => normalizeFront(c.front ?? '')))
-  const effectiveDeckSet = new Set([...deckNormalizedFronts, ...batchFronts])
-
-  // Defensively normalize so a malformed field from the model can't break sync.
-  return validCards.map((c) => {
-    const front = c.front ?? ''
-    const myKey = normalizeFront(front)
-
-    // Clean components: array of non-empty strings, deduped, self-excluded.
-    const rawComponents = Array.isArray(c.components) ? c.components : []
-    const dedupedComponents = [...new Set(
-      rawComponents
-        .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
-        .map((x) => x.trim())
-        .filter((x) => normalizeFront(x) !== myKey)
-    )]
-    // Deck-lookup filter (GRAPH-03): drop any component that doesn't resolve
-    // to a real deck card (including same-batch siblings, CR-01). Order
-    // matters — cheap self-dedup/self-exclude runs first, then this filter.
-    const components = filterComponents(dedupedComponents, effectiveDeckSet)
-
-    return {
-      type:       (c.type ?? 'vocabulary') as ExtractedCard['type'],
-      front,
-      back:       c.back ?? '',
-      // IN-01: coerce to the declared string|undefined type instead of passing
-      // a malformed non-string value through untouched — otherwise it only
-      // fails later at the Prisma write (a whole-lesson DB-write failure)
-      // rather than being caught cleanly here alongside the other validation.
-      notes:      typeof c.notes === 'string' ? c.notes : undefined,
-      distractors: Array.isArray(c.distractors)
-        ? c.distractors.filter((d): d is string => typeof d === 'string').slice(0, 3)
-        : [],
-      sentences: (Array.isArray(c.sentences) ? c.sentences : [])
-        .filter((s): s is ExtractedSentence =>
-          typeof s === 'object' && s !== null &&
-          typeof s.korean === 'string' && s.korean.length > 0 &&
-          typeof s.targetForm === 'string' && s.targetForm.length > 0 &&
-          // Drop sentences where targetForm isn't verbatim in korean — they would
-          // render as un-highlighted and produce a wrong fill-blank answer.
-          sentenceMatch(s.korean, s.targetForm).found
-        )
-        .slice(0, 3)
-        .map((s) => ({
-          korean:      s.korean,
-          targetForm:  s.targetForm,
-          translation: typeof s.translation === 'string' ? s.translation : '',
-        })),
-      components,
-    }
-  })
+  return normalizeExtractedCards(rawCards, deckNormalizedFronts)
 }
