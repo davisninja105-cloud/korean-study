@@ -1,4 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk'
+import Anthropic, { AnthropicError } from '@anthropic-ai/sdk'
+import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { z } from 'zod'
 import { sentenceMatch } from './sentence-match'
 import { normalizeFront } from './card-key'
@@ -65,6 +66,7 @@ export async function extractCardsFromNotes(
   emphasized: string[] = []
 ): Promise<ExtractedCard[]> {
   const anthropic = new Anthropic()
+  const deckSet = new Set(existingNormalizedFronts)
 
   const existingList =
     existingNormalizedFronts.length > 0
@@ -81,10 +83,19 @@ ${emphasized.map((e) => `- ${e}`).join('\n')}
 `
       : ''
 
-  const message = await anthropic.messages.stream({
+  // EXTRACT-01: output_config.format constrains the response to ExtractionSchema's
+  // shape server-side (constrained decoding) — the prompt no longer needs to beg
+  // for bare JSON. The stream is assigned to a const (not chained straight into
+  // .finalMessage()) so the on('text') accumulator below can be registered
+  // BEFORE awaiting — load-bearing: on truncation the SDK's format.parse() throws
+  // inside the message_stop handler, finalMessage() REJECTS, no message object
+  // is ever produced, and the raw text is otherwise unrecoverable (RESEARCH.md
+  // SDK Behavior Findings #1-2, Pitfall 1).
+  const stream = anthropic.messages.stream({
     model: 'claude-opus-4-8',
     max_tokens: 32000,
     thinking: { type: 'adaptive' },
+    output_config: { format: zodOutputFormat(ExtractionSchema) },
     system:
       'You are a Korean language study assistant. You extract study cards from Korean tutoring lesson notes and prepare each card with example sentences so every study mode (flashcard, multiple-choice, fill-in-the-blank) works perfectly. You also identify prerequisite relationships between cards to enable foundation-first study sequencing.',
     messages: [
@@ -189,21 +200,51 @@ be blank-safe.
 - NEVER include romanization (Latin-letter transliteration) in ANY field — not in front, back,
   notes, or sentences. Hangul for Korean, English for meanings only.
 
-Return ONLY a JSON array. No markdown fences, no explanation, no preamble.
-
 Lesson notes:
 ${notes}`,
       },
     ],
-  }).finalMessage()
+  })
 
-  const content = message.content.find((b) => b.type === 'text')
-  if (!content || content.type !== 'text') throw new Error('No text response from Claude')
+  // MUST be registered before awaiting finalMessage() — see the comment above
+  // the stream call for why (truncation salvage would otherwise be unreachable).
+  let rawText = ''
+  stream.on('text', (delta) => {
+    rawText += delta
+  })
 
-  const text = content.text.trim()
-
-  const deckSet = new Set(existingNormalizedFronts)
-  return parseExtractionResponse(text, deckSet)
+  try {
+    const message = await stream.finalMessage()
+    if (message.parsed_output) {
+      // Happy path: server-constrained, zod-validated shape. Business rules
+      // (blank-safety, zero-sentence rejection, dedup, filterComponents) still
+      // run through the shared pipeline — zod only enforces JSON shape.
+      // Do NOT check stop_reason here: a resolved message with a non-null
+      // parsed_output is by construction complete and schema-valid.
+      return normalizeExtractedCards(message.parsed_output.cards, deckSet)
+    }
+    // Resolved message with zero text blocks — pre-output refusal/empty
+    // content. Not a truncation (that path throws instead — see catch below).
+    throw new Error(`No text response from Claude (stop_reason: ${message.stop_reason})`)
+  } catch (err) {
+    // Truncation (stop_reason max_tokens), a mid-stream refusal leaving
+    // partial text, or a mid-stream connection drop (APIError extends
+    // AnthropicError) all surface here as a rejected finalMessage() with
+    // partial accumulated rawText. Salvage the cards that fully completed.
+    if (err instanceof AnthropicError && rawText.trim().length > 0) {
+      try {
+        return parseExtractionResponse(rawText, deckSet)
+      } catch (salvageErr) {
+        // Open Question 1 (RESEARCH.md): if salvage itself fails (e.g. the cut
+        // happened mid-first-card), rethrow the ORIGINAL AnthropicError rather
+        // than the generic "No cards found" error — it preserves the SDK's
+        // diagnostic detail in the sync failure report.
+        void salvageErr
+        throw err
+      }
+    }
+    throw err
+  }
 }
 
 const VALID_CARD_TYPES = ['vocabulary', 'grammar', 'phrase'] as const
