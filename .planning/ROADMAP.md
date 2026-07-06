@@ -91,7 +91,11 @@ See `.planning/milestones/v1.4-ROADMAP.md` for full phase details.
   2. A genuine mid-stream truncation still salvages the completed cards, with the salvage parser's JSON-depth check adjusted for the new `{ cards: [...] }` wrapper shape
   3. `parseExtractionResponse` rejects zero-sentence cards and drops sentences that fail `safeToBlank` (not merely `sentenceMatch().found`), so no card reaches the DB without a code-verified blank-safe first sentence
   4. Extraction over a sample lesson still dedups by `normalizedFront` and applies the `filterComponents` deck-lookup filter — no regression versus current output
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 20-01-PLAN.md — Wrapper-aware salvage parser + shared normalizeExtractedCards + code-enforced blank-safety (EXTRACT-02, EXTRACT-03)
+- [ ] 20-02-PLAN.md — Native structured outputs via zodOutputFormat/output_config with salvage fallback branching (EXTRACT-01)
 **UI hint**: no
 
 ### Phase 21: Card Database Quality Audit
@@ -158,7 +162,7 @@ Within v1.5, the audit/prompt track is strictly serial (21 → 22); Phase 20 (ex
 | 17. ReviewLog Schema & Idempotent Write Path | v1.4 | 5/5 | Complete | 2026-07-05 |
 | 18. Review History Page | v1.4 | 3/3 | Complete | 2026-07-04 |
 | 19. Vercel Cron Auto-Sync | v1.4 | 3/3 | Complete | 2026-07-05 |
-| 20. Extraction Pipeline Hardening | v1.5 | 0/TBD | Not started | - |
+| 20. Extraction Pipeline Hardening | v1.5 | 0/2 | Not started | - |
 | 21. Card Database Quality Audit | v1.5 | 0/TBD | Not started | - |
 | 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 0/TBD | Not started | - |
 | 23. Reliability Bug Fixes | v1.5 | 0/TBD | Not started | - |
