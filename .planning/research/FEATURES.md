@@ -1,156 +1,135 @@
 # Feature Research
 
-**Domain:** Review-history view for a personal Korean SRS app (v1.4 — feature #2: `ReviewLog` table + history page)
-**Researched:** 2026-07-02
-**Confidence:** MEDIUM
+**Domain:** LLM-based structured extraction quality auditing (Korean lesson notes → flashcards) — v1.5 "Extraction Quality & Reliability"
+**Researched:** 2026-07-05
+**Confidence:** MEDIUM overall — codebase-dependency claims are HIGH (verified directly against `lib/extract-cards.ts`, `lib/filter-components.ts`, `lib/card-key.ts`, `lib/sentence-match.ts`); external ecosystem claims are LOW–MEDIUM (single-pass web search, cross-checked against multiple independent sources where noted)
 
 ## Scope Note
 
-This research covers only the two NEW features with real UX surface for v1.4: **(2) the review-history view page**, and — briefly, per the question — **whether "last auto-synced" should surface in the UI** for the new cron sync (1). Feature #3 (fixing hallucinated `components[]`) is a backend correctness fix with no UI and is out of scope here. This app is **single-user, single-tenant** — every recommendation below is filtered through that lens; multi-user/social SRS features (leaderboards, sharing, cohort comparisons) are excluded as irrelevant, not just deferred.
+This is a **subsequent-milestone** research file; it replaces the prior milestone's (v1.4, review-history) FEATURES.md content, which is now superseded. The extraction pipeline itself (exhaustive extraction, `normalizedFront` dedup, `components[]` → `CardDependency` with `filterComponents`, emphasis capture, blank-safety prompt rules) already exists and is NOT re-researched here. This file maps only: (1) the error taxonomy worth auditing, (2) self-audit techniques for new extractions, (3) post-hoc audit patterns for the existing ~500+-card DB.
 
-This file replaces the prior milestone's (v1.2, "Next.js App Router performance UX") FEATURES.md content — that research is now stale and superseded by this milestone's scope.
+## Error Taxonomy — What Can Actually Be Wrong
+
+Grounded in both the external literature on LLM structured extraction (errors concentrate in **semantically-sensitive categorical and free-text fields**, while structural/format fields are mostly fine — which matches this pipeline: JSON shape is already guarded, semantics are not) and a direct read of the current pipeline code.
+
+| # | Error category | Detectable how | Currently guarded? |
+|---|----------------|----------------|--------------------|
+| E1 | **Type miscategorization** (grammar pattern typed `phrase`, collocation typed `vocabulary`, etc.) | Heuristic (front contains `~` or `(으)` → probably grammar) + LLM judge for borderline cases | Only enum membership is validated (`isValidExtractedCard`); semantic correctness is not |
+| E2 | **Non-base-form / wrong-lemma fronts** (inflected front like 가요; over- or under-lemmatization; romanization leakage) | Deterministic partial: Hangul-only regex on front, common-ending heuristics (vocab fronts ending 요/어요/았다); LLM judge for true lemma correctness | Prompt-only. `normalizeFront` normalizes formatting; it does not check lemma-ness or Hangul-ness |
+| E3 | **Near-duplicates past exact dedup** (notation variants: `~아/어야 하다` vs `~야 되다`; internal spacing `~고 싶다` vs `~고싶다`; same stem, different pattern notation) | Fuzzy key scan — `scripts/find-duplicates.mjs` already does exactly this (strips `~`, all parens) | Exact-match only (`normalizedFront @unique`). Fuzzy scan exists but is manual/ad-hoc |
+| E4 | **First sentence not blank-safe** — **verified real gap**: `parseExtractionResponse` filters sentences on `sentenceMatch().found` only; `safeToBlank` is computed by `sentenceMatch` but never consulted at parse time. Worse, dropping a non-verbatim sentence can silently *promote* an unsafe sentence to first position | Fully deterministic: `sentenceMatch(korean, targetForm).safeToBlank` on `orderIndex 0` of every card | **No.** Prompt-guaranteed only. Violation silently degrades Recall + fill-blank modes |
+| E5 | **Zero-sentence cards** — the verbatim filter can drop *all* of a card's sentences, persisting a card no study mode can present well | Deterministic: `Sentence` count per card | No count check after filtering |
+| E6 | **targetForm verbatim but semantically wrong** (homograph substring; grammar sentence containing the string without exercising the pattern) | LLM judge only — no deterministic signal | No |
+| E7 | **Translation quality/register mismatch** (back too broad/narrow; formal gloss on casual phrase; sentence translation not matching the sentence) | LLM judge only | No |
+| E8 | **Distractor defects** (< 3 distractors — parse slices to ≤ 3 but never backfills or flags short arrays; distractor synonymous with `back`, breaking multiple-choice) | Deterministic: count + exact-dup check; LLM judge for semantic overlap | Parse tolerates any count 0–3 silently |
+| E9 | **components[] real-but-wrong relationships** — `filterComponents` guarantees resolution to *some* deck card, explicitly NOT relationship correctness (documented in `lib/filter-components.ts` header). Also: the `splitParticle` stem fallback can mis-resolve (multi-syllable verb stem + modifier-ending ambiguity), creating a plausible-looking but wrong edge | LLM judge on sampled `CardDependency` edges; deterministic only for self-loops/cycles | Post-v1.4, only edge *existence* is guaranteed, not correctness |
+| E10 | **components[] false negatives** (legitimate forward-reference prerequisites dropped because the target card didn't exist yet) | Deterministic: re-run resolution over the full deck — exactly what `relink-dependencies.mjs` / the planned auto-relink does | Partially — v1.5 already commits auto-relink at `remaining=0` |
+| E11 | **Coverage misses** (emphasized tutor terms that never got a card; admin/meta text extracted as cards) | Emphasized coverage requires re-deriving doc emphasis — `emphasized[]` is **not persisted** (`Lesson` stores clean body text only). Over-extraction is judge/eyeball territory | No |
 
 ## Feature Landscape
 
-### Table Stakes (Users Expect These)
+### Table Stakes (an "extraction quality" milestone is incomplete without these)
 
-Once a `ReviewLog` table exists and is exposed as a page, these are the baseline expectations for it to feel like a real feature rather than a debug dump.
+| Feature | Why Expected | Complexity | Notes / Dependencies |
+|---------|--------------|------------|----------------------|
+| **Deterministic DB invariant sweep script** (findings-first, dry-run by default) | Universal first layer in extraction QA: cheap deterministic checks before any model-based scoring. The codebase already has the exact idiom — `scripts/retro-filter-cleanup.mts` (dry-run default, `--apply` to mutate) | LOW–MEDIUM | New `scripts/audit-cards.mts`. Reuses `sentenceMatch` (E4/E5 + verbatim re-check), `normalizeFront` (self-consistency: stored `normalizedFront === normalizeFront(front)`), Hangul/ASCII regex per `lib/card-key.ts` (E2 romanization), distractor checks (E8), type-heuristic flags (E1). Reads Turso via `@libsql/client` per established script pattern |
+| **Blank-safety enforcement in the parse pipeline** (E4 fix) | Blank-safety is load-bearing for 2 of 3 study modes and currently prompt-only — verified gap. An audit that finds violations must be paired with the write-path fix or violations recur on every sync | LOW | One change in `parseExtractionResponse` (`lib/extract-cards.ts`): consult `sentenceMatch().safeToBlank`, reorder so a blank-safe sentence is first (or flag the card). Parser is already pure and unit-tested |
+| **Zero/short-sentence guard** (E5) | A card with no sentences after filtering is silently broken; trivially checkable at the same touch-point as E4 | LOW | Same touch-point as above |
+| **Near-duplicate report over the full deck** (E3) | Duplicate headwords are the most-reported problem in automated flashcard generation; exact-match dedup demonstrably misses notation variants | LOW | Extend/reuse `scripts/find-duplicates.mjs` — already implements the fuzzy key. Promote from ad-hoc to a section of the audit report |
+| **Findings report as a reviewable artifact** (grouped by error category, with card ids + fronts) | "Findings-first, then fix" is both the milestone's stated approach and the standard external pattern (audit → human review → apply); auto-mutation without review is the documented anti-pattern | LOW | Markdown/JSON output from the audit script; direct input to the prompt-review step |
+| **Prompt review against audit findings** | The point of the audit: each error category with real hits maps to a specific prompt section in `lib/extract-cards.ts` (E1→type definitions, E2→base-form rules, E4→sentence rules, E9→components rules). Findings make prompt edits evidence-based instead of speculative | LOW (review) / MEDIUM (safe rollout) | Depends on the audit report existing first. Prompt changes affect only *future* extractions — existing rows need the post-hoc path |
 
-| Feature | Why Expected | Complexity | Notes |
-|---------|--------------|------------|-------|
-| Reverse-chronological review list (timestamp, card front, rating, resulting interval/state) | This is the literal content of the table — a list view is the minimum viable "history page." Anki's Card Info panel sets the reference pattern: one row per review event with date, rating, and interval outcome. | LOW | `ReviewLog` rows joined to `Card.front`/`type`; straightforward Prisma query with `orderBy: { reviewedAt: 'desc' }`. |
-| Rating shown as the same 4-button vocabulary already used in study (Again/Hard/Good/Easy or equivalent), not raw `1-4` integers | Consistency with `lib/fsrs.ts` grade language already established in the app (mastery-language `formatInterval`); raw integers would be a jarring regression from the polish already shipped. | LOW | Reuse whatever labels/colors the grade bar already uses in `StudySession.tsx`. |
-| Pagination (not unbounded fetch) | Reviews accumulate fast — a daily study habit at ~20-40 reviews/session produces thousands of rows within months. An unbounded `findMany` will eventually blow past reasonable payload size and page-load time, and this app already has a documented `take: 1000` safety-bound pattern (`lib/study-cards.ts`) precedent for "always bound the pool query." | LOW-MEDIUM | Cursor-based pagination (`reviewedAt`+`id` cursor) is cheaper on libSQL/Turso than `OFFSET` at scale and matches the "cheap, bounded" constraint already established for this milestone. Page size 20-30 rows, "Load more" button fits the app's existing mobile-first, tap-driven interaction style better than numbered pages. |
-| Per-card filter (view history for one specific card) | The most natural entry point is "why does this card feel hard" — tapping into a card's history from the Cards page or from a study session. Anki's whole per-card "Card Info" pattern exists because aggregate stats don't answer "what happened with THIS word." | LOW-MEDIUM | Needs `cardId` query param + a link from `CardEditor.tsx` / cards list into the history view scoped to that card. This is the single highest-value filter — more useful than date-range for a solo learner. |
-| Empty state | New DB feature, so day-one the table is empty (or has zero history before the ship date, since `ReviewLog` starts logging from ship-forward, not retroactively). | LOW | Follow the app's established RSC hydration pattern — server-render the actual (possibly empty) list, not a client-side loading flash (per `CLAUDE.md`'s RSC-05 DTO contract and "no blank-loading flash" convention already in place for every other page). |
+### Differentiators (valuable, not required for a credible audit)
 
-### Differentiators (Competitive Advantage)
+| Feature | Value Proposition | Complexity | Notes / Dependencies |
+|---------|-------------------|------------|----------------------|
+| **Batch LLM re-grading of sampled/flagged cards** (LLM-as-judge with a rubric) | Only way to reach the semantic error classes (E1 borderline, E6, E7, E9 relationship-correctness) no deterministic check covers. Standard layered pattern: judge runs *after* deterministic filters, as a precision layer, over a sample — not the whole deck | MEDIUM | Runs locally (`npx tsx`, same as `local-resync.mts`) — never in a request path (Vercel 60 s limit). Haiku (`claude-haiku-4-5`) suffices for E7/E8 register/overlap checks; E9 relationship judgment may want the stronger model. Structured JSON verdicts appended to the findings report |
+| **Source-traceability check: sentences vs lesson snapshot** | `Lesson` rows store raw doc text — a deterministic containment check classifies each stored sentence as "copied from lesson" vs "LLM-composed", surfacing likely-hallucinated example sentences at zero LLM cost. The prompt mandates copying lesson sentences when they exist, so composed-when-lesson-had-one is itself a finding | MEDIUM | Depends on `Lesson.rawText` fidelity + `Card.lessonId` (first-introduced lesson). Needs fuzzy containment (whitespace/punct-tolerant); exact substring will under-match |
+| **Golden-lesson regression fixture for prompt changes** | Before/after safety net: assert `parseExtractionResponse`-level properties (counts, blank-safety, no romanization) against frozen fixtures whenever the prompt changes. Matches both external revalidation practice and the project's own Phase 17 lesson (persist regression tests) | MEDIUM | Fixture lesson + property assertions in Vitest. Full LLM-in-the-loop runs stay manual/local (cost, nondeterminism) |
+| **Audit metrics snapshot per run (drift detection)** | Persisting per-run counts per error category turns one-off audits into a regression signal across prompt/model versions | LOW | Trivial once the audit script exists; value compounds over time |
+| **Emphasized-term coverage audit** (E11) | Directly checks the tutor's own "this is important" signal against the deck | MEDIUM–HIGH | Blocked on data: `emphasized[]` is not persisted. Requires re-fetching the Google Doc through `lib/google-docs.ts` at audit time (script-doable) or persisting `emphasized` on `Lesson` (schema change → manual Turso DDL) |
 
-Not required for the feature to "work," but these are what make the data genuinely useful for a solo learner rather than a vanity log — and they lean on UI patterns already built in this app.
-
-| Feature | Value Proposition | Complexity | Notes |
-|---------|-------------------|------------|-------|
-| Rating filter (show only "Again"/lapses) | The single most actionable filter for a learner: "show me everything I've been failing" surfaces real trouble spots — this is where review history earns its keep over the existing day-level heatmap, which can't answer "which cards." | LOW | Simple `WHERE rating = 1` addition to the same query; cheap to add alongside the per-card filter. |
-| Date-range filter, reusing `LessonRangeFilter.tsx` interaction pattern (but for dates, not lessons) | Consistency — the app already has a shared "From/To/All" filter component used on both Cards and Study pages. A date-range variant for review history keeps the UI vocabulary the learner already knows instead of inventing a new date-picker pattern. | LOW-MEDIUM | Don't reuse the component verbatim (it's lesson-indexed, not date-indexed) but mirror its visual/interaction shape (sheet-based, From/To/All) for familiarity. |
-| Per-card mini-trend inside `CardEditor.tsx` (e.g. "6 reviews, 1 lapse, last seen 3 days ago") | Surfaces the most useful slice of review history (this card's trajectory) at the exact point of use — editing/inspecting a card — without requiring a trip to a separate full history page. Complements rather than duplicates the full history view. | MEDIUM | Small aggregate query (`count`, `count where rating=1`, `max(reviewedAt)`) scoped to one `cardId`; render inline in the existing `CardEditor` Sheet. Genuinely useful (matches "why is this card still hard" instinct) vs. a vanity stat. |
-| Link from `/wrapped` ("My Korean") into review history | `/wrapped` already aggregates total study time, streak, mastered count — a "browse your full history" link is a natural extension of an existing summary surface rather than a new nav destination competing for attention. | LOW | Just a link/CTA; no new logic. Keeps the history page reachable without adding a 5th bottom-nav tab (this app deliberately has 4: Home/Study/Cards/Habits — see `Nav.tsx`). |
-
-### Anti-Features (Commonly Requested, Often Problematic)
-
-Things that look like "obviously good" additions to a review-history feature but are wrong for this app's scale and single-user context.
+### Anti-Features (plausible-sounding, wrong for this project)
 
 | Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|------------------|-------------|
-| A second, review-log-specific calendar/heatmap | "We already have a heatmap for habits, why not one for reviews too?" seems like free reuse of `HabitHeatmap.tsx`. | Redundant with the existing habit heatmap, which is already day-level review/time activity (`StudyDay` table). A second heatmap answering the same "did I study, how much" question at the review-log layer adds visual clutter without adding information — this is exactly the "day-level vs event-level" distinction Anki's own ecosystem draws (Review Heatmap add-on = daily activity; Card Info = per-event drill-down). The `ReviewLog` table's unique value is the event-level detail (which card, what rating), not a second aggregate view. | If a calendar view is wanted at all, it should visualize something the existing heatmap doesn't — e.g. lapse-density per day — not duplicate streak/volume. Likely not worth building for v1.4; defer. |
-| Infinite scroll on the history list | Feels modern, matches social-feed muscle memory. | For a data/log table (not a content feed), infinite scroll loses bookmarkable position, can't preserve scroll position across navigation reliably in this app's existing RSC/client-shell pattern, and degrades on-device performance as the list grows into the thousands — exactly the failure mode flagged for long activity-log tables generally. Pagination (or "Load more" as a bounded hybrid) is the better fit and is cheaper to build correctly with cursor-based Prisma queries. | Numbered-page or "Load more" pagination, page size ~20-30, cursor on `(reviewedAt, id)`. |
-| Editable/deletable review-log rows | "What if I misgraded, let me fix the history." | `ReviewLog` is meant as an append-only audit trail (per PROJECT.md: "logging every individual review"). Making it editable turns a log into a second source of truth that can drift from the FSRS state that was actually computed and applied — mutating history after the fact would silently invalidate the FSRS state stored alongside it. The app already has an "undo last review" (`/api/review/undo`) for the *immediate* mis-grade case; that's the correct fix point, not retroactive log editing. | Leave `ReviewLog` strictly append-only/read-only. Rely on the existing undo flow for immediate correction. |
-| Charting library / rich analytics dashboard (retention curves, ease-factor graphs, forecast charts) | Anki's Stats screen has these, so it "should" exist here too; feels like a natural v2 of `/wrapped`. | This app explicitly shipped its "My Korean" (`/wrapped`) summary already covering the vanity-metric layer solo learners actually check (streak, mastered count, study time, next milestone). Full analytics (retention %, ease histograms, forecast) are built for tuning algorithm parameters or comparing decks — irrelevant when there's one user, one FSRS config, and no algorithm-tuning surface in this app. Building this is pure scope creep relative to the stated v1.4 goal ("browse it," not "analyze it"). | Keep the history page a browsable log + the two cheap filters above. If deeper stats are ever wanted, that's a distinct future milestone, not bundled into "add a table + a page." |
-| Exposing "last auto-synced" as a prominent home-page element | Cron sync is a new automated feature; feels natural to want visible confirmation it's working. | Home's hero is already a carefully tuned three-state UI (due / goal-met / caught-up) — adding sync-status chrome there competes with the actual point of the page (what to study) and isn't something the learner needs to check daily once cron sync is trusted. | Surface it only in Settings ▸ Advanced, next to the existing manual `SyncPanel` (per the question's own suggestion) — a subtle "Last auto-synced: [date]" line reusing whatever field the manual sync path already tracks/could track (e.g. most recent `Lesson.createdAt` or a small `Setting` key). Low complexity, correct location: it's an operational/debugging detail, not a daily-use surface, and `SyncPanel` already lives in the "advanced/debug" area of the app for exactly this kind of thing. |
+|---------|---------------|-----------------|-------------|
+| **Self-consistency double-extraction** (extract every lesson twice, diff results) | Classic consistency check from the literature | 2× Opus cost per lesson, 2× latency against the 60 s sync budget, and diffs of exhaustive extractions are noisy (ordering, phrasing) — poor signal per dollar for a single-user deck | One-time batch judge pass on existing cards; golden-lesson fixture for prompt changes |
+| **In-request (sync-path) LLM judge** | "Validate at write time" instinct | Vercel Hobby 60 s limit already constrains sync to 1 lesson/request; a second model call risks timeouts on dense lessons | Deterministic checks in-request (cheap, e.g. blank-safety); LLM judging offline via local script |
+| **Auto-fix: LLM rewrites applied directly to prod cards** | Closes the loop automatically | Destructive writes from unverified judge output; contradicts the milestone's findings-first framing and the project's `--apply`-gated script convention; a wrong "fix" can corrupt FSRS-scheduled cards the learner already knows | Findings report → human review → targeted `--apply` script (or manual CardEditor edits) |
+| **Human-review workflow UI** (in-app review queue, approve/reject screens) | Standard in team extraction products | Single-user app; a script-generated report the developer reads *is* the workflow. UI would be the most expensive artifact of the milestone with near-zero marginal value | Markdown findings report + existing `/cards` editor for fixes |
+| **Embedding-based semantic dedup service** | Catches paraphrase duplicates fuzzy keys miss | New infra (embedding storage/API) for a ~500-card personal deck; the fuzzy-key scan plus a judge pass over flagged clusters covers the realistic duplicate space | Extend `find-duplicates.mjs`; judge borderline clusters in the batch re-grade |
+| **Full wipe + re-extract to "reset" quality after a prompt improvement** | Tempting clean slate | Destroys FSRS review state and `ReviewLog` linkage (recreated cards get new ids — the classic recreate-instead-of-update identity-loss failure); learner loses months of scheduling history | Post-hoc audit + targeted per-card fixes; prompt improvements apply to future lessons only |
 
 ## Feature Dependencies
 
 ```
-ReviewLog table (schema + write-path)
-    └──requires──> POST /api/review already computing FSRS result (existing — just add a write)
-                       └──requires──> No new extraction/sync dependency; independent of features #1 and #3
+Deterministic invariant sweep (audit script)
+    └──requires──> existing pure helpers: sentenceMatch / normalizeFront / filterComponents
+    └──requires──> Turso script access pattern (retro-filter-cleanup.mts idiom)
 
-Review-history page (list view)
-    └──requires──> ReviewLog table populated
-    └──requires──> DTO type for the log row (per app convention: lib/dto.ts, ISO date strings — RSC-05 pattern)
-    └──requires──> Pagination (cursor-based query)
+Findings report ──requires──> invariant sweep (+ optional: near-dup scan, judge pass)
 
-Per-card filter on history page
-    └──requires──> Review-history page (base list view)
-    └──enhances──> CardEditor.tsx (optional: link "view history" from a card row)
+Prompt review / prompt fixes ──requires──> findings report (evidence-based edits)
 
-Rating filter (lapses view)
-    └──requires──> Review-history page (base list view)
-    └──independent-of──> Per-card filter (can ship either first, or together)
+Blank-safety parse enforcement (E4/E5 fix)
+    └──independent of the audit; pairs with it (audit finds existing rows, fix stops recurrence)
 
-CardEditor mini-trend
-    └──requires──> ReviewLog table (aggregate query only, does NOT require the full history page to exist first)
-    └──enhances──> Review-history page (natural link target: "view full history →")
-
-"Last auto-synced" in Settings ▸ Advanced
-    └──requires──> Cron sync feature (#1) writing a timestamp somewhere (new Setting key or reuse Lesson.createdAt max)
-    └──independent-of──> ReviewLog / history page entirely — separate feature, separate phase candidate
-
-Second review-specific heatmap ──conflicts──> existing HabitHeatmap.tsx (redundant, anti-feature — do not build)
-Editable review-log rows ──conflicts──> append-only audit-trail intent of ReviewLog (anti-feature — do not build)
+Batch LLM re-grade ──requires──> invariant sweep first (judge only what determinism can't decide)
+Source-traceability check ──requires──> Lesson.rawText + Card.lessonId (already in DB)
+Emphasized-coverage audit ──requires──> re-fetch doc emphasis OR persist emphasized[] (schema change)
+Golden-lesson fixture ──enhances──> prompt review (regression safety on every future edit)
+Drift metrics ──requires──> audit script (persists its counters)
 ```
 
 ### Dependency Notes
 
-- **Review-history page requires ReviewLog table + DTO type:** the page cannot ship in the same commit as the schema (Turso DDL must be applied first, per this project's `prisma db push` limitation — see CLAUDE.md). This is a natural two-plan split within one phase: (1) schema + write-path, (2) read/list page — matching the existing pattern of DDL-then-code seen in past `apply-graph-ddl.mjs`/`apply-sentence-ddl.mjs` scripts.
-- **Per-card filter enhances CardEditor:** not required for MVP of the history page, but cheap to add once the base list + query exist (it's the same query with a `WHERE cardId = ?` clause), and it's the single highest-value filter identified above — worth prioritizing over the rating filter if only one filter ships in v1.4.
-- **"Last auto-synced" is independent of ReviewLog:** it belongs to feature #1 (cron sync), not feature #2. It's called out here only because the question asked about it — don't let it bleed scope into the review-history phase. It's a 1-line UI addition to an existing component (`SyncPanel.tsx`) once cron sync writes a timestamp anywhere.
-- **Anti-features conflict, don't complement:** a second heatmap and editable log rows aren't "future nice-to-haves" — they actively work against the app's existing design decisions (one heatmap already answers the day-level question; undo already answers the correction question). Flag these explicitly to the roadmapper so they aren't accidentally scoped in as "obvious v1.4.1 follow-ups."
+- **Audit before prompt edits:** the milestone's own framing (findings-first) matches external best practice — prompt changes made without error-frequency data routinely fix rare problems while ignoring common ones.
+- **Write-path fix + post-hoc sweep are complements, not substitutes:** fixing `parseExtractionResponse` (E4/E5) protects future syncs; only the DB sweep finds existing violations among the ~500+ persisted cards.
+- **`filterComponents` boundary is load-bearing:** its header explicitly scopes it to *existence*, not correctness — E9 auditing belongs to the judge layer (the GRAPH-01 concern), never to widening the deterministic filter (which would reintroduce the false positives v1.4 just removed).
 
 ## MVP Definition
 
-### Launch With (v1.4, feature #2 scope)
+### Launch With (this milestone)
 
-Minimum to make `ReviewLog` data "actually usable" per the milestone goal, not just stored.
+- [ ] `scripts/audit-cards.mts` — deterministic sweep (E2 romanization/Hangul, E3 near-dup section, E4 first-sentence blank-safety, E5 zero-sentence, E8 distractor count/dups, normalizedFront self-consistency, E1 heuristic flags) → grouped findings report — *cheap; catches every mechanically-detectable class*
+- [ ] Blank-safety + zero-sentence enforcement in `parseExtractionResponse` — *closes the one verified structural gap at the source*
+- [ ] Prompt review of `lib/extract-cards.ts` against the findings; apply high-confidence edits — *the milestone's stated deliverable*
+- [ ] Apply high-confidence data fixes found (via `--apply`-gated script or CardEditor) — *matches existing convention*
 
-- [ ] `ReviewLog` table (timestamp, cardId, rating, resulting FSRS state) written on every `POST /api/review` — the milestone's stated schema requirement
-- [ ] Review-history page: reverse-chronological list, paginated (cursor-based, ~20-30/page), rating shown via existing grade-language/colors
-- [ ] Per-card filter (the highest-value filter identified — "why is this card hard")
-- [ ] Empty state that fits the RSC hydration convention (server-rendered real state, no client loading flash)
-- [ ] Entry point from somewhere existing (Settings, `/wrapped`, or a link from `CardEditor`) — no new bottom-nav tab
+### Add After Validation (if findings warrant)
 
-### Add After Validation (v1.4.x, if the base page proves useful)
+- [ ] Batch LLM re-grade (local script, sampled) — *trigger: the deterministic sweep leaves significant "can't tell without semantics" flag volume (E1 borderline, E6, E7, E9)*
+- [ ] Source-traceability sentence check — *trigger: evidence of composed-sentence quality problems*
+- [ ] Golden-lesson regression fixture — *trigger: the prompt actually gets edited this milestone (likely)*
 
-- [ ] Rating filter (lapses-only view)
-- [ ] Date-range filter (mirroring `LessonRangeFilter` interaction shape)
-- [ ] CardEditor inline mini-trend (review count / lapses / last-seen)
+### Future Consideration
 
-### Future Consideration (defer past v1.4 entirely)
-
-- [ ] Any charting/analytics beyond the existing `/wrapped` vanity metrics — no stated need, no algorithm-tuning surface in a single-config, single-user app
-- [ ] A second review-event heatmap — redundant with `HabitHeatmap.tsx`
-- [ ] Editable/correctable log rows — conflicts with append-only audit-log intent; `/api/review/undo` already covers the real use case
+- [ ] Emphasized-coverage audit — *blocked on persisting/re-deriving `emphasized[]`; schema change requires manual Turso DDL*
+- [ ] Drift-metrics history across audit runs — *value accrues only after ≥ 2 prompt/model versions*
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| `ReviewLog` schema + write path | HIGH (blocks everything else) | LOW | P1 |
-| Base paginated history list page | HIGH | LOW-MEDIUM | P1 |
-| Per-card filter | HIGH | LOW | P1 |
-| Rating (lapses) filter | MEDIUM | LOW | P2 |
-| Date-range filter | LOW-MEDIUM | LOW-MEDIUM | P2 |
-| CardEditor mini-trend | MEDIUM | MEDIUM | P2 |
-| "Last auto-synced" in Settings Advanced | LOW-MEDIUM | LOW | P2 (belongs to feature #1, not #2) |
-| Second heatmap for reviews | LOW | MEDIUM | P3 (anti-feature — likely never) |
-| Analytics/charts dashboard | LOW (no algorithm-tuning need) | HIGH | P3 (anti-feature — likely never) |
-| Editable log rows | LOW (conflicts with intent) | MEDIUM | P3 (anti-feature — do not build) |
-
-**Priority key:**
-- P1: Needed for the milestone's stated goal ("stored AND usable")
-- P2: Genuinely useful, cheap once P1 ships, fine to sequence into a second plan/phase or defer to v1.4.x
-- P3: Anti-features or out-of-proportion scope for a single-user app — flag to roadmapper as explicitly excluded, not silently dropped
-
-## Competitor Feature Analysis
-
-Single relevant reference ecosystem: desktop/mobile SRS apps with mature "review history" surfaces (Anki being the dominant one; this app already borrows its FSRS vocabulary and philosophy).
-
-| Feature | Anki (Card Info + Stats) | Anki (Review Heatmap add-on) | Our Approach |
-|---------|---------------------------|-------------------------------|--------------|
-| Per-review event detail | Yes — Card Info shows date/rating/interval per review, per card | No — day-level only | Base list view: date, card, rating, resulting state — the v1.4 MVP |
-| Day-level activity view | Indirect (via Stats graphs) | Yes — this is its whole purpose | Already shipped in this app as `HabitHeatmap.tsx`/`HabitTracker.tsx` — do NOT duplicate |
-| Aggregate analytics (retention %, ease graphs, forecasts) | Yes — full Stats screen | No | Explicitly out of scope — no algorithm-tuning need in a single-config app; `/wrapped` already covers the useful vanity-metric subset |
-| Filter by card | Yes (opening Card Info from that card) | N/A | P1 — highest-value filter for this app too |
-| Filter by rating/lapses | Not directly surfaced as a standalone filter in stock Anki | N/A | P2 — arguably more discoverable here than in Anki, cheap to add |
-| Editable history | No (manual reschedule is a distinct "Manual" event type, not an edit) | N/A | Confirms append-only is the right call — matches Anki's own model |
+| Deterministic invariant sweep + findings report | HIGH | LOW–MEDIUM | P1 |
+| Blank-safety/zero-sentence parse enforcement | HIGH (2 of 3 study modes) | LOW | P1 |
+| Prompt review vs findings + high-confidence fixes | HIGH | LOW–MEDIUM | P1 |
+| Near-duplicate report (extend find-duplicates.mjs) | MEDIUM | LOW | P1 (folds into sweep) |
+| Batch LLM re-grade (sampled, local) | MEDIUM–HIGH | MEDIUM | P2 |
+| Golden-lesson regression fixture | MEDIUM | MEDIUM | P2 |
+| Source-traceability sentence check | MEDIUM | MEDIUM | P2 |
+| Audit drift metrics | LOW–MEDIUM | LOW | P3 |
+| Emphasized-coverage audit | MEDIUM | MEDIUM–HIGH | P3 |
 
 ## Sources
 
-- [Card Info, Graphs and Statistics - Anki Manual](https://docs.ankiweb.net/stats.html) — per-review event detail pattern (date/rating/interval), MEDIUM confidence (single web source, cross-checked against general SRS domain knowledge)
-- [Review Heatmap - AnkiWeb add-on](https://ankiweb.net/shared/info/1771074083) — day-level heatmap purpose, confirms it's a distinct concern from per-event logs, MEDIUM confidence
-- [Pagination vs. infinite scroll: Making the right decision for UX - LogRocket](https://blog.logrocket.com/ux-design/pagination-vs-infinite-scroll-ux/) — pagination/cursor recommendation for log/data tables, MEDIUM confidence (cross-checked against multiple UX sources returned in the same search)
-- Internal: `.planning/PROJECT.md` (v1.4 milestone scope, existing feature inventory, established UI/architecture conventions — HIGH confidence, primary source)
-- Internal: `CLAUDE.md` (RSC/DTO hydration pattern, `HabitHeatmap`/`HabitTracker`/`Sheet`/`LessonRangeFilter` component precedents, Turso DDL constraint, `Nav.tsx` 4-tab limit) — HIGH confidence, primary source
+- Codebase (HIGH confidence, directly verified): `lib/extract-cards.ts` (parse-time validation scope; `safeToBlank` never consulted), `lib/sentence-match.ts` (`safeToBlank` contract), `lib/filter-components.ts` (existence-not-correctness contract, documented in header), `lib/card-key.ts` (`normalizeFront` scope), `scripts/find-duplicates.mjs` + `scripts/retro-filter-cleanup.mts` (existing audit-script idioms), `.planning/PROJECT.md` (v1.4 GRAPH-01..05 history)
+- Web (LOW–MEDIUM confidence; cross-checked across ≥ 2 independent sources per claim):
+  - LLM extraction error patterns concentrate in categorical/free-text fields; hallucinated values inside well-formed JSON; no intrinsic confidence signal — [Who Fails Where? LLM and Human Error Patterns (arXiv)](https://arxiv.org/pdf/2601.09053), [Classification of LLM Errors in Data Extraction (Medium)](https://farhadinfo.medium.com/classification-of-llm-errors-in-data-extraction-for-systematic-reviews-and-factors-affecting-the-4549f5c68467), [Real-Time Error Detection for LLM Structured Outputs (Cleanlab)](https://cleanlab.ai/blog/tlm-structured-outputs-benchmark/)
+  - Layered validation: deterministic checks first, LLM-as-judge as a sampled precision layer, human oversight on disagreement — [What is an LLM-as-a-judge? (Braintrust)](https://www.braintrust.dev/articles/what-is-llm-as-a-judge), [Multi-LLM Verification Pipeline (Emergent Mind)](https://www.emergentmind.com/topics/multi-llm-verification-pipeline)
+  - Post-hoc DB auditing: rule-based invariant sweeps + batch LLM revalidation + replication vs source + drift detection — [VALID framework for LLM-extracted EHR data (JCO CCI)](https://ascopubs.org/doi/10.1200/CCI-25-00215), [Evaluating Extracted Invoice Data with LLM-as-a-Judge (Towards AI)](https://towardsai.net/p/machine-learning/from-extraction-to-accuracy-evaluating-extracted-invoice-data-with-llm-as-a-judge), [LLM Data Auditor Framework (Emergent Mind)](https://www.emergentmind.com/topics/llm-data-auditor-framework)
+  - Flashcard-generation-specific problems (duplicate headwords, cloze density, base-form issues) — [When AI Flashcards Pollute Your Anki Deck (Substack)](https://evakeiffenheim.substack.com/p/when-ai-flashcards-pollute-your-anki), [Automatically generating Anki flashcards (Medium)](https://medium.com/@andrea.berlingieri42/automatically-generating-anki-flashcards-for-language-learning-using-the-lexicala-api-and-deepl-412846986186)
 
 ---
-*Feature research for: personal Korean SRS app — review-history view (v1.4)*
-*Researched: 2026-07-02*
+*Feature research for: LLM extraction quality auditing (Korean Study v1.5)*
+*Researched: 2026-07-05*

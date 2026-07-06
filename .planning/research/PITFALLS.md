@@ -1,188 +1,311 @@
 # Pitfalls Research
 
-**Domain:** Adding 3 features to an existing Next.js/Prisma/Turso personal SRS app — Vercel Cron auto-sync, a high-write `ReviewLog` audit table on top of an optimistic/retry/undo review flow, and a deterministic post-extraction filter on LLM-generated `components[]`
-**Researched:** 2026-07-02
-**Confidence:** MEDIUM (grounded primarily in direct codebase inspection of `middleware.ts`, `app/api/review/route.ts`, `app/api/review/undo/route.ts`, `components/StudySession.tsx`, `app/api/sync/route.ts`, `lib/extract-cards.ts`, `lib/sentence-match.ts`, `prisma/schema.prisma`; corroborated by LOW-confidence web search on general Vercel Cron / Prisma audit-log / optimistic-UI / Korean-morphology patterns — no single web source was authoritative enough to independently verify, so treat general claims as directional and the codebase-specific claims as the load-bearing ones)
+**Domain:** Auditing/modifying an existing LLM extraction pipeline over a live, identity-anchored SRS database (v1.5 Extraction Quality & Reliability)
+**Researched:** 2026-07-06
+**Confidence:** HIGH (grounded in direct reads of `lib/sync.ts`, `lib/extract-cards.ts`, `lib/card-key.ts`, `lib/filter-components.ts`, `lib/link-dependencies.ts`, `lib/study-cards.ts`, `scripts/relink-dependencies.mjs`, `app/api/cron/sync/route.ts`, `prisma/schema.prisma`, `.planning/codebase/CONCERNS.md`; web corroboration LOW confidence, used only for cross-checking general patterns)
+
+Phase legend used throughout:
+- **audit** — DB audit of ~511 existing cards
+- **prompt-review** — reviewing/updating the `extract-cards.ts` prompt from audit findings
+- **bug-fix-1** — logging the silent known-lemmas degradation in `lib/study-cards.ts`
+- **bug-fix-2** — auto-relinking forward-reference `CardDependency` edges when the sync backlog drains
 
 ## Critical Pitfalls
 
-### Pitfall 1: Cron route falls under the existing auth matcher and gets 401'd by the app's own middleware — "fixed" by excluding it and forgetting the CRON_SECRET check
+### Pitfall 1: Delete-and-recreate "fixes" silently wipe FSRS state AND review history
 
 **What goes wrong:**
-`middleware.ts` currently protects every path except `/login`, `/api/login`, and static/PWA assets, via a single negative-lookahead matcher requiring the `ks_auth` HMAC cookie. Vercel Cron does not send that cookie — it sends `Authorization: Bearer ${CRON_SECRET}`. A new `GET /api/cron/sync` route placed under the current matcher will 401 on every invocation, so the first "fix" developers reach for is widening the matcher's exclusion regex to skip the new route. If the `CRON_SECRET` check is not *also* added inside the route handler itself, the excluded route is now open to the public internet — anyone who finds the URL can `curl` it to trigger a real sync (burns Anthropic Opus tokens, writes lesson/card rows, can be hammered repeatedly since there's no other rate limit on `/api/sync`).
+An audit fix (or a "just re-extract this lesson cleanly" instinct) deletes a card and recreates it with corrected content. `Card.id` is the FK anchor for everything: `CardReview` (`onDelete: Cascade`), `ReviewLog` (`onDelete: Cascade` — the WR-04 schema comment explicitly documents that history dies with its card), `Sentence`, and `CardDependency` in **both directions** (`CardToPrereqs` and `PrereqToCards` both cascade). Deleting one card also silently deletes every edge where it was someone else's prerequisite. No error is raised anywhere — the learner just loses months of scheduling state and the `/history` page loses rows.
 
 **Why it happens:**
-The codebase's auth model is single-layered (one middleware gate, no per-route checks) — every existing route implicitly trusts the middleware to have already authenticated the request. Cron is the first case where a route must be *reachable without* the cookie but still *not open*, and that requires an explicit second auth mechanism the rest of the codebase has never needed. It's easy to solve "the 401" and stop there without re-adding equivalent protection inside the handler.
+Delete-and-recreate is the easiest way to apply a batch of content fixes, and `wipe-card-data.mjs` sits right there in `scripts/` as a tempting precedent. The cascades make it *feel* clean — nothing errors.
 
 **How to avoid:**
-- Keep the cron route matched by middleware's existing pattern OR exclude it — either way, check `req.headers.get('authorization') === \`Bearer ${process.env.CRON_SECRET}\`` **inside the route handler itself**, not only in middleware. Route-level checks are the actual security boundary here regardless of matcher configuration.
-- Fail closed if `CRON_SECRET` is unset: `if (!process.env.CRON_SECRET) return 401` — never `if (process.env.CRON_SECRET && header !== expected)`, which silently disables auth entirely when the env var is missing (e.g. forgotten in Vercel prod env, or present only in Preview but not Production).
-- Do not have the cron route `fetch()` the app's own `/api/sync` over HTTP (it would hit the cookie-gated middleware and 401 itself). Extract the sync body into a shared `lib/` function (matching this codebase's existing `lib/study-cards.ts`/`lib/dashboard.ts` extraction pattern) and call it directly from both `POST /api/sync` and the new cron handler.
+- Hard rule for the entire milestone: **fixes mutate cards in place by `id`** (`prisma.card.update`), never delete+create. Mirror the `app/api/cards/[id]/route.ts` precedent: when changing `front`, recompute and set `normalizedFront` in the same update, and handle the P2002 collision (that collision means you found a true duplicate — see Pitfall 3 for the merge procedure).
+- Any fix script follows the `retro-filter-cleanup.mts` template: **dry-run by default**, `--apply` to mutate, idempotent, developer-run locally.
+- Before any `--apply` run against Turso, snapshot: `turso db shell korean-study ".dump"` (or at minimum export `Card`, `CardReview`, `ReviewLog`, `CardDependency`) so recovery is possible.
 
 **Warning signs:**
-- Manually curling the cron path without any header returns 200 instead of 401.
-- The matcher's negative-lookahead regex was edited to add the cron path but no `CRON_SECRET` string appears anywhere in the new route file.
-- `CRON_SECRET` isn't set in Vercel's Production environment (only checked locally / in `.env`).
+Any plan step containing "recreate", "re-add", or `prisma.card.delete` outside an explicit user-initiated card deletion; `ReviewLog` or `CardDependency` row counts dropping after a fix run.
 
-**Phase to address:**
-The cron-sync phase, before wiring the actual sync-trigger logic — get auth right first since this route is reachable pre-login by design.
+**Phase to address:** audit (fix-application step), enforced as a constraint in prompt-review too.
 
 ---
 
-### Pitfall 2: `POST /api/review`'s retry loop double-applies FSRS state on the server, and adding a `ReviewLog` write there creates a duplicate log row for the same physical review
+### Pitfall 2: Expecting the improved prompt to repair existing cards via re-sync — it structurally cannot
 
 **What goes wrong:**
-`submitReview` in `StudySession.tsx` is optimistic and fire-and-forget: it computes the FSRS result client-side, advances the UI queue immediately, and calls `void postReviewWithRetry(cardId, rating, onExhausted)` without awaiting it. `postReviewWithRetry` makes up to 3 attempts with an 8s per-attempt `AbortController` timeout, retrying on network error/5xx/timeout. Crucially, the server route (`POST /api/review`) is **not idempotent under retry**: it does `findUnique` to read *whatever CardReview state currently exists in the DB* and calls `reviewCard(cardReview, rating)` on it — it never receives or checks the client's already-computed result. If attempt 1 actually commits successfully server-side but the response is lost in transit (the classic "wrote successfully, ack didn't arrive" case that timeouts and aborts produce), the client's retry wrapper treats it as failed and fires attempt 2, which re-reads the *already-advanced* CardReview row and re-applies `reviewCard()` with the *same rating a second time* — corrupting the FSRS scheduling (an interval computed as if the card were reviewed twice) and, if `ReviewLog` insertion lives in this same route, writing two log rows for a single real study action.
-
-This bug already exists today (before `ReviewLog`), but it's silent — nobody can see individual review events, only the current aggregate `CardReview` row, which absorbs the double-application without anyone noticing. `ReviewLog` is exactly the feature that makes this pre-existing bug visible and user-facing (a history page will show two "reviewed X" entries at the same timestamp for one tap).
+The team updates the prompt, runs a sync (or `local-resync.mts`), and expects existing card quality to improve. It won't, for two independent reasons in the current code:
+1. `Lesson.contentHash @unique` + the hash-skip in `runSync` (and `local-resync.mts`, which is "idempotent — skips already-synced lessons by contentHash") means **already-synced lessons are never re-extracted at all**. The new prompt only applies to *future* lessons.
+2. Even if a lesson were force-re-extracted (Lesson row deleted first), the sync UPDATE branch deliberately preserves most of the card: `lessonId` and `review` are never touched (good), but **sentences are refreshed only when the card currently has zero** (`existing.sentences.length === 0`), and `components` only when the new extraction returned a non-empty array (WR-02). `type` isn't even in `updateData`; only `back`, `notes`, `distractors` refresh. So a prompt change that produces better sentences or better categorization does not propagate to existing cards.
 
 **Why it happens:**
-The retry wrapper was designed to make the *client's optimistic UI* resilient (REVIEW-04), not to make the *server write* idempotent — those are different problems, and the existing code only solved the first one. There is no idempotency key (e.g. a client-generated review-attempt UUID) threading through `postReviewWithRetry` → `POST /api/review` → a `ReviewLog` row that the server could use to deduplicate.
+The pipeline was designed for *incremental ingestion*, not *retroactive repair*. That design is correct (it's what protects FSRS state), but it means "fix the prompt" and "fix the 511 existing cards" are two entirely separate workstreams, and the milestone must treat them as such.
 
 **How to avoid:**
-- Give each review attempt a client-generated idempotency key (e.g. `crypto.randomUUID()` created once in `submitReview`, reused across all retry attempts for that one grading action) and pass it in the POST body.
-- Make the `ReviewLog` insert `@@unique`-constrained on that key (or on `(cardId, clientReviewId)`) so a retried write becomes a Prisma `upsert`/no-op instead of a second row — this also protects the `CardReview` update: if the log write's uniqueness check fails, skip re-applying `reviewCard()` on that request.
-- Wrap the `CardReview` update and the `ReviewLog` insert in a single `prisma.$transaction([...])` so a partial failure (log written, state not updated, or vice versa) can't happen — Turso/libSQL supports Prisma transactions.
-- Do not build `ReviewLog` as a second best-effort `.catch(() => {})` write bolted onto the existing route with no relationship to the idempotency fix above — that reproduces the duplicate-row bug at the exact call site being added.
+- Set the expectation in the phase plan explicitly: **prompt changes are prospective**. Retroactive fixes to existing cards come from the audit's targeted fix scripts (in-place updates by `id`), not from re-syncing.
+- If a lesson genuinely must be re-extracted (e.g., its extraction was badly truncated), the procedure is deliberate: delete only the `Lesson` row, re-sync, and accept that existing cards are only partially refreshed (and check how orphaned `lessonId` values interact with the lesson-range filter, which joins through the `lesson` relation). This should be rare, not the default repair mechanism.
+- Do NOT "fix" the UPDATE branch to overwrite sentences/type wholesale as part of prompt-review — that turns every routine re-sync into a destructive overwrite of any manual `CardEditor` edits the user has made. If sentence refresh is ever wanted, gate it behind an explicit flag only scripts pass.
 
 **Warning signs:**
-- Two `ReviewLog` rows with the same `cardId` and near-identical `createdAt` (within the ~2s retry backoff window) appearing during normal (non-flaky-network) use.
-- `CardReview.reps` incrementing by 2 for a single grade tap under a simulated slow/flaky connection (throttle network in devtools and grade a card during a Slow 3G profile to reproduce).
+A plan that says "re-run local-resync to apply the new prompt"; audit findings marked "will be fixed by prompt update" for cards that already exist.
 
-**Phase to address:**
-The `ReviewLog` phase — this is the primary design decision for that phase, not a follow-on fix. Should be resolved before the history/view page is built, since the page's correctness depends on it.
+**Phase to address:** prompt-review (scope definition), audit (owns retroactive fixes).
 
 ---
 
-### Pitfall 3: Undo racing an in-flight background retry silently "un-does" the undo
+### Pitfall 3: Prompt phrasing drift creates near-duplicate cards that the `@unique` constraint cannot catch
 
 **What goes wrong:**
-`handleUndo` POSTs to `/api/review/undo` with an absolute `prevState` snapshot (a set-to-exact-values write, not a delta) — this part is safe and idempotent by design. But `postReviewWithRetry`'s `AbortController` is created fresh *inside* the retry loop and is never exposed outside `submitReview` — there is no ref or handle `handleUndo` can use to cancel an in-flight retry attempt. If the user grades a card, the background save is mid-retry (e.g. attempt 2 of 3, waiting out its 1500ms backoff or an 8s timeout), and the user hits Undo before that attempt lands, two outcomes are both currently possible depending on arrival order at the server: (a) the undo POST lands first, restoring the pre-grade state, then the stale retry POST lands afterward and reads the just-restored row and reapplies `reviewCard(restoredState, rating)` — silently re-advancing the card past the state the user just undid, with zero UI indication anything happened; or (b) if `ReviewLog` logging is added to the retry path, this produces a `ReviewLog` row timestamped *after* the undo for a review the user explicitly reversed — a ghost entry on the history page for something that, from the user's perspective, never happened.
+`normalizeFront` is intentionally narrow: NFC + whitespace collapse + strip *one trailing English-ASCII paren group*. It does **not** strip the `~` prefix (rule 4: "Leave a leading ~ — it's meaningful"), does not unify `~(으)면` / `(으)면` / `~으면`, and keeps Hangul-containing parens. The DB constraint only blocks *exact* normalized collisions. The real near-dupe defense is the prompt itself — the "Existing cards already in the deck — DO NOT generate" list plus the instruction to "match by the core Hangul content, ignoring ~ prefix and English glosses". A prompt rewrite that changes front-formatting conventions (different gloss style, different pattern notation, dropping/reordering the existing-fronts list, or weakening the match-by-core-Hangul instruction) makes future extractions phrase *already-known concepts* differently → `findUnique` misses → a fresh card with fresh FSRS state is created alongside the old one. The learner now reviews the same grammar pattern twice, and history/graph edges split across two ids. Web corroboration (LOW): identity drift under prompt changes is the standard failure mode for LLM extraction over identity-keyed stores; the standard mitigation is exactly what this system does — feed existing keys as reuse hints + post-hoc dedup.
 
 **Why it happens:**
-`postReviewWithRetry` and `handleUndo` were built independently (different phases, per `PROJECT.md`'s Key Decisions) and neither is aware of the other's in-flight requests. The mount-guard (`isMountedRef`) protects against unmount races but not against undo-vs-retry ordering races, which is a different axis.
+The prompt's dedup-hint sections look like verbose fat to trim during a prompt review ("the DB constraint handles dedup anyway"). It doesn't — the constraint handles only exact-match; the prompt handles semantic-match.
 
 **How to avoid:**
-- Hold the `AbortController` (or a per-card in-flight-request token) in a ref accessible to both `submitReview` and `handleUndo`; have `handleUndo` abort any in-flight retry for that `cardId` before firing the undo POST.
-- If a `ReviewLog` write is added, prefer writing the log row only after the corresponding `CardReview` write has been confirmed successful server-side (same transaction, per Pitfall 2) — and have `POST /api/review/undo` also delete/mark-superseded any `ReviewLog` row it can identify as belonging to the state it's reverting (e.g. by the same idempotency key, if the client passes it to undo too).
-- At minimum, document this as a known race in the `ReviewLog` phase rather than treating the pre-existing undo flow as unaffected — the question of "what does the history page show when undo is used" needs an explicit answer, not an implicit one.
+- Treat these prompt sections as **load-bearing API**: the existing-fronts list, the "match by core Hangul, ignore ~ prefix" rule, the one-card-per-base-form rule, and the front-formatting conventions. Changes to any of them require a dedup regression check.
+- Add a **dry-run extraction diff** to prompt-review's verification: run the new prompt against 2–3 already-synced lessons' raw text (offline, no DB writes), `normalizeFront` every returned front, and diff against the deck. Every returned front should either exact-match an existing `normalizedFront` or match nothing under `find-duplicates.mjs`'s fuzzy key (strips `~` and all parens). Any fuzzy-hit-but-not-exact-hit is a near-dupe the new prompt would create.
+- Run `scripts/find-duplicates.mjs` after the first few post-change syncs; make it part of the milestone's verification checklist.
+- If the audit finds existing near-dupes: the merge procedure is (1) pick survivor (usually higher FSRS reps), (2) re-point loser's `ReviewLog` rows and `CardDependency` edges (both directions) to survivor, (3) merge sentences if survivor lacks them, (4) delete loser. Steps 2–3 must run **before** the delete or the cascades destroy what you meant to migrate. Script it; don't do it by hand per card.
 
 **Warning signs:**
-- Rapidly grade + immediately hit Undo on a throttled connection; check whether the card's `nextReview` reverts correctly after the retry's backoff window elapses (not just immediately after Undo).
-- A `ReviewLog` row appears with a timestamp after a corresponding "undo" action for the same card.
+`newCards > 0` on a sync of a doc with no genuinely new vocabulary; `find-duplicates.mjs` groups growing after the prompt change; two cards whose fronts differ only by `~`, parens, or gloss text.
 
-**Phase to address:**
-The `ReviewLog` phase (this is where the risk becomes visible/consequential); the underlying cancellation fix can be scoped as a small addition to `StudySession.tsx` alongside the `ReviewLog`-write wiring.
+**Phase to address:** prompt-review (primary), audit (detects pre-existing near-dupes and owns the merge script).
 
 ---
 
-### Pitfall 4: Naive substring containment filtering drops nearly all grammar-pattern `components[]` and most conjugated-vocabulary components, because the filter and the text it checks against use different notations
+### Pitfall 4: Prompt changes to `components[]` phrasing silently thin the knowledge graph via `filterComponents`
 
 **What goes wrong:**
-`lib/extract-cards.ts`'s prompt is explicit that `components[]` entries are **base-form/abstract-notation lemmas** — `먹다` (dictionary form, not `먹어요`), `은/는`, and grammar patterns written as `~(으)면`, `~고 싶다`, `~아/어야 하다`. Meanwhile a card's own `sentences[].korean` text is **natural, fully conjugated Korean** (e.g. `저는 매일 학교에 가요`), and `notes` contains free-text explanation, not a checklist of forms. A deterministic filter that drops `components[]` entries not found verbatim (or as a simple substring) inside a card's own `sentences`/`notes` will filter out:
-- Every grammar-pattern component, since `~(으)면` or `~고 싶다` (with `~`, parens, and spacing) never appears character-for-character in a natural sentence — the sentence has the pattern *inflected and attached to a stem* (e.g. `가면`, `먹고 싶어요`), not the abstract notation.
-- Most conjugated-vocabulary components for the same reason `sentence-match.ts` already documents for `targetForm`/particle splitting: `먹다` as a component won't appear as the substring `먹다` inside a sentence like `먹어요` or `먹었어요`.
-
-This is the exact class of problem `lib/sentence-match.ts`'s `splitParticle` already documents as unsolved ("orthographic ambiguity... no available morphological analyzer is error-free" per general Korean-NLP literature) — except here the mismatch is worse, because `components[]` isn't even surface-form Korean for grammar patterns, it's the app's own invented pattern notation (`~`/parens), which has no morphological relationship to conjugated sentence text at all. A naive filter would gut the very knowledge graph the milestone is trying to clean up — trading "some hallucinated edges" for "almost no edges."
+`filterComponents` (v1.4) keeps a component only if it resolves to a real deck card — direct `normalizeFront` match or particle-stem fallback. It cannot distinguish "hallucinated" from "real prerequisite phrased in a way that doesn't resolve." If prompt-review changes how the model phrases components (e.g., more abstract grammar notation, polite forms like 이에요 instead of 이다, or surface forms instead of base lemmas), a larger fraction of *legitimate* components stops resolving and gets silently dropped before persist. The graph doesn't error — it quietly loses edges, and foundation-first sequencing degrades with no signal. WR-02 makes the shrinkage asymmetric: a persisted non-empty-but-smaller `components` value replaces the fuller old one for good, while an empty result never overwrites — drift accumulates unevenly.
 
 **Why it happens:**
-"Does the LLM's claimed prerequisite actually appear in the card's own material" sounds like a reasonable sanity check and maps naturally to `String.includes()`, but it silently assumes prerequisites are always literal vocabulary in citation form matching sentence surface forms — which contradicts the prompt's own documented convention (components are deliberately abstracted, not verbatim).
+The prompt's components section and the deterministic filter were tuned *together* in Phase 16. Reviewing the prompt in isolation treats the filter as a safety net when it's actually a coupled contract: the prompt must emit components in exactly the shape `normalizeFront`/`splitParticle` can resolve.
 
 **How to avoid:**
-- Do not check containment against **this card's own** sentences/notes at all as the primary signal — a card's prerequisites are typically words used *implicitly* to build understanding, not words that literally co-occur in its example sentences. The stronger, already-available signal is: does a `components[]` entry resolve to an *existing card* in the deck (via `normalizeFront()` → `CardDependency` matching, which `app/api/sync/route.ts` already does)? A hallucinated component is one that doesn't correspond to any real card and/or is nonsensical relative to the deck, not one that's merely absent from this card's own two sentences.
-- If checking against sentence text specifically is still wanted (e.g. as one signal among several), separate the two component shapes and apply different logic: for grammar patterns (contains `~` or is wrapped in `~(...)`-style notation), strip notation and check for the *stem* using the same conservative particle/ending logic as `splitParticle` — never raw `includes()`. For vocabulary lemmas, check against the sentence's own `targetForm` (already extracted per-sentence) rather than raw substring search, since `targetForm` is the inflected form the extraction already committed to matching.
-- Treat the deterministic filter as one input to a decision, not a hard drop-silently rule — log/flag filtered-out components (e.g. keep them in a `notes`-adjacent field or console warning during sync) so a wrongly-dropped legitimate prerequisite is discoverable and correctable, mirroring the existing `find-duplicates.mjs`/`relink-dependencies.mjs` pattern of "run a script to inspect and fix retroactively" rather than "silently mutate and hope."
-- Test the filter explicitly against real grammar-pattern components (`~(으)면`, `~고 싶다`) pulled from the actual deck, not just plain vocabulary — the milestone context explicitly asks for this and it's the case most likely to be missed if development starts from vocabulary examples.
+- Any change to the components prompt section must be validated with a before/after metric on the same lesson texts: **count of components surviving `filterComponents` per card**, old prompt vs new. A drop means the new prompt emits unresolvable phrasings, not that hallucinations decreased.
+- Keep the prompt's component examples (`먹다 not 먹어요; 은/는 for the topic particle`) aligned with what actually resolves — those examples are the model's format spec for the filter.
+- The audit's "components accuracy" check should measure two distinct things separately: (a) stored components that don't resolve to deck cards (stale pre-filter rows — fixable by re-running `retro-filter-cleanup.mts`), and (b) cards with suspiciously few/zero components (possible over-filtering). Conflating them produces a misleading "accuracy" number.
 
 **Warning signs:**
-- After the filter ships, `CardDependency` edge count drops sharply for `grammar`-type cards specifically (spot check with a query grouping edges by the dependent card's `type`).
-- Running the filter against the existing corpus (dry-run, no writes) shows it would drop >50% of currently-linked components — a strong signal the filter is checking the wrong thing, not that the corpus is that hallucination-heavy.
+Average `components[]` length per newly-synced card drops sharply after the prompt change; new cards with `components: null` for obviously composite grammar patterns; `CardDependency` edge count per new lesson trending toward zero.
 
-**Phase to address:**
-The extraction-filter phase — this should be the first thing validated (dry-run against the real corpus before wiring it into the write path), since `app/api/sync/route.ts`'s two-phase linking already runs after upsert and any filter inserted before that point needs to not regress the working parts of the existing dependency-resolution logic.
+**Phase to address:** prompt-review (with audit providing the baseline metric).
 
 ---
+
+### Pitfall 5: Auto-relink triggered on `remaining === 0` fires at the wrong times — and `remaining=0` doesn't mean "drained"
+
+**What goes wrong:**
+The obvious trigger — "run relink when the sync response says `remaining === 0`" — is wrong in three directions:
+1. **False positive (fires when not drained):** `remaining = newLessonData.length - batch.length`. A batch lesson whose extraction *fails* is not persisted (no Lesson row), so with a 1-lesson backlog that fails: `remaining=0, failed=1` — the backlog is NOT drained (the lesson reappears as new next sync), but the naive trigger fires anyway. The real drain condition includes `failed === 0`.
+2. **Fires constantly:** every no-new-content sync returns `remaining: 0` (`'No new content since last sync'`). The daily cron plus every pull-to-refresh would run a full-corpus relink — idempotent, but O(cards-with-components) lookups plus per-edge upserts against Turso from a Vercel function, i.e., hundreds of sequential WAN round-trips added to every sync.
+3. **Timeout stacking:** the one sync that *actually* drains the backlog just spent 30–90 s in Opus extraction. On Hobby's hard 60 s cap, appending relink to that same request risks the function being killed mid-relink — the response never reaches the client, SyncPanel reports failure for a sync that succeeded (contentHash dedup protects the data, but the UX reads as breakage and the relink is half-done until the next trigger).
+
+**Why it happens:**
+`SyncResult.remaining` was designed as UI copy ("N more — sync again"), not as a lifecycle event. Overloading it as a completion signal imports its edge cases.
+
+**How to avoid:**
+- Trigger condition: `remaining === 0 && failed === 0 && newLessons > 0` — "this request persisted the last lesson of a backlog." Fires exactly once per drain, never on no-op syncs.
+- Make the relink pass **cheap enough for budget leftovers**: one `findMany` for all cards with components (`id`, `normalizedFront`, `components`), one `findMany` for existing edges, resolve in memory via `resolveDependencyEdges` from `lib/link-dependencies.ts`, set-diff, and insert **only the missing edges** (usually a handful — forward references only). Never re-upsert all ~1500 edges per run.
+- If even that is too tight after a 50+ s extraction, defer: set a `Setting` flag (`relinkPending`) when the drain condition hits and execute the relink at the *start* of the next sync request (the no-new-content fast path has the whole 60 s free). This also gives idempotent recovery from a killed relink for free.
+
+**Warning signs:**
+Sync latency increasing on no-op syncs; Vercel function duration near 60 s on the final backlog sync; `failures[]` non-empty in the same response that triggered a relink.
+
+**Phase to address:** bug-fix-2.
+
+---
+
+### Pitfall 6: Automating relink by porting `relink-dependencies.mjs` re-embeds already-drifted logic
+
+**What goes wrong:**
+The manual script carries its own **copy** of `normalizeFront` ("Must mirror lib/card-key.ts") — and it has *already drifted*: the script's Hangul-detection regex is `[가-힣ᄀ-ᇿ]` (line 61) while `lib/card-key.ts` uses `[가-힣ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿]` (line 33, with compatibility Jamo ranges). Porting the script's logic into the sync path — instead of importing `lib/card-key.ts` + `lib/link-dependencies.ts` — ships that drift into production, where relink and sync compute *different* keys for the same component and disagree about which edges exist.
+
+There is also a subtler, pre-existing asymmetry the automation will trip over: `filterComponents` **retains** a component via the `splitParticle` stem fallback (e.g., `학교에` retained because card `학교` exists), but `resolveDependencyEdges` resolves by **direct `normalizeFront` lookup only** — a stem-retained component is persisted in `components` yet creates **no edge**, on the sync path and on any relink built from the same resolver. Consequence: "relink ran and created 0 new edges" is NOT proof the graph is complete; and a relink that "helpfully" adds stem-fallback resolution would create edges the live sync path never creates — two code paths, two graphs.
+
+**Why it happens:**
+The script predates `lib/link-dependencies.ts` (its IN-02 header notes this exact resolve loop was independently reimplemented four times, which is how CR-02 slipped through one call site). Automation naturally starts from the thing being automated — the script — rather than the shared lib.
+
+**How to avoid:**
+- The auto-relink implementation imports `resolveDependencyEdges` and `normalizeFront` from `lib/` — zero ported logic from the `.mjs` script. Once automated, delete `relink-dependencies.mjs` or reduce it to a thin wrapper over the same lib code so the drifted copy can't be run again.
+- Decide the stem-fallback asymmetry **explicitly** and document it: either (a) keep direct-lookup-only in both places and accept that stem-form components are metadata without edges, or (b) add stem-fallback to `resolveDependencyEdges` itself so sync and relink change together. Never fix it in only one call site.
+- Auto-relink must be **add-only** (upsert on the `cardId_prerequisiteId` compound key, self-edge skip preserved). Pruning stale edges stays in the developer-run `retro-filter-cleanup.mts` — an automatic pruner running concurrently with a sync mid-upsert could delete edges for cards whose refreshed components haven't been written yet.
+
+**Warning signs:**
+Any `function normalizeFront` definition appearing in new relink code; relink and sync producing different edge counts for the same corpus; a diff that edits `scripts/relink-dependencies.mjs` instead of `lib/`.
+
+**Phase to address:** bug-fix-2.
+
+---
+
+### Pitfall 7: Cron sync and manual sync overlapping — auto-relink widens an existing race
+
+**What goes wrong:**
+Nothing prevents the daily cron (`GET /api/cron/sync`) and a manual sync (pull-to-refresh / SyncPanel) from running concurrently — both call `runSync` with no lock. Today the blast radius is contained by constraints: `contentHash @unique` makes the second `lesson.create` throw (its compensating path leaves no orphan), and card upserts collide safely on `normalizedFront`. The known soft spot is `orderIndex`: both requests read the same `_max.orderIndex` after extraction and can assign duplicate order indices (no unique constraint), which wobbles lesson-range filtering. Adding auto-relink widens exposure: a relink reading `Card.components` while the other request is mid-upsert sees a half-written lesson — harmless for an **add-only, idempotent** relink (missing edges arrive on the next trigger), but genuinely unsafe if the relink prunes (Pitfall 6) or if a `relinkPending` flag is cleared by one request while the other's writes are in flight. Both requests can also independently satisfy the drain condition and double-fire. Web corroboration (LOW): standard serverless guidance is idempotency-first plus skip-if-running guards, since OS-level locks are unavailable.
+
+**Why it happens:**
+Single-tenant apps rarely think about concurrency; the Phase 19 cron made concurrent invocation a *scheduled certainty* (10:00 UTC daily) rather than an unlikely double-tap, and v1.5 is the first feature to hang additional work off sync completion.
+
+**How to avoid:**
+- Rely on idempotency, not locking: add-only relink + compound-key upsert means a double-fired or interleaved relink converges to the same edge set. Design for "runs twice concurrently" as the normal case.
+- If using the `relinkPending` flag pattern: clear the flag *before* doing the relink work (a concurrent run at worst re-sets it and the work runs once more later) rather than after (a crash leaves it stuck, or a concurrent clear loses a needed run). With add-only idempotent work, one extra run is free; never running is the failure mode to avoid.
+- Don't build a real mutex (Setting-row lock with TTL, etc.) — on Hobby, a function can be killed at 60 s without cleanup, and a leaked lock silently disables relinking forever. The no-lock failure mode (redundant idempotent work) is strictly better.
+- Note in the plan (out of scope to fix): the `orderIndex` duplicate race predates this milestone; don't let bug-fix-2 take a dependency on `orderIndex` uniqueness.
+
+**Warning signs:**
+Duplicate `orderIndex` values in `Lesson` (a freebie check for the audit); relink logging two executions within the same minute.
+
+**Phase to address:** bug-fix-2.
+
+---
+
+### Pitfall 8: Logging the known-lemmas failure without its cause, or in a way that changes the degradation contract
+
+**What goes wrong:**
+Three sub-failures hide in this one-line fix to `lib/study-cards.ts`:
+1. **Logging the symptom, not the cause.** `console.warn('known-lemmas query failed')` without `knownRowsResult.reason` records that degradation happened but leaves the actual transient Turso error — the thing CONCERNS.md wants diagnosed — as unknowable as before.
+2. **Breaking the DB-01 contract while "improving" it.** The graceful-degradation shape (`Promise.allSettled`; pool failure throws, known-lemmas failure → empty Set) is a validated requirement. A refactor that surfaces the failure by throwing, or converts to sequential awaits "so the error is catchable," trades a degraded-but-working study session for a 500 — and `app/study/page.tsx` is an RSC with **no error boundary** (CONCERNS: "RSC pages have no fetch error fallback"), so the user gets the framework error screen.
+3. **Log without a consumer.** `getStudyCards` runs on every `/study` render and every `/api/cards/due` call; a sustained Turso degradation emits a warn per page view into Vercel's log stream, which nobody watches for this app. The fix ships, the box gets checked, and the degradation remains effectively invisible — silence has just been relocated. Also: libSQL error messages can embed the database URL/hostname; log `reason.message` / `String(reason)`, not the full serialized error object.
+
+**How to avoid:**
+- Minimal, contract-preserving shape: in the existing rejected branch, `console.error('[study-cards] known-lemmas query failed; degrading to empty set:', knownRowsResult.reason instanceof Error ? knownRowsResult.reason.message : String(knownRowsResult.reason))`. No control-flow change, no new throw paths.
+- Prefix the message (`[study-cards]`) so Vercel log search can find it — that's the realistic "consumer" at this app's scale. If the milestone wants one step further, a counter in the `Setting` table is the app-native pattern, but it adds a write to a read path; weigh it, don't default to it.
+- Add/extend a unit test asserting degradation still returns cards (with `unknownCount` computed against an empty set) when the second query rejects — locking the contract against risk (2).
+
+**Warning signs:**
+The diff touching more than a few lines of `study-cards.ts`; removal of `Promise.allSettled`; a log statement that stringifies the whole rejection object.
+
+**Phase to address:** bug-fix-1.
+
+---
+
+### Pitfall 9: Heuristic audit checks that re-implement runtime logic — false positives at report-killing scale
+
+**What goes wrong:**
+At 511 cards, an audit rule with even a 10% false-positive rate emits ~50 bogus findings; mixed into real findings, the whole report gets skimmed and shelved — the audit phase produces a document instead of fixes. Two systematic FP sources in this codebase:
+1. **Re-implementation drift** (the same disease as Pitfall 6): an audit checker that re-implements blank-safety, front-normalization, or particle-splitting instead of importing `sentenceMatch`, `normalizeFront`, and `splitParticle` will disagree with the runtime — flagging cards that actually work, or passing cards that don't. Precedent exists: the relink script's drifted regex; the TESTING.md doc that claimed zero coverage after tests existed.
+2. **Judgment calls dressed as rules.** Korean-specific checks are heuristic by nature: `splitParticle` mis-splits are a *documented accepted ambiguity* (기다리는); vocabulary-vs-phrase categorization is genuinely fuzzy at the boundary; "sentence sounds unnatural" is not decidable deterministically. Running these as pass/fail rules floods the report. Conversely, an LLM-judge audit pass hallucinates its own findings and can't be re-verified cheaply.
+
+**How to avoid:**
+- **Every deterministic check imports the runtime helper it audits.** Blank-safety = `sentenceMatch(s.korean, s.targetForm)` + the 2-char/exactly-once rules exactly as `extract-cards.ts` applies them; components resolution = `filterComponents` + the deck set; dedup = `normalizeFront` + `find-duplicates.mjs`'s fuzzy key. An audit finding is then by construction a runtime-visible defect.
+- **Tier the report.** Tier 1 = deterministic, mechanically verifiable, candidate for scripted fix: first sentence not blank-safe, targetForm not a verbatim substring, stored components that don't resolve, `distractors` count ≠ 3, empty `translation`, near-dupe fuzzy-key groups, cards with zero sentences. Tier 2 = heuristic, human-eyeball only: categorization, sentence naturalness, gloss quality — sample-review, cap the list, never auto-fix.
+- **Calibrate before running corpus-wide:** run each rule on a hand-checked sample of ~20 cards; if precision isn't near-perfect, the rule is actually Tier 2. One hour that saves the report's credibility.
+- Report *counts per rule* first, findings second — a rule flagging 200/511 cards is telling you about the rule, not the deck.
+- Audit is **read-only**; fixes are a separate, dry-run-by-default script step (matches the milestone's "findings-first" framing and the `retro-filter-cleanup.mts` precedent). Never mutate while measuring.
+- Each finding carries `card.id` + rule name + concrete evidence (the sentence text, the unresolvable component string) so any single finding is spot-checkable in seconds.
+
+**Warning signs:**
+Any audit-script function that reimplements matching/normalization; a rule flagging >20% of the deck; findings without card ids; a plan step that both detects and fixes in one pass.
+
+**Phase to address:** audit.
+
+---
+
+### Pitfall 10: Prompt review breaking the truncation-salvage / validation parsing contract
+
+**What goes wrong:**
+`parseExtractionResponse` is load-bearing and battle-tested (WR-01 depth-aware salvage, GRAPH-02 structural validation, CR-01 same-batch sibling union). A prompt change that alters the output envelope — a wrapping object instead of a bare array, new per-card fields, markdown fences, or significantly longer outputs — interacts with all of it: the greedy `/\[[\s\S]*\]/` regex, the depth-1 top-level-card-boundary assumption, and `isValidExtractedCard`'s field checks. Longer outputs also raise truncation frequency at `max_tokens: 32000` (exhaustive Opus extraction already runs 30–90 s), meaning *more* salvage-path executions in production, not fewer. CONCERNS.md states the standing rule: "Any prompt-schema change must update the salvage tests in `tests/extract-cards.test.ts` in the same commit."
+
+**How to avoid:**
+- Keep the output contract frozen unless an audit finding requires changing it: bare JSON array, same field names. Prompt-review should change *instructions* (categorization guidance, sentence quality, components phrasing), not *shape*.
+- If shape must change: update `parseExtractionResponse`, `isValidExtractedCard`, and the salvage tests in the same commit, including a truncated-fixture test for the new shape.
+- Watch the output-length budget: if the new prompt asks for more per-card content, verify the longest existing lesson still completes under `max_tokens` and the 60 s window — otherwise every sync of a dense lesson silently loses trailing cards to salvage.
+
+**Warning signs:**
+`'Full JSON parse failed, attempting salvage'` warn frequency rising after deploy; card counts per lesson dropping for dense lessons; salvage tests untouched in a commit that edits the prompt.
+
+**Phase to address:** prompt-review.
 
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
-|----------|-------------------|-----------------|-----------------|
-| `ReviewLog` insert as a second best-effort `.catch(() => {})` write bolted onto `POST /api/review`, uncoordinated with the retry idempotency fix | Fast to ship, matches existing fire-and-forget style elsewhere in the codebase | Duplicate/missing rows under retry (Pitfall 2); undermines the log's value as a trustworthy history — a history page nobody can trust is worse than no history page | Never — this is the one place fire-and-forget is the wrong pattern, since the entire point of the feature is an accurate record |
-| Cron route re-implements sync logic instead of calling a shared `lib/` function | Avoids touching `app/api/sync/route.ts` | Two copies of extraction/upsert/dependency-linking logic drift apart over time; violates the codebase's own established RSC/API-shared-`lib/` convention (`lib/study-cards.ts`, `lib/dashboard.ts`) | Never — extraction is a ~20 minute refactor and the convention already exists to copy |
-| Post-extraction filter checks `card.front.includes(component)` / raw substring against sentences as "good enough" hallucination detection | Ships fast, no morphology work needed | Silently drops nearly all grammar-pattern and conjugated-vocabulary components (Pitfall 4), regressing the knowledge graph the milestone exists to fix | Never, given the prompt's documented notation convention — the mismatch is structural, not an edge case |
-| `CRON_SECRET` check written as `if (secret && header !== expected)` (only enforced when the env var happens to be set) | Avoids breaking cron if the env var isn't configured yet in a given environment | Silently open endpoint in any environment where the var is unset (most dangerous in Production, the one that matters) | Never |
+|----------|-------------------|----------------|-----------------|
+| Fix cards by hand in Turso shell instead of a dry-run script | Fast for 1–2 cards | No record of changes; no idempotency; a typo'd `normalizedFront` breaks dedup silently | 1–2 cards max, with `find-duplicates.mjs` run after |
+| Trigger relink on bare `remaining === 0` | Simplest condition | Full-corpus relink on every no-op sync (daily cron + every pull-to-refresh) | Never — require `failed === 0 && newLessons > 0` too |
+| Keep `relink-dependencies.mjs` alongside the automated path | No deletion risk | Two divergent relink implementations; the drifted `normalizeFront` copy stays runnable | Only if reduced to a wrapper over `lib/link-dependencies.ts` |
+| Unprefixed `console.warn` for the known-lemmas log | One line | Unfindable in Vercel's log stream; the fix is cosmetic | Never — a `[study-cards]` prefix costs nothing |
+| Auto-fix Tier-2 (heuristic) audit findings | Bigger "fixed N cards" number | Wrong fixes on false positives mutate learner-visible content unreviewed | Never — Tier 2 is human-review only |
+| Widen the sync UPDATE branch to refresh sentences/type so re-sync "applies" the new prompt | Retroactive fixes look free | Every re-sync overwrites manual CardEditor edits; destructive by default | Never in the request path; script-only behind an explicit flag |
 
 ## Integration Gotchas
 
-| Integration | Common Mistake | Correct Approach |
-|-------------|-----------------|-------------------|
-| Vercel Cron Jobs | Route handler implements `POST` (matching the app's other mutating routes) but `vercel.json`'s `crons[].path` is invoked by Vercel via `GET` — cron silently never fires (or 405s) in production | Implement the cron route as `GET`, verify against Vercel's cron docs/dashboard "Run" button in a Preview deployment before relying on the schedule |
-| Vercel Cron Jobs | Testing only locally (`next dev`) and assuming it works — Vercel's cron scheduler only fires in Production, not in local dev or Preview | Use the Vercel dashboard's manual "Run" trigger on a deployed cron job to test end-to-end before waiting on the schedule; don't gate merge on local reproduction |
-| Existing `middleware.ts` auth matcher | Widening the negative-lookahead exclusion pattern for the cron path via a broad glob (e.g. `api/cron.*`) that unintentionally also excludes future unrelated routes added under `/api/cron*` later | Scope the matcher exclusion to the exact literal cron path, not a wildcard prefix; re-verify the regex against the existing pattern each time a route is added nearby |
-| Turso/libSQL DDL for `ReviewLog` | Running `prisma db push`/`migrate` against the `libsql://` URL (documented existing gotcha, but easy to re-trip on a brand-new table since it "feels like" a normal schema change) | Same manual DDL path as every other schema change in this repo: edit `schema.prisma` → `prisma generate` → `prisma migrate diff --from-empty --to-schema ... --script` → run only the new `CREATE TABLE` via `@libsql/client executeMultiple()` |
+Internal seams (this milestone touches no new external services):
+
+| Seam | Common Mistake | Correct Approach |
+|------|----------------|------------------|
+| Prompt ↔ `normalizeFront` | Assuming DB `@unique` handles semantic dedup | The prompt's existing-fronts list + formatting conventions ARE the semantic dedup layer; the constraint catches only exact matches |
+| Prompt ↔ `filterComponents` | Tuning components instructions without re-checking filter survival | Before/after metric: components surviving the filter per card on the same lesson text |
+| `filterComponents` ↔ `resolveDependencyEdges` | Assuming everything the filter retains becomes an edge | Stem-fallback retention creates NO edge (direct-lookup resolver); decide the asymmetry explicitly, change both or neither |
+| Relink ↔ `lib/` helpers | Porting `relink-dependencies.mjs` logic | Import `normalizeFront` + `resolveDependencyEdges`; the script's copy has already drifted (narrower Hangul regex) |
+| Cron sync ↔ manual sync | Assuming serialized execution | Add-only + idempotent relink; treat concurrent double-fire as normal; no Setting-row mutex (leaked-lock risk on 60 s kills) |
+| Audit checks ↔ runtime helpers | Re-implementing blank-safety/matching in the audit script | Import `sentenceMatch`, `normalizeFront`, `splitParticle`, `filterComponents` — the audit must see exactly what runtime sees |
+| Fix scripts ↔ FSRS/ReviewLog | delete+create for content fixes | `update` by `id` only; recompute `normalizedFront` on front edits; scripted merge (re-point logs/edges before delete) for true dupes |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|-----------------|
-| `ReviewLog` history page does an unbounded `findMany()` with no `take`/cursor | Page load time grows monotonically with total lifetime review count; no symptom at launch | Cap the default query (e.g. most-recent 100 or a date-range window) and paginate/cursor beyond that, same posture as the existing `take: 1000` pool-query bound in `lib/study-cards.ts` | A single active daily user doing 3 sessions/day accumulates low-thousands of rows within a year — noticeable page slowdown is a matter of months, not a hypothetical |
-| No index on `ReviewLog(cardId)` or `ReviewLog(createdAt)` | Per-card history lookups (if the card detail view ever shows "review history for this card") or the date-ordered history page do full table scans | Add `@@index([cardId])` and `@@index([createdAt])` in the same DDL step that creates the table — cheap to do upfront, expensive to retrofit against Turso later | Scales with total review count, same timeline as the trap above |
-| Retry loop causes up to 3x write attempts per grade action if `ReviewLog` isn't idempotency-keyed | `ReviewLog` row count grows faster than actual review count under any network flakiness (mobile use, Vercel cold starts) | Idempotency key + unique constraint (see Pitfall 2) — this is a correctness fix that also happens to bound write amplification | Any session on a flaky connection, not scale-dependent |
+|------|----------|------------|----------------|
+| Full-corpus relink appended to the drain-completing sync request | Final backlog sync killed at 60 s; SyncPanel shows failure for a sync that succeeded | Diff-in-memory + insert-missing-only; or defer via `relinkPending` to the next (fast) sync | Immediately on Hobby when extraction took >45 s |
+| Per-edge sequential upserts from Vercel → Turso | Relink adds seconds of WAN round-trips per run | Batch: 2 reads + set-diff + `createMany` of missing edges only | ~100+ edges over WAN latency |
+| Audit script querying card-by-card | Slow, hammers Turso | One `findMany` with `include: { sentences, review }` — 511 cards fits trivially in memory | Never at this scale, but the per-row habit invites it |
+| Prompt output growth past `max_tokens` / 60 s | Rising salvage warnings; dense lessons lose trailing cards | Check output length on the longest existing lesson before shipping the prompt | Dense lessons first |
 
 ## Security Mistakes
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Cron route reachable without a route-level `CRON_SECRET` check (relying on matcher exclusion alone, or on "nobody will guess the URL") | Anyone can trigger `/api/sync` externally — burns Anthropic Opus tokens per call, can corrupt lesson ordering if hammered repeatedly since `orderIndex` allocation reads `aggregate({_max})` per request | Explicit `Authorization: Bearer` check inside the route handler; fail closed when `CRON_SECRET` is unset |
-| `CRON_SECRET` logged or echoed in an error response during debugging (e.g. `console.error` including the full request headers, or a 401 body that echoes what was received) | Low severity here (bearer token, not a DB credential) but still avoidable | Log only a boolean match/no-match, never the header value itself |
-| `ReviewLog` exposed via a new `GET /api/review-log` (or similar) route added *outside* the existing middleware matcher by copy-pasting the cron route's exclusion pattern instead of leaving it under the default protected matcher | The history endpoint becomes publicly readable — leaks the user's full study history/timing patterns | New `ReviewLog` API routes should NOT be added to the middleware's exclusion list; they should inherit default cookie-gated protection exactly like every other existing `/api/*` route |
-
-## UX Pitfalls
-
-| Pitfall | User Impact | Better Approach |
-|---------|-------------|-------------------|
-| History page renders every individual review row with no aggregation/filtering | Overwhelming wall of rows within weeks of daily use; hard to find anything meaningful | Default to a recent window (e.g. last 7/30 days) with drill-down, mirroring the existing `HabitHeatmap`'s `weeks`-parameterized pattern already established in this codebase |
-| Cron sync runs silently once/day with no visible confirmation anywhere in the UI | If lesson-format edge cases repeatedly break extraction (as `SYNC-01`'s failure-naming work anticipated for manual sync), the user has no way to notice the deck has gone stale without opening Settings ▸ Advanced and manually syncing to see an error | Surface "last cron run" status (success/lesson-name-on-failure, reusing `lib/lesson-excerpt.ts`) somewhere visible — at minimum in the same Settings ▸ Advanced sync panel that already surfaces manual-sync failures |
-| Undo silently "un-undoes" itself if a stale retry lands after it (Pitfall 3) with no visible error | User believes their undo worked; card scheduling quietly reverts again minutes later with zero feedback | At minimum, cancel in-flight retries on undo; if that's deferred, disable/hide Undo while a background save for that card is still in flight rather than allowing the race |
+| Logging the full known-lemmas rejection object | libSQL errors can embed the database URL/hostname in Vercel logs | Log `reason.message` / `String(reason)` only |
+| Audit fix scripts reading prod credentials but mutating by default | One accidental run mutates 511 live cards | Dry-run by default, `--apply` required — the `retro-filter-cleanup.mts` convention |
+| Surfacing raw relink/audit errors in the sync JSON response | Internal schema/error leakage to the client (T-13-02 precedent) | Detail stays in `console.error`; client gets counts only |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **Cron route:** Confirm `vercel.json`'s `crons[].path` uses the HTTP method Vercel actually dispatches (GET) — a POST-only handler will silently never fire in production even though it works when manually curled locally with POST.
-- [ ] **Cron auth:** Confirm the route 401s when `CRON_SECRET` is *unset*, not just when it's set-but-mismatched — test by temporarily removing the env var in a Preview deployment.
-- [ ] **`ReviewLog` write:** Confirm it happens in the same transaction/request as the `CardReview` update it logs (not a decoupled best-effort call), and confirm it's idempotent under the existing 3-attempt retry wrapper — simulate with devtools network throttling + a slow-3G profile while grading a card.
-- [ ] **Undo + retry interaction:** Confirm grading a card, letting a retry begin, then hitting Undo before the retry resolves does not silently re-apply the graded rating after the undo completes.
-- [ ] **Post-extraction filter:** Confirm it's been dry-run (no writes) against the real existing corpus and does not drop grammar-pattern (`~(으)면`-style) components at a materially higher rate than plain vocabulary components — a large asymmetry there means the filter logic, not the corpus, is broken.
-- [ ] **History page pagination:** Confirm the page doesn't fetch the full `ReviewLog` table unbounded — test with a seeded few-thousand-row table locally, not just the current (small) real dataset.
+- [ ] **Prompt updated:** Often missing the dry-run dedup diff — verify new-prompt extraction of 2–3 known lessons produces zero fuzzy-key near-dupes against the deck
+- [ ] **Prompt updated:** Often missing salvage-test updates — verify `tests/extract-cards.test.ts` touched in the same commit if any output-shape change
+- [ ] **Prompt updated:** Often missing the components-survival metric — verify filter-survival rate did not drop vs the old prompt
+- [ ] **Auto-relink shipped:** Often missing the failed-lesson case — verify the trigger requires `failed === 0 && newLessons > 0`, not bare `remaining === 0`
+- [ ] **Auto-relink shipped:** Often missing timeout headroom — verify the drain-completing request stays under 60 s with relink included (or relink is deferred)
+- [ ] **Auto-relink shipped:** Often missing script retirement — verify `relink-dependencies.mjs` is deleted or delegates to `lib/link-dependencies.ts`
+- [ ] **Known-lemmas logging:** Often missing the cause — verify the log includes `knownRowsResult.reason`, and a test locks the empty-Set degradation behavior
+- [ ] **Audit report:** Often missing calibration — verify each Tier-1 rule was precision-checked on ~20 hand-verified cards before the corpus run
+- [ ] **Audit fixes applied:** Often missing identity preservation — verify zero `Card.id` churn (`CardReview`/`ReviewLog` row counts unchanged; no deletes outside scripted dupe-merges)
+- [ ] **Audit fixes applied:** Often missing `normalizedFront` recompute — verify every front edit also updated `normalizedFront` and handled the P2002 collision path
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
-|---------|----------------|------------------|
-| `CRON_SECRET` leaked (committed, logged, or shared accidentally) | LOW | Rotate the value in Vercel env vars, redeploy — it's a bearer token, not a DB credential; no data was necessarily exposed unless the endpoint was actually invoked |
-| Duplicate `ReviewLog` rows discovered post-launch (retry double-write) | MEDIUM | Write a one-off dedup script (`scripts/`-style, following the existing `find-duplicates.mjs` precedent) keyed on `(cardId, near-identical timestamp cluster)`; add the idempotency-key unique constraint retroactively before re-enabling writes |
-| Post-extraction filter over-drops real prerequisite components on already-synced cards | LOW | The retroactive-rebuild pattern already exists for this exact class of problem — fix the filter logic, then re-run `scripts/relink-dependencies.mjs` (or an equivalent extended to re-derive `components[]` where the filter under-populated it) against the corpus |
-| Cron job silently stopped firing (misconfigured path/method) discovered weeks later via a stale deck | LOW | Manually trigger `POST /api/sync` (or the shared `local-resync.mts` path) to catch up the backlog; fix the cron config; no data loss since `MAX_LESSONS_PER_SYNC=1` + `remaining` reporting already handles backlog draining gracefully |
+|---------|---------------|----------------|
+| Cards deleted+recreated (FSRS/ReviewLog lost) | HIGH | Only recoverable from a pre-run Turso dump; otherwise state is gone — this is why the snapshot-before-`--apply` rule exists |
+| Near-dupes created by prompt drift | MEDIUM | `find-duplicates.mjs` to enumerate; scripted merge (re-point ReviewLog + edges to survivor, then delete loser); tighten prompt hint sections |
+| Graph thinned by over-filtering components | LOW–MEDIUM | Fix prompt phrasing, re-run `retro-filter-cleanup.mts`/relink — but `components` values already shrunk under WR-02 are only recoverable by re-extraction |
+| Relink double-fired or killed mid-run | LOW | Add-only + compound-key upsert: just run again (or wait for next trigger) |
+| Known-lemmas log spams during sustained outage | LOW | Prefixed message; at single-user scale, tolerate or add a per-request-once guard |
+| Audit report flooded with FPs | LOW | Re-tier the offending rule, recalibrate on a sample, regenerate — provided the audit was read-only |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
-|---------|-------------------|----------------|
-| Cron route open/unauthenticated (Pitfall 1) | Cron-sync phase | Curl the deployed cron path with no/wrong `Authorization` header → expect 401; with correct header → expect 200 and a real sync attempt |
-| Retry double-applies FSRS + duplicate `ReviewLog` rows (Pitfall 2) | `ReviewLog` phase | Network-throttle + grade a card; assert exactly one `ReviewLog` row and one FSRS state transition per grade tap |
-| Undo races an in-flight retry (Pitfall 3) | `ReviewLog` phase (or a small StudySession addition scoped alongside it) | Grade → immediately Undo before backoff elapses → assert final `CardReview`/`ReviewLog` state matches the pre-grade snapshot, not a re-applied rating |
-| Naive substring filter drops grammar-pattern components (Pitfall 4) | Extraction-filter phase | Dry-run the filter against the real corpus; assert drop rate for `grammar`-type components is not dramatically higher than for `vocabulary`-type components; spot-check a handful of `~(으)면`-style patterns survive |
+|---------|------------------|--------------|
+| 1. Delete-and-recreate wipes FSRS/history | audit | `CardReview`/`ReviewLog` row counts unchanged after fix runs; no `card.delete` in fix scripts |
+| 2. Expecting re-sync to repair existing cards | prompt-review (scoping) | Plan explicitly separates prospective prompt changes from retroactive fix scripts |
+| 3. Prompt drift → near-dupe cards | prompt-review | Dry-run extraction diff vs deck; `find-duplicates.mjs` clean after first post-change syncs |
+| 4. Components over-filtered by phrasing change | prompt-review | Filter-survival metric non-decreasing on same-lesson before/after |
+| 5. Wrong relink trigger / timeout stacking | bug-fix-2 | Trigger tested for failed-lesson and no-op-sync cases; drain request under 60 s |
+| 6. Ported script drift; stem-fallback asymmetry | bug-fix-2 | Relink imports `lib/` helpers; asymmetry decision documented; script retired |
+| 7. Cron/manual overlap | bug-fix-2 | Relink is add-only + idempotent; double-fire converges; no mutex introduced |
+| 8. Logging without cause / contract break | bug-fix-1 | Log includes `reason`; degradation unit test green; `Promise.allSettled` shape intact |
+| 9. Audit FP flood / re-implemented checks | audit | Checks import runtime helpers; per-rule precision calibrated on a 20-card sample; tiered report |
+| 10. Parsing contract broken by prompt change | prompt-review | Salvage tests updated in same commit; salvage-warning rate flat post-deploy |
 
 ## Sources
 
-- Direct codebase inspection: `middleware.ts`, `lib/auth.ts`, `app/api/review/route.ts`, `app/api/review/undo/route.ts`, `components/StudySession.tsx` (`postReviewWithRetry`, `submitReview`, `handleUndo`), `app/api/sync/route.ts` (two-phase dependency linking, `MAX_LESSONS_PER_SYNC`), `lib/extract-cards.ts` (components[] notation convention), `lib/sentence-match.ts` (`splitParticle` documented ambiguity), `prisma/schema.prisma` — HIGH confidence, primary source for all codebase-specific claims
-- [Managing Cron Jobs — Vercel Docs](https://vercel.com/docs/cron-jobs/manage-cron-jobs) — LOW confidence (single web search, not independently cross-verified), general CRON_SECRET bearer-header mechanism
-- [How to Secure Vercel Cron Job routes in Next.js 14 — CodingCat.dev](https://codingcat.dev/post/how-to-secure-vercel-cron-job-routes-in-next-js-14-app-router) — LOW confidence, corroborating pattern only
-- [Nextjs Middleware Matcher Exclude — Medium](https://medium.com/@turingvang/nextjs-middleware-matcher-exclude-e37b74f4a426) — LOW confidence, general matcher-exclusion pitfall pattern
-- [Implementing Entity Audit Log with Prisma — Medium](https://medium.com/@gayanper/implementing-entity-audit-log-with-prisma-9cd3c15f6b8e) — LOW confidence, general audit-log-at-scale framing
-- [SQLite + journal_mode=wal — Prisma GitHub Discussion #15966](https://github.com/prisma/prisma/discussions/15966) — LOW confidence, general SQLite write-volume caveat (not verified against Turso specifically)
-- [Concurrent Optimistic Updates in React Query — tkdodo.eu](https://tkdodo.eu/blog/concurrent-optimistic-updates-in-react-query) — LOW confidence, general optimistic-update race framing (this app doesn't use React Query, so only the conceptual idempotency-key point transfers)
-- General web search on Korean morphology/agglutination and substring matching — LOW confidence, used only to corroborate the already-codebase-documented `splitParticle` ambiguity, not as an independent primary source
+- Direct source reads (HIGH confidence): `lib/sync.ts`, `lib/extract-cards.ts`, `lib/card-key.ts`, `lib/filter-components.ts`, `lib/link-dependencies.ts`, `lib/study-cards.ts`, `scripts/relink-dependencies.mjs`, `app/api/cron/sync/route.ts`, `prisma/schema.prisma`
+- Project docs (HIGH confidence): `.planning/codebase/CONCERNS.md` (2026-07-06), `.planning/PROJECT.md`, `CLAUDE.md`
+- Web corroboration (LOW confidence, general patterns only): [Zep — LLM extraction at scale, entity reuse hints + post-hoc dedup](https://blog.getzep.com/llm-rag-knowledge-graphs-faster-and-more-dynamic/), [Cronitor — preventing duplicate cron executions](https://cronitor.io/guides/how-to-prevent-duplicate-cron-executions), [CronBeacon — idempotency as the primary cron property](https://cronbeacon.dev/guides/cron-job-best-practices), [OneUptime — CronJob concurrency policies](https://oneuptime.com/blog/post/2026-02-09-cronjob-concurrency-policy-allow-forbid/view)
+- Observed drift evidence: `scripts/relink-dependencies.mjs:61` Hangul regex `[가-힣ᄀ-ᇿ]` vs `lib/card-key.ts:33` `[가-힣ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿]`
 
 ---
-*Pitfalls research for: Korean Study v1.4 milestone (Vercel Cron sync, ReviewLog, extraction filter)*
-*Researched: 2026-07-02*
+*Pitfalls research for: v1.5 Extraction Quality & Reliability (Korean Study app)*
+*Researched: 2026-07-06*
