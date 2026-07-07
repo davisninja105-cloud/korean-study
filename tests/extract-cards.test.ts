@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest'
-import { parseExtractionResponse, ExtractionSchema, normalizeExtractedCards } from '../lib/extract-cards'
+import { describe, it, expect, vi, afterEach } from 'vitest'
+import { parseExtractionResponse, ExtractionSchema, normalizeExtractedCards, extractCardsFromNotes } from '../lib/extract-cards'
 import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
-import { AnthropicError } from '@anthropic-ai/sdk'
+import Anthropic, { AnthropicError } from '@anthropic-ai/sdk'
 
 describe('schema shape (EXTRACT-01)', () => {
   // Walks a JSON-Schema tree (including $defs) collecting every node whose
@@ -122,6 +122,124 @@ describe('schema shape (EXTRACT-01)', () => {
     const textPathResult = parseExtractionResponse(JSON.stringify({ cards: rawCards }), deckSet)
 
     expect(happyPathResult).toEqual(textPathResult)
+  })
+})
+
+// WR-03: extractCardsFromNotes contains the actual streaming/salvage control
+// flow (the "register .on('text') before awaiting finalMessage()" ordering,
+// the happy-path parsed_output branch, the zero-text-blocks throw, and the
+// salvage-vs-rethrow-original branch) and was previously untested — every
+// other test in this file exercises only the pure helpers below it. These
+// tests replace Anthropic.Messages.prototype.stream with a fake that mimics
+// the real MessageStream's on('text', cb) + finalMessage() contract closely
+// enough to drive each branch without a network call.
+describe('extractCardsFromNotes streaming/salvage control flow (WR-03)', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  interface FakeStreamOpts {
+    textChunks?: string[]
+    resolveWith?: unknown
+    rejectWith?: unknown
+  }
+
+  // Builds a fake MessageStream: `on('text', cb)` just registers a listener
+  // (matching the real SDK); `finalMessage()` replays any queued text chunks
+  // to those listeners (simulating streaming deltas arriving before the
+  // final message settles) and then resolves/rejects — mirroring the real
+  // SDK's guarantee that text delivered via events precedes finalMessage()
+  // settling, which is exactly the ordering extractCardsFromNotes depends on.
+  function mockAnthropicStream(opts: FakeStreamOpts) {
+    const { textChunks = [], resolveWith, rejectWith } = opts
+    const textListeners: Array<(delta: string) => void> = []
+    const fakeStream = {
+      on(event: string, cb: (...args: unknown[]) => void) {
+        if (event === 'text') textListeners.push(cb as (delta: string) => void)
+        return fakeStream
+      },
+      async finalMessage() {
+        for (const chunk of textChunks) {
+          textListeners.forEach((cb) => cb(chunk))
+        }
+        if (rejectWith !== undefined) throw rejectWith
+        return resolveWith
+      },
+    }
+    vi.spyOn(Anthropic.Messages.prototype, 'stream').mockReturnValue(
+      fakeStream as unknown as ReturnType<typeof Anthropic.Messages.prototype.stream>
+    )
+  }
+
+  it('(a) happy path: a resolved message with a non-null parsed_output flows through normalizeExtractedCards', async () => {
+    mockAnthropicStream({
+      resolveWith: {
+        stop_reason: 'end_turn',
+        parsed_output: {
+          cards: [
+            {
+              type: 'vocabulary',
+              front: '가다',
+              back: 'to go',
+              distractors: ['a', 'b', 'c'],
+              sentences: [{ korean: '학교에 가다', targetForm: '가다', translation: 'go to school' }],
+              components: [],
+            },
+          ],
+        },
+      },
+    })
+
+    const result = await extractCardsFromNotes('lesson notes')
+
+    expect(result).toHaveLength(1)
+    expect(result[0].front).toBe('가다')
+    expect(result[0].back).toBe('to go')
+  })
+
+  it('(b) truncation salvage: finalMessage() rejects with AnthropicError + non-empty rawText salvages the completed card', async () => {
+    // Same truncated-mid-card-2 fixture already proven (in the
+    // parseExtractionResponse suite above) to salvage exactly card 1.
+    const truncatedText = `{"cards":[
+{"type":"vocabulary","front":"가다","back":"to go","sentences":[{"korean":"학교에 가다","targetForm":"가다","translation":"go to school"}]},
+{"type":"vocabulary","front":"오다","back":"to come","sentences":[{"korean":"집에 오다","targetForm":"오다","translation":"come home`
+
+    mockAnthropicStream({
+      textChunks: [truncatedText],
+      rejectWith: new AnthropicError('stream truncated'),
+    })
+
+    const result = await extractCardsFromNotes('lesson notes')
+
+    expect(result).toHaveLength(1)
+    expect(result[0].front).toBe('가다')
+  })
+
+  it('(c) salvage-fails-so-rethrow-original: rethrows the ORIGINAL AnthropicError, not the generic salvage error', async () => {
+    const originalErr = new AnthropicError('stream truncated mid-first-card')
+    // Cut happens before any top-level card boundary closes — the same
+    // fixture proven above (parseExtractionResponse suite) to throw
+    // "No cards found in extraction response" on its own. The salvage path
+    // must swallow THAT error and rethrow originalErr instead.
+    const truncatedText = `{"cards":[
+{"type":"vocabulary","front":"가다","back":"to go","sentences":[{"korean":"학교에 가다","targetForm":"가다","translation":"go to school`
+
+    mockAnthropicStream({
+      textChunks: [truncatedText],
+      rejectWith: originalErr,
+    })
+
+    await expect(extractCardsFromNotes('lesson notes')).rejects.toBe(originalErr)
+  })
+
+  it('(d) resolved message with zero text blocks (no parsed_output, not a truncation) throws with stop_reason context', async () => {
+    mockAnthropicStream({
+      resolveWith: { stop_reason: 'refusal', parsed_output: null },
+    })
+
+    await expect(extractCardsFromNotes('lesson notes')).rejects.toThrow(
+      /No text response from Claude \(stop_reason: refusal\)/
+    )
   })
 })
 
