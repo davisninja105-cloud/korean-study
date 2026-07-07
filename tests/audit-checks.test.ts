@@ -240,6 +240,14 @@ describe('checkDistractors (AUDIT-02)', () => {
     expect(result).toContain('equals-back')
     expect(result).toHaveLength(3)
   })
+
+  it('returns ["count-mismatch"] for an empty array', () => {
+    // '[]' parses to a length-0 array — the prompt demands exactly 3, so this
+    // is a count-mismatch (the only applicable anomaly; no entries to be
+    // non-string, duplicate, or equal-back). Locks the empty-array edge case
+    // before Phase 22 depends on it.
+    expect(checkDistractors('[]', 'back')).toEqual(['count-mismatch'])
+  })
 })
 
 describe('superNormalize (AUDIT-02)', () => {
@@ -428,6 +436,16 @@ describe('countStaleComponents (AUDIT-02)', () => {
       countStaleComponents('["학교에서"]', new Set(['학교']))
     ).toEqual({ stale: 0, malformed: false })
   })
+
+  it('counts non-string entries as stale (defensive string-filter path)', () => {
+    // '[null, "먹다"]' parses to a 2-element array. The defensive filter keeps
+    // only strings (null is dropped), so filterComponents sees ["먹다"] and
+    // keeps it (in deckSet) → kept.length = 1, stale = 2 - 1 = 1. Locks the
+    // non-string-entry behavior documented in lib/audit-checks.ts before
+    // Phase 22 depends on it.
+    expect(countStaleComponents('[null, "먹다"]', new Set(['먹다'])))
+      .toEqual({ stale: 1, malformed: false })
+  })
 })
 
 describe('runAuditChecks (AUDIT-02 — integration)', () => {
@@ -593,5 +611,15 @@ describe('runAuditChecks (AUDIT-02 — integration)', () => {
     for (const e of findings.normalizedFrontMismatches) expect(typeof e.card.id).toBe('string')
     for (const c of findings.untrimmedFronts) expect(typeof c.id).toBe('string')
     for (const cl of findings.nearDuplicateClusters) for (const m of cl.members) expect(typeof m.id).toBe('string')
+  })
+
+  it('handles an empty deck (all-zero counts and empty arrays)', () => {
+    // runAuditChecks([]) must not throw and must return all-zero counts with
+    // empty finding arrays. The script must handle this gracefully if it ever
+    // hits the empty local fallback DB (RESEARCH Pitfall 4).
+    const f = runAuditChecks([])
+    expect(f.totalCards).toBe(0)
+    expect(f.nearDuplicateClusters).toEqual([])
+    expect(f.staleComponents.cardsAffected).toBe(0)
   })
 })
