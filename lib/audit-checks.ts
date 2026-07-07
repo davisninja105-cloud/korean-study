@@ -146,14 +146,16 @@ const LATIN = /[A-Za-z]/
  * Whether a card front leaks Latin-letter romanization, gloss-safe.
  *
  * Delegates gloss stripping to `normalizeFront(front)` (lib/card-key.ts): the
- * trailing English clarifying gloss (e.g. "(direction particle)") is removed
- * first, so any Latin that survives the production helper IS leakage.
+ * trailing English clarifying gloss is removed first, so Latin outside the
+ * trailing gloss is treated as leakage.
  *
- * Scope boundary (documented limitation, RESEARCH Pitfall 3): a trailing ASCII
- * paren group is never flagged even if it contains romanization, because the
- * heuristic cannot distinguish an English gloss from trailing-paren
- * romanization. This matches normalizeFront's intentional design — the gloss
- * allowance is the price of readable grammar-pattern fronts.
+ * Scope boundaries (documented limitations):
+ *  - A trailing ASCII paren group is never flagged (gloss or romanization —
+ *    the heuristic cannot distinguish; RESEARCH Pitfall 3).
+ *  - A NON-trailing ASCII paren group IS flagged even when it is a legitimate
+ *    English gloss, because normalizeFront only strips the LAST paren group.
+ *    False positives for fronts like "~는 것 (the fact of) (명사)" are
+ *    tolerable — the audit report is human-reviewed before any fix.
  *
  * @param front Raw card front string.
  * @returns true iff Latin letters survive after normalizeFront strips any gloss.
