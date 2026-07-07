@@ -56,6 +56,7 @@ export interface AuditCardInput {
   type: string
   front: string
   back: string
+  /** Reserved for future checks — not consumed by Phase 21 audits. */
   notes: string | null
   normalizedFront: string
   /** Raw JSON-string column, unparsed (may be null or malformed). */
@@ -64,6 +65,7 @@ export interface AuditCardInput {
   distractors: string | null
   /** Deprecated legacy field — surfaced as a possible fix source for zero-sentence cards. */
   clozeSentence: string | null
+  /** Reserved for future checks — not consumed by Phase 21 audits. */
   lessonId: string | null
   /** Pre-sorted ascending by orderIndex by the caller. */
   sentences: AuditSentence[]
