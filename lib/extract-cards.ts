@@ -313,7 +313,11 @@ export function normalizeExtractedCards(
   // never reach the returned array, so this step uses flatMap ([] to reject
   // the whole card, [card] to keep it) rather than map.
   return validCards.flatMap((c) => {
-    const front = c.front ?? ''
+    // WR-01: trim once here so the persisted `front`/`back` never carry
+    // surrounding whitespace that `normalizeFront()` (the DB dedup key)
+    // silently strips — otherwise the dedup key and displayed front diverge.
+    const front = (c.front ?? '').trim()
+    const back = (c.back ?? '').trim()
     const myKey = normalizeFront(front)
 
     // Clean components: array of non-empty strings, deduped, self-excluded.
@@ -370,7 +374,7 @@ export function normalizeExtractedCards(
     return [{
       type:       (c.type ?? 'vocabulary') as ExtractedCard['type'],
       front,
-      back:       c.back ?? '',
+      back,
       // IN-01: coerce to the declared string|undefined type instead of passing
       // a malformed non-string value through untouched — otherwise it only
       // fails later at the Prisma write (a whole-lesson DB-write failure)
