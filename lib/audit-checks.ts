@@ -30,6 +30,7 @@
 
 import { sentenceMatch } from './sentence-match'
 import { normalizeFront } from './card-key'
+import { filterComponents } from './filter-components'
 
 // ─── Shared plain-data types (used by every task in this plan + Wave 2) ───
 
@@ -263,4 +264,342 @@ export function checkDistractors(
   }
 
   return anomalies
+}
+
+// ─── Check class 5: normalizedFront inconsistency + untrimmed fronts ───
+
+/**
+ * Whether a card's stored normalizedFront is stale — i.e. does not match the
+ * value `normalizeFront(front)` would produce now. Can happen if `front` was
+ * edited through a path that didn't re-derive the key, or if normalizeFront's
+ * rules changed after the row was written.
+ *
+ * Delegates the recompute to `normalizeFront(front)` (lib/card-key.ts) — the
+ * same helper the sync write-path uses, so the audit's definition of "stale
+ * key" is structurally identical to what production would write today.
+ *
+ * @param front                  Raw card front string.
+ * @param storedNormalizedFront  The stored card.normalizedFront column value.
+ * @returns true iff normalizeFront(front) !== storedNormalizedFront.
+ */
+export function normalizedFrontMismatch(
+  front: string,
+  storedNormalizedFront: string
+): boolean {
+  return normalizeFront(front) !== storedNormalizedFront
+}
+
+/**
+ * Whether a card front has leading or trailing whitespace. Legacy rows may
+ * predate Phase 20's WR-01 trim-at-extraction enforcement.
+ *
+ * @param front Raw card front string.
+ * @returns true iff front !== front.trim().
+ */
+export function frontUntrimmed(front: string): boolean {
+  return front !== front.trim()
+}
+
+// ─── Check class 6: near-duplicate clustering (superNormalize lift) ───
+
+/**
+ * Strip a card front to a bare Hangul core for fuzzy near-duplicate comparison.
+ *
+ * Lifted verbatim (with the commented-out slash-removal decision preserved)
+ * from scripts/find-duplicates.mjs:48-62. This is the one permitted "lift" per
+ * RESEARCH.md — the script is untested prior art, and Phase 21 centralizes
+ * audit logic in this pure, Vitest-covered module.
+ *
+ * Steps: NFC normalize → strip all ~ → strip ALL paren groups (including
+ * Hangul ones like (으)) → collapse whitespace → trim → lowercase.
+ *
+ * Slashes are intentionally left as-is: removing them changes meaning
+ * (e.g. "아/어" is a verb-alternation pattern, not the single string "아어").
+ *
+ * @param front Raw card front (or normalizedFront) string.
+ * @returns The fuzzy comparison key.
+ */
+export function superNormalize(front: string): string {
+  return front
+    .normalize('NFC')
+    // Remove all ~ (grammar markers)
+    .replace(/~/g, '')
+    // Remove all parenthetical groups (any content in parens, including Hangul)
+    .replace(/\([^)]*\)/g, '')
+    // Remove slash-alternates like 아/어, ㄹ/을, etc. — keep both sides
+    // by just removing the slash so "아/어" becomes "아어"
+    // (don't do this — it changes meaning; leave slashes as-is)
+    // Collapse whitespace
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase()
+}
+
+/** A near-duplicate cluster: the superNormalize key plus the member CardRefs. */
+export interface NearDuplicateCluster {
+  key: string
+  members: CardRef[]
+}
+
+/**
+ * Group cards by superNormalize key, keeping only groups of 2+ members.
+ * Mirrors the filter/sort in scripts/find-duplicates.mjs:79-81.
+ *
+ * @param cards Cards carrying at least { id, type, front, back, normalizedFront }.
+ *               The normalizedFront is preferred for the key; front is the
+ *               fallback when normalizedFront is empty.
+ * @returns Array of { key, members } sorted by member count descending.
+ *          Each member is a CardRef (id/type/front/back) — normalizedFront
+ *          is NOT carried into the finding.
+ */
+export function clusterNearDuplicates(
+  cards: Array<CardRef & { normalizedFront: string }>
+): NearDuplicateCluster[] {
+  const groups = new Map<string, CardRef[]>()
+  for (const card of cards) {
+    const key = superNormalize(card.normalizedFront || card.front)
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key)!.push({
+      id: card.id,
+      type: card.type,
+      front: card.front,
+      back: card.back,
+    })
+  }
+  return [...groups.entries()]
+    .filter(([, members]) => members.length > 1)
+    .sort((a, b) => b[1].length - a[1].length) // most members first
+    .map(([key, members]) => ({ key, members }))
+}
+
+// ─── Optional finding 7: stale-components summary count (filterComponents reuse) ───
+
+/**
+ * Count stale (non-resolving) component entries in a card's components JSON
+ * column, reusing `filterComponents` (lib/filter-components.ts) for the
+ * resolution logic. This is the summary-count-only optional finding 7
+ * (RESEARCH Open Question 1 recommendation); the detailed view is already
+ * produced by scripts/retro-filter-cleanup.mts in dry-run mode.
+ *
+ * splitParticle is reused transitively through filterComponents' stem-resolution
+ * step — particle logic is NOT reimplemented anywhere in this module.
+ *
+ * @param components Raw nullable JSON-string column value (untrusted).
+ * @param deckSet    Set of every card's normalizedFront in the deck.
+ * @returns { stale: number of entries dropped by filterComponents;
+ *            malformed: true if JSON.parse failed or parsed value is not an array }
+ *          Never throws — malformed rows report malformed=true, stale=0.
+ */
+export function countStaleComponents(
+  components: string | null,
+  deckSet: Set<string>
+): { stale: number; malformed: boolean } {
+  if (components === null) return { stale: 0, malformed: false }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(components)
+  } catch {
+    return { stale: 0, malformed: true }
+  }
+  if (!Array.isArray(parsed)) return { stale: 0, malformed: true }
+
+  // Defensive: filter to strings before passing to filterComponents, which
+  // expects string[] and would throw on non-string entries via normalizeFront.
+  // Non-strings count as stale (they don't resolve to any real card).
+  const stringsOnly = parsed.filter((e): e is string => typeof e === 'string')
+  const kept = filterComponents(stringsOnly, deckSet)
+  return { stale: parsed.length - kept.length, malformed: false }
+}
+
+// ─── Aggregator: runAuditChecks (the single entry point for Wave 2) ───
+
+/** A not-found-sentence finding: the card ref plus indices of un-found sentences. */
+export interface BlankSafetyNotFoundEntry {
+  card: CardRef
+  indices: number[]
+}
+
+/** A romanization-in-sentences finding: the card ref plus indices of flagged sentences. */
+export interface RomanizationFlaggedSentencesEntry {
+  card: CardRef
+  indices: number[]
+}
+
+/** A distractor-anomaly finding: the card ref plus every anomaly literal present. */
+export interface DistractorFindingEntry {
+  card: CardRef
+  anomalies: DistractorAnomaly[]
+}
+
+/** A normalizedFront-mismatch finding: card ref, recomputed expected, and stale stored value. */
+export interface NormalizedFrontMismatchEntry {
+  card: CardRef
+  expected: string
+  stored: string
+}
+
+/** A zero-sentence card entry: card ref plus the hasLegacyCloze flag (clozeSentence non-null). */
+export interface ZeroSentenceCardEntry {
+  card: CardRef
+  hasLegacyCloze: boolean
+}
+
+/** Summary counts for the optional stale-components finding (finding 7). */
+export interface StaleComponentsSummary {
+  /** Cards with stale entries OR malformed components JSON. */
+  cardsAffected: number
+  /** Total stale entries across all non-malformed cards. */
+  totalStaleEntries: number
+  /** CardRefs for cards whose components JSON was malformed (unparseable or non-array). */
+  malformedCards: CardRef[]
+}
+
+/**
+ * The complete audit findings object — the single return value of runAuditChecks.
+ * Every finding entry carries the card id so Phase 22 can fix cards in place by id
+ * (STATE.md v1.5 hard rule: never delete+recreate, which would cascade-wipe FSRS
+ * state + ReviewLog history).
+ */
+export interface AuditFindings {
+  totalCards: number
+  blankSafety: {
+    zeroSafe: CardRef[]
+    unsafeFirst: CardRef[]
+    notFound: BlankSafetyNotFoundEntry[]
+  }
+  zeroSentenceCards: ZeroSentenceCardEntry[]
+  romanization: {
+    flaggedFronts: CardRef[]
+    flaggedSentences: RomanizationFlaggedSentencesEntry[]
+  }
+  distractorFindings: DistractorFindingEntry[]
+  normalizedFrontMismatches: NormalizedFrontMismatchEntry[]
+  untrimmedFronts: CardRef[]
+  nearDuplicateClusters: NearDuplicateCluster[]
+  staleComponents: StaleComponentsSummary
+}
+
+/**
+ * Run every audit check class over a deck of cards and return the complete
+ * findings object. This is the single aggregator the Wave 2 script
+ * (scripts/audit-cards.mts) calls — it owns ALL I/O; this function only
+ * classifies.
+ *
+ * Derives the deckSet internally (Set of every card's normalizedFront), then
+ * routes each card through every check. Zero-sentence cards are routed to
+ * zeroSentenceCards (with hasLegacyCloze) rather than the blankSafety buckets;
+ * cards WITH sentences can appear in multiple sections simultaneously
+ * (e.g. zero-safe AND not-found).
+ *
+ * @param cards AuditCardInput[] — plain data, sentences pre-sorted by orderIndex.
+ * @returns AuditFindings — per-class arrays + counts; every entry carries the card id.
+ */
+export function runAuditChecks(cards: AuditCardInput[]): AuditFindings {
+  // Derive the deckSet once — the Set of every card's normalizedFront, used by
+  // countStaleComponents → filterComponents for component resolution.
+  const deckSet = new Set(cards.map((c) => c.normalizedFront))
+
+  const blankSafety = {
+    zeroSafe: [] as CardRef[],
+    unsafeFirst: [] as CardRef[],
+    notFound: [] as BlankSafetyNotFoundEntry[],
+  }
+  const zeroSentenceCards: ZeroSentenceCardEntry[] = []
+  const flaggedFronts: CardRef[] = []
+  const flaggedSentences: RomanizationFlaggedSentencesEntry[] = []
+  const distractorFindings: DistractorFindingEntry[] = []
+  const normalizedFrontMismatches: NormalizedFrontMismatchEntry[] = []
+  const untrimmedFronts: CardRef[] = []
+  const staleComponents: StaleComponentsSummary = {
+    cardsAffected: 0,
+    totalStaleEntries: 0,
+    malformedCards: [],
+  }
+
+  for (const card of cards) {
+    const ref: CardRef = {
+      id: card.id,
+      type: card.type,
+      front: card.front,
+      back: card.back,
+    }
+
+    // Check class 1: blank-safety (zero-sentence cards routed separately)
+    const cls = classifyBlankSafety(card.sentences)
+    if (cls === 'zero-sentences') {
+      zeroSentenceCards.push({
+        card: ref,
+        hasLegacyCloze: card.clozeSentence !== null,
+      })
+    } else {
+      if (cls === 'zero-safe') blankSafety.zeroSafe.push(ref)
+      if (cls === 'unsafe-first') blankSafety.unsafeFirst.push(ref)
+      const notFoundIdx = notFoundSentenceIndices(card.sentences)
+      if (notFoundIdx.length > 0) {
+        blankSafety.notFound.push({ card: ref, indices: notFoundIdx })
+      }
+    }
+
+    // Check class 3: romanization (fronts and sentences split)
+    if (frontHasRomanization(card.front)) flaggedFronts.push(ref)
+    const romanIdx: number[] = []
+    card.sentences.forEach((s, i) => {
+      if (sentenceHasRomanization(s.korean)) romanIdx.push(i)
+    })
+    if (romanIdx.length > 0) {
+      flaggedSentences.push({ card: ref, indices: romanIdx })
+    }
+
+    // Check class 4: distractor anomalies (only cards with non-empty arrays)
+    const anomalies = checkDistractors(card.distractors, card.back)
+    if (anomalies.length > 0) {
+      distractorFindings.push({ card: ref, anomalies })
+    }
+
+    // Check class 5: normalizedFront mismatch + untrimmed front
+    if (normalizedFrontMismatch(card.front, card.normalizedFront)) {
+      normalizedFrontMismatches.push({
+        card: ref,
+        expected: normalizeFront(card.front),
+        stored: card.normalizedFront,
+      })
+    }
+    if (frontUntrimmed(card.front)) untrimmedFronts.push(ref)
+
+    // Optional finding 7: stale components (summary count only)
+    if (card.components !== null) {
+      const sc = countStaleComponents(card.components, deckSet)
+      if (sc.malformed) {
+        staleComponents.cardsAffected++
+        staleComponents.malformedCards.push(ref)
+      } else if (sc.stale > 0) {
+        staleComponents.cardsAffected++
+        staleComponents.totalStaleEntries += sc.stale
+      }
+    }
+  }
+
+  // Check class 6: near-duplicate clustering (all cards participate)
+  const nearDuplicateClusters = clusterNearDuplicates(
+    cards.map((c) => ({
+      id: c.id,
+      type: c.type,
+      front: c.front,
+      back: c.back,
+      normalizedFront: c.normalizedFront,
+    }))
+  )
+
+  return {
+    totalCards: cards.length,
+    blankSafety,
+    zeroSentenceCards,
+    romanization: { flaggedFronts, flaggedSentences },
+    distractorFindings,
+    normalizedFrontMismatches,
+    untrimmedFronts,
+    nearDuplicateClusters,
+    staleComponents,
+  }
 }
