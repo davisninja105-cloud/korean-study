@@ -380,9 +380,21 @@ export function normalizeExtractedCards(
       // fails later at the Prisma write (a whole-lesson DB-write failure)
       // rather than being caught cleanly here alongside the other validation.
       notes:      typeof c.notes === 'string' ? c.notes : undefined,
-      distractors: Array.isArray(c.distractors)
-        ? c.distractors.filter((d): d is string => typeof d === 'string').slice(0, 3)
-        : [],
+      distractors: (() => {
+        const distractors = Array.isArray(c.distractors)
+          ? c.distractors.filter((d): d is string => typeof d === 'string').slice(0, 3)
+          : []
+        // IN-01: the prompt asks for EXACTLY 3 distractors; nothing here
+        // enforces that. Warn (sync-log observability only — the study UI
+        // already pads short lists from other cards' `back` values) so a
+        // systematic prompt regression doesn't go unnoticed.
+        if (distractors.length < 3) {
+          console.warn(
+            `Card "${front}" has ${distractors.length} distractor(s), expected 3`
+          )
+        }
+        return distractors
+      })(),
       sentences,
       components,
     }]
