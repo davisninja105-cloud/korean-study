@@ -119,7 +119,17 @@ Plans:
   3. All audit checks live in a pure, Vitest-covered `lib/audit-checks.ts` module that reuses production helpers (`sentenceMatch`, `splitParticle`, `normalizeFront`, `filterComponents`) rather than reimplementing them
   4. Running the audit mutates no data — it is verifiably read-only (no writes to the DB)
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 21-01-PLAN.md — Pure `lib/audit-checks.ts` module + Vitest coverage for all six check classes (AUDIT-02)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 21-02-PLAN.md — Read-only `scripts/audit-cards.mts` + live-deck run producing the dated `.planning/audits/` report (AUDIT-01)
+
 **UI hint**: no
 
 ### Phase 22: Findings-Driven Prompt Improvement & Corpus Fixes
