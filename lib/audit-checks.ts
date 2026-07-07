@@ -326,9 +326,9 @@ export function superNormalize(front: string): string {
     .replace(/~/g, '')
     // Remove all parenthetical groups (any content in parens, including Hangul)
     .replace(/\([^)]*\)/g, '')
-    // Remove slash-alternates like 아/어, ㄹ/을, etc. — keep both sides
-    // by just removing the slash so "아/어" becomes "아어"
-    // (don't do this — it changes meaning; leave slashes as-is)
+    // Slashes are intentionally preserved — removing them changes meaning
+    // (e.g. "아/어" is a verb-alternation pattern, not the single string "아어").
+    // See test "preserves slashes (meaning-bearing — rejected slash-removal decision)".
     // Collapse whitespace
     .replace(/\s+/g, ' ')
     .trim()
