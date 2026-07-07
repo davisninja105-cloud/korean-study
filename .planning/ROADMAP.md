@@ -144,7 +144,21 @@ Plans:
   3. High-confidence quality issues are corrected in the database by mutating cards in place by `id` (dry-run-gated scripts, or `CardEditor` for one-offs) — never delete-and-recreate, preserving FSRS state and `ReviewLog` history
   4. Every fix script defaults to dry-run and requires an explicit `--apply` flag to write, matching the `retro-filter-cleanup.mts` pattern
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 22-01-PLAN.md — Word-boundary-aware single-char blank-safety in sentenceMatch + test matrix (D-01/D-02; resolves the 다 zero-safe finding with no DB change)
+
+**Wave 2** *(blocked on Wave 1)*
+
+- [ ] 22-02-PLAN.md — prompt-eval.mts + pre-edit baseline → annotated prompt revision → after-run diff PASS per D-12 (PROMPT-01, PROMPT-02)
+
+**Wave 3** *(blocked on Wave 2; has blocking human checkpoint before --apply)*
+
+- [ ] 22-03-PLAN.md — Dry-run-gated fix-corpus script: 9 front rewrites in place by id + 철 sentences, post-fix audit re-run, fix report with accepted residuals (FIX-01, FIX-02)
+
 **UI hint**: no
 
 ### Phase 23: Reliability Bug Fixes
@@ -192,7 +206,7 @@ Within v1.5, the audit/prompt track is strictly serial (21 → 22); Phase 20 (ex
 | 19. Vercel Cron Auto-Sync | v1.4 | 3/3 | Complete | 2026-07-05 |
 | 20. Extraction Pipeline Hardening | v1.5 | 2/2 | Complete   | 2026-07-06 |
 | 21. Card Database Quality Audit | v1.5 | 2/2 | Complete   | 2026-07-07 |
-| 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 0/TBD | Not started | - |
+| 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 0/3 | Planned | - |
 | 23. Reliability Bug Fixes | v1.5 | 0/TBD | Not started | - |
 
 ---
