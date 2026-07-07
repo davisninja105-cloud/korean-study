@@ -522,10 +522,10 @@ describe('runAuditChecks (AUDIT-02 — integration)', () => {
     const findings = runAuditChecks(deck)
     expect(findings.blankSafety.zeroSafe).toHaveLength(1)
     expect(findings.blankSafety.zeroSafe[0].id).toBe('d')
-    // Card D's targetForm "먹다" is not found in "안녕하세요" → index 0
+    // Card D's targetForm "먹다" is not found in "안녕하세요" → orderIndex 0
     expect(findings.blankSafety.notFound).toHaveLength(1)
     expect(findings.blankSafety.notFound[0].card.id).toBe('d')
-    expect(findings.blankSafety.notFound[0].indices).toEqual([0])
+    expect(findings.blankSafety.notFound[0].orderIndices).toEqual([0])
   })
 
   it('flags romanization in fronts and sentences separately', () => {
@@ -534,7 +534,7 @@ describe('runAuditChecks (AUDIT-02 — integration)', () => {
     expect(findings.romanization.flaggedFronts[0].id).toBe('e')
     expect(findings.romanization.flaggedSentences).toHaveLength(1)
     expect(findings.romanization.flaggedSentences[0].card.id).toBe('e')
-    expect(findings.romanization.flaggedSentences[0].indices).toEqual([0])
+    expect(findings.romanization.flaggedSentences[0].orderIndices).toEqual([0])
   })
 
   it('reports distractor findings only for cards with non-empty anomaly arrays', () => {

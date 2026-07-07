@@ -124,6 +124,12 @@ export function classifyBlankSafety(sentences: AuditSentence[]): BlankSafetyClas
  * the UI and fill-blank has no answer — reported as their own blank-safety
  * sub-class so Phase 22 can target them by id+orderIndex.
  *
+ * NOTE: this helper returns ARRAY positions (0-based, into the input array),
+ * NOT orderIndex column values. `runAuditChecks` maps these positions to
+ * orderIndex values before storing them in the finding entry, so the reported
+ * field (BlankSafetyNotFoundEntry.orderIndices) IS directly targetable by
+ * Phase 22 via `where: { cardId, orderIndex }`.
+ *
  * @param sentences Pre-sorted ascending by orderIndex by the caller.
  * @returns Array of indices (into the input array) where the target was not found.
  */
@@ -416,16 +422,18 @@ export function countStaleComponents(
 
 // ─── Aggregator: runAuditChecks (the single entry point for Wave 2) ───
 
-/** A not-found-sentence finding: the card ref plus indices of un-found sentences. */
+/** A not-found-sentence finding: the card ref plus orderIndex values of un-found sentences. */
 export interface BlankSafetyNotFoundEntry {
   card: CardRef
-  indices: number[]
+  /** orderIndex column values of the un-found sentences (NOT array positions). */
+  orderIndices: number[]
 }
 
-/** A romanization-in-sentences finding: the card ref plus indices of flagged sentences. */
+/** A romanization-in-sentences finding: the card ref plus orderIndex values of flagged sentences. */
 export interface RomanizationFlaggedSentencesEntry {
   card: CardRef
-  indices: number[]
+  /** orderIndex column values of the flagged sentences (NOT array positions). */
+  orderIndices: number[]
 }
 
 /** A distractor-anomaly finding: the card ref plus every anomaly literal present. */
@@ -539,7 +547,12 @@ export function runAuditChecks(cards: AuditCardInput[]): AuditFindings {
       if (cls === 'unsafe-first') blankSafety.unsafeFirst.push(ref)
       const notFoundIdx = notFoundSentenceIndices(card.sentences)
       if (notFoundIdx.length > 0) {
-        blankSafety.notFound.push({ card: ref, indices: notFoundIdx })
+        // Map array positions → orderIndex column values so the finding entry
+        // is directly actionable by Phase 22 (where: { cardId, orderIndex }).
+        blankSafety.notFound.push({
+          card: ref,
+          orderIndices: notFoundIdx.map((i) => card.sentences[i].orderIndex),
+        })
       }
     }
 
@@ -550,7 +563,12 @@ export function runAuditChecks(cards: AuditCardInput[]): AuditFindings {
       if (sentenceHasRomanization(s.korean)) romanIdx.push(i)
     })
     if (romanIdx.length > 0) {
-      flaggedSentences.push({ card: ref, indices: romanIdx })
+      // Map array positions → orderIndex column values (same convention as
+      // notFound above) so Phase 22 can target flagged sentences by orderIndex.
+      flaggedSentences.push({
+        card: ref,
+        orderIndices: romanIdx.map((i) => card.sentences[i].orderIndex),
+      })
     }
 
     // Check class 4: distractor anomalies (only cards with non-empty arrays)

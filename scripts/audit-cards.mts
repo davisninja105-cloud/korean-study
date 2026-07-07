@@ -176,7 +176,7 @@ function renderMarkdown(f: AuditFindings, date: string): string {
     L.push('None found.')
   } else {
     for (const e of f.blankSafety.notFound) {
-      L.push(`- [${e.card.type}] front: "${e.card.front}" — id: ${e.card.id} — not-found sentence indices: ${e.indices.join(', ')}`)
+      L.push(`- [${e.card.type}] front: "${e.card.front}" — id: ${e.card.id} — not-found sentence orderIndex values: ${e.orderIndices.join(', ')}`)
     }
   }
   L.push('')
@@ -212,7 +212,7 @@ function renderMarkdown(f: AuditFindings, date: string): string {
     L.push('None found.')
   } else {
     for (const e of f.romanization.flaggedSentences) {
-      L.push(`- [${e.card.type}] front: "${e.card.front}" — id: ${e.card.id} — flagged sentence indices: ${e.indices.join(', ')}`)
+      L.push(`- [${e.card.type}] front: "${e.card.front}" — id: ${e.card.id} — flagged sentence orderIndex values: ${e.orderIndices.join(', ')}`)
     }
   }
   L.push('')
