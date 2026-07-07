@@ -29,6 +29,7 @@
  */
 
 import { sentenceMatch } from './sentence-match'
+import { normalizeFront } from './card-key'
 
 // ─── Shared plain-data types (used by every task in this plan + Wave 2) ───
 
@@ -131,4 +132,135 @@ export function notFoundSentenceIndices(sentences: AuditSentence[]): number[] {
     if (!sentenceMatch(s.korean, s.targetForm).found) indices.push(i)
   })
   return indices
+}
+
+// ─── Check class 3: romanization leakage (grounded in normalizeFront regexes) ───
+
+// Same Latin-alphabet character class normalizeFront uses for gloss detection
+// (lib/card-key.ts). Reused here so the audit's definition of "Latin letter"
+// is structurally identical to what the dedup key treats as a gloss.
+const LATIN = /[A-Za-z]/
+
+/**
+ * Whether a card front leaks Latin-letter romanization, gloss-safe.
+ *
+ * Delegates gloss stripping to `normalizeFront(front)` (lib/card-key.ts): the
+ * trailing English clarifying gloss (e.g. "(direction particle)") is removed
+ * first, so any Latin that survives the production helper IS leakage.
+ *
+ * Scope boundary (documented limitation, RESEARCH Pitfall 3): a trailing ASCII
+ * paren group is never flagged even if it contains romanization, because the
+ * heuristic cannot distinguish an English gloss from trailing-paren
+ * romanization. This matches normalizeFront's intentional design — the gloss
+ * allowance is the price of readable grammar-pattern fronts.
+ *
+ * @param front Raw card front string.
+ * @returns true iff Latin letters survive after normalizeFront strips any gloss.
+ */
+export function frontHasRomanization(front: string): boolean {
+  return LATIN.test(normalizeFront(front))
+}
+
+/**
+ * Whether a sentence korean field leaks Latin-letter romanization.
+ *
+ * Sentences have NO gloss allowance — the prompt bans Latin in sentence
+ * korean entirely — so the LATIN test runs on the raw string. Any ASCII letter
+ * is leakage.
+ *
+ * @param korean Raw sentence korean string.
+ * @returns true iff the korean contains any Latin letter.
+ */
+export function sentenceHasRomanization(korean: string): boolean {
+  return LATIN.test(korean)
+}
+
+// ─── Check class 4: distractor-count anomalies ───
+
+/**
+ * The six distractor anomaly literals. Each corresponds to a distinct shape
+ * the extraction prompt forbids but stored legacy rows may hold:
+ *  - 'null'              : column is null (prompt demands exactly 3)
+ *  - 'malformed-json'    : JSON.parse fails OR parses to a non-array
+ *  - 'not-string-array'  : an entry is not a string (prompt demands English meanings)
+ *  - 'count-mismatch'    : parsed length is not exactly 3 (both under AND over)
+ *  - 'duplicate-entries' : two entries are the same string
+ *  - 'equals-back'       : an entry strictly equals the card's back (the answer)
+ */
+export type DistractorAnomaly =
+  | 'null'
+  | 'malformed-json'
+  | 'not-string-array'
+  | 'count-mismatch'
+  | 'duplicate-entries'
+  | 'equals-back'
+
+/**
+ * Classify every anomaly present in a distractors JSON column.
+ *
+ * Grounding: the extraction prompt demands EXACTLY 3 plausible-but-wrong
+ * English meanings; Phase 20 added a console.warn when < 3 but persists anyway
+ * (IN-01); components/StudySession.tsx parses the JSON with try/catch → [] on
+ * malformed and pads/slices to 3 at render. Stored legacy rows can hold any
+ * shape (RESEARCH Pitfall 6), so this function reports every applicable
+ * anomaly without throwing on malformed input.
+ *
+ * Rules (empty array means healthy):
+ *  - null column → ['null'] alone (cannot inspect what isn't there)
+ *  - JSON.parse failure OR non-array parse → ['malformed-json'] alone
+ *  - otherwise accumulate ALL that apply:
+ *      • any non-string entry → 'not-string-array'
+ *      • parsed length !== 3  → 'count-mismatch' (both directions)
+ *      • any exact-string repeat → 'duplicate-entries'
+ *      • any entry strictly === back → 'equals-back'
+ *
+ * @param distractors Raw nullable JSON-string column value (untrusted).
+ * @param back        The card's back (correct answer) — used for the equals-back check.
+ * @returns Array of every anomaly literal present (empty = healthy).
+ */
+export function checkDistractors(
+  distractors: string | null,
+  back: string
+): DistractorAnomaly[] {
+  if (distractors === null) return ['null']
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(distractors)
+  } catch {
+    return ['malformed-json']
+  }
+  if (!Array.isArray(parsed)) return ['malformed-json']
+
+  const anomalies: DistractorAnomaly[] = []
+
+  // any non-string entry → 'not-string-array'
+  if (parsed.some((entry) => typeof entry !== 'string')) {
+    anomalies.push('not-string-array')
+  }
+
+  // parsed length !== 3 → 'count-mismatch' (both under AND over)
+  if (parsed.length !== 3) {
+    anomalies.push('count-mismatch')
+  }
+
+  // any exact-string repeat → 'duplicate-entries' (string duplicates only;
+  // non-string duplicates are already covered by 'not-string-array')
+  const seenStrings = new Set<string>()
+  for (const entry of parsed) {
+    if (typeof entry === 'string') {
+      if (seenStrings.has(entry)) {
+        anomalies.push('duplicate-entries')
+        break // report once, not once per repeat
+      }
+      seenStrings.add(entry)
+    }
+  }
+
+  // any entry strictly === back → 'equals-back'
+  if (parsed.some((entry) => entry === back)) {
+    anomalies.push('equals-back')
+  }
+
+  return anomalies
 }
