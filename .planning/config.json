@@ -1,7 +1,14 @@
 {
   "model_profile": "adaptive",
+  "model_overrides": {
+    "gsd-doc-writer": "fable",
+    "gsd-codebase-mapper": "fable",
+    "gsd-planner": "fable",
+    "gsd-phase-researcher": "sonnet",
+    "gsd-project-researcher": "fable"
+  },
   "commit_docs": true,
-  "parallelization": false,
+  "parallelization": true,
   "search_gitignored": false,
   "brave_search": false,
   "firecrawl": false,
