@@ -119,12 +119,12 @@ Plans:
   3. All audit checks live in a pure, Vitest-covered `lib/audit-checks.ts` module that reuses production helpers (`sentenceMatch`, `splitParticle`, `normalizeFront`, `filterComponents`) rather than reimplementing them
   4. Running the audit mutates no data — it is verifiably read-only (no writes to the DB)
 
-**Plans**: 2 plans
+**Plans**: 1/2 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 21-01-PLAN.md — Pure `lib/audit-checks.ts` module + Vitest coverage for all six check classes (AUDIT-02)
+- [x] 21-01-PLAN.md — Pure `lib/audit-checks.ts` module + Vitest coverage for all six check classes (AUDIT-02)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -191,7 +191,7 @@ Within v1.5, the audit/prompt track is strictly serial (21 → 22); Phase 20 (ex
 | 18. Review History Page | v1.4 | 3/3 | Complete | 2026-07-04 |
 | 19. Vercel Cron Auto-Sync | v1.4 | 3/3 | Complete | 2026-07-05 |
 | 20. Extraction Pipeline Hardening | v1.5 | 2/2 | Complete   | 2026-07-06 |
-| 21. Card Database Quality Audit | v1.5 | 0/TBD | Not started | - |
+| 21. Card Database Quality Audit | v1.5 | 1/2 | In Progress|  |
 | 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 0/TBD | Not started | - |
 | 23. Reliability Bug Fixes | v1.5 | 0/TBD | Not started | - |
 

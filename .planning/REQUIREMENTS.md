@@ -16,7 +16,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### Extraction Quality Audit
 
 - [ ] **AUDIT-01**: A read-only script audits the existing card database (blank-safety violations, zero-sentence cards, romanization leakage, distractor-count anomalies, `normalizedFront` inconsistency, near-duplicate clusters) and produces a dated findings report
-- [ ] **AUDIT-02**: Audit checks are implemented as a pure, unit-tested module that reuses production helpers (`sentenceMatch`, `splitParticle`, `normalizeFront`, `filterComponents`) rather than reimplementing them
+- [x] **AUDIT-02**: Audit checks are implemented as a pure, unit-tested module that reuses production helpers (`sentenceMatch`, `splitParticle`, `normalizeFront`, `filterComponents`) rather than reimplementing them
 
 ### Findings-Driven Prompt Review
 
@@ -67,7 +67,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | EXTRACT-02 | Phase 20 | Complete |
 | EXTRACT-03 | Phase 20 | Complete |
 | AUDIT-01 | Phase 21 | Pending |
-| AUDIT-02 | Phase 21 | Pending |
+| AUDIT-02 | Phase 21 | Complete |
 | PROMPT-01 | Phase 22 | Pending |
 | PROMPT-02 | Phase 22 | Pending |
 | FIX-01 | Phase 22 | Pending |
