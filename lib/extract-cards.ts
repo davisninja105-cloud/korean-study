@@ -60,6 +60,20 @@ export interface ExtractedCard {
   components: string[]
 }
 
+// WR-02: ExtractedCard/ExtractedSentence above are hand-written (kept
+// separate from the zod schemas so the JSDoc on `components` etc. survives —
+// z.infer would erase it). This compile-time equality guard is the
+// trade-off's safety net: if a future schema change adds/removes a field on
+// one side without updating the other, TypeScript fails the build here
+// instead of the two shapes silently drifting apart (they're never checked
+// against each other anywhere else, since normalizeExtractedCards/
+// isValidExtractedCard operate on `unknown`/`Partial<ExtractedCard>` casts).
+type AssertShapesEqual<A, B> = A extends B ? (B extends A ? true : false) : false
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _extractedCardShapeCheck: AssertShapesEqual<ExtractedCard, z.infer<typeof ExtractedCardSchema>> = true
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _extractedSentenceShapeCheck: AssertShapesEqual<ExtractedSentence, z.infer<typeof ExtractedSentenceSchema>> = true
+
 export async function extractCardsFromNotes(
   notes: string,
   existingNormalizedFronts: string[] = [],
