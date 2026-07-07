@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Extraction Quality & Reliability
 current_phase: 21
 current_phase_name: card-database-quality-audit
-status: executing
-stopped_at: Completed 21-01-PLAN.md (pure audit module + 60 tests)
-last_updated: "2026-07-07T03:39:58.168Z"
+status: verifying
+stopped_at: Completed 21-02-PLAN.md (read-only audit script + live dated report)
+last_updated: "2026-07-07T03:54:03.202Z"
 last_activity: 2026-07-07
 last_activity_desc: Phase 21 execution started
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 4
-  completed_plans: 3
-  percent: 25
+  completed_plans: 4
+  percent: 50
 ---
 
 # Project State
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-07-05)
 
 Phase: 21 (card-database-quality-audit) — EXECUTING
 Plan: 2 of 2
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-07 — Phase 21 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -58,6 +58,7 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 | Phase 21 P01 | 16 min | 3 tasks | 2 files |
+| Phase 21 P02 | 4 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -74,6 +75,9 @@ v1.5 roadmap shaping decisions (2026-07-06):
 - [Phase ?]: Phase 21-01: audit-checks module delegates to production helpers (sentenceMatch/normalizeFront/filterComponents) — audit truth is production truth by structural construction
 - [Phase ?]: Phase 21-01: superNormalize lifted verbatim from find-duplicates.mjs into lib/audit-checks.ts; slash-removal decision preserved
 - [Phase ?]: Phase 21-01: zero-sentence cards routed to own section with hasLegacyCloze flag, not blankSafety — Phase 22 fix strategy differs
+- [Phase 21]: Phase 21-02: audit-cards.mts is a thin I/O adapter — zero classification logic; all checks in lib/audit-checks.ts (runAuditChecks). Script: load → runAuditChecks → render markdown → write file → console → exit(0).
+- [Phase 21]: Phase 21-02: env-first dynamic-import preamble (dotenv → await import('../lib/*.js')) — 1039-card live count confirms the real Turso deck was read, not the empty local fallback (Pitfall 4 avoided).
+- [Phase 21]: Phase 21-02: dated report interpolates only findings fields + date (never env/credentials); every finding carries the card id for Phase 22 fix-in-place (STATE.md v1.5 hard rule).
 
 ### Pending Todos
 
@@ -100,8 +104,8 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-07T03:39:58.162Z
-Stopped at: Completed 21-01-PLAN.md (pure audit module + 60 tests)
+Last session: 2026-07-07T03:54:03.196Z
+Stopped at: Completed 21-02-PLAN.md (read-only audit script + live dated report)
 Resume file: None
 
 ## Operator Next Steps
