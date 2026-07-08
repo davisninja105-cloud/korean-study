@@ -8,8 +8,55 @@ describe('sentenceMatch', () => {
     expect(r.safeToBlank).toBe(true)
   })
 
-  it('returns safeToBlank=false for single-char target', () => {
+  // --- D-01/D-02: word-boundary-aware single-char blank-safety ---
+  // An isolated single-char targetForm (string-edge / whitespace / punctuation on
+  // both sides) is blank-safe; an embedded one (Hangul-adjacent on either side)
+  // stays unsafe. The multi-occurrence rule still wins for isolated-but-repeated.
+
+  it('single-char target isolated by spaces/string-edge is blank-safe', () => {
+    // Replaces the pre-D-02 assertion that expected safeToBlank=false here.
     const r = sentenceMatch('나는 가', '가')
+    expect(r.found).toBe(true)
+    expect(r.index).toBe(3)
+    expect(r.safeToBlank).toBe(true)
+  })
+
+  it('isolated single-char mid-sentence is blank-safe (real corpus card 다, D-03)', () => {
+    // "밥을 다 먹었어요." — 다 sits between two spaces, occurs once.
+    const r = sentenceMatch('밥을 다 먹었어요.', '다')
+    expect(r.found).toBe(true)
+    expect(r.safeToBlank).toBe(true)
+  })
+
+  it('isolated single-char followed by punctuation is blank-safe', () => {
+    const r = sentenceMatch('정답은 다!', '다')
+    expect(r.found).toBe(true)
+    expect(r.safeToBlank).toBe(true)
+  })
+
+  it('embedded single-char with Hangul on the left is unsafe', () => {
+    // 다 inside 왔다 — Hangul on the left, string edge on the right.
+    const r = sentenceMatch('학교에 왔다', '다')
+    expect(r.found).toBe(true)
+    expect(r.safeToBlank).toBe(false)
+  })
+
+  it('embedded single-char with Hangul on the right is unsafe', () => {
+    // 다 at string-edge on the left, but Hangul (시) immediately after.
+    const r = sentenceMatch('다시 만나요', '다')
+    expect(r.found).toBe(true)
+    expect(r.safeToBlank).toBe(false)
+  })
+
+  it('isolated single-char occurring twice is unsafe (multi-occurrence wins)', () => {
+    const r = sentenceMatch('다 오면 다 좋아요', '다')
+    expect(r.found).toBe(true)
+    expect(r.safeToBlank).toBe(false)
+  })
+
+  it('first-occurrence semantics: embedded first occurrence is unsafe even if a later one is isolated', () => {
+    // indexOf finds 다 inside 왔다 first; the predicate evaluates the FIRST occurrence.
+    const r = sentenceMatch('왔다 그리고 좋아요', '다')
     expect(r.found).toBe(true)
     expect(r.safeToBlank).toBe(false)
   })
