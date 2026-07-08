@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Extraction Quality & Reliability
-current_phase: 21
-current_phase_name: card-database-quality-audit
+current_phase: 22
+current_phase_name: findings-driven-prompt-improvement-corpus-fixes
 status: executing
 stopped_at: Phase 22 context gathered
-last_updated: "2026-07-07T16:01:21.956Z"
-last_activity: 2026-07-07
-last_activity_desc: Phase 21 execution started
+last_updated: "2026-07-08T00:47:13.885Z"
+last_activity: 2026-07-08
+last_activity_desc: Phase 22 execution started
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 4
+  total_plans: 7
   completed_plans: 4
   percent: 50
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-05)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 21 — card-database-quality-audit
+**Current focus:** Phase 22 — findings-driven-prompt-improvement-corpus-fixes
 
 ## Current Position
 
-Phase: 21 (card-database-quality-audit) — EXECUTING
-Plan: 2 of 2
-Status: Ready to execute
-Last activity: 2026-07-07 — Phase 21 execution started
+Phase: 22 (findings-driven-prompt-improvement-corpus-fixes) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 22
+Last activity: 2026-07-08 — Phase 22 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
