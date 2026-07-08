@@ -5,15 +5,15 @@ milestone_name: Extraction Quality & Reliability
 current_phase: 22
 current_phase_name: findings-driven-prompt-improvement-corpus-fixes
 status: executing
-stopped_at: Phase 22 context gathered
-last_updated: "2026-07-08T00:47:13.885Z"
+stopped_at: Completed 22-01-PLAN.md
+last_updated: "2026-07-08T00:55:44.816Z"
 last_activity: 2026-07-08
-last_activity_desc: Phase 22 execution started
+last_activity_desc: Completed 22-01 (word-boundary single-char blank-safety)
 progress:
   total_phases: 4
   completed_phases: 2
   total_plans: 7
-  completed_plans: 4
+  completed_plans: 5
   percent: 50
 ---
 
@@ -29,11 +29,11 @@ See: .planning/PROJECT.md (updated 2026-07-05)
 ## Current Position
 
 Phase: 22 (findings-driven-prompt-improvement-corpus-fixes) — EXECUTING
-Plan: 1 of 3
+Plan: 2 of 3
 Status: Executing Phase 22
-Last activity: 2026-07-08 — Phase 22 execution started
+Last activity: 2026-07-08 — Completed 22-01 (word-boundary single-char blank-safety)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [███████░░░] 71%
 
 ## Performance Metrics
 
@@ -47,8 +47,8 @@ Progress: [░░░░░░░░░░] 0%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 20 | 0/TBD | - | - |
-| 21 | 0/TBD | - | - |
-| 22 | 0/TBD | - | - |
+| 21 | 2/2 | - | - |
+| 22 | 1/3 | - | - |
 | 23 | 0/TBD | - | - |
 
 **Recent Trend:**
@@ -59,6 +59,7 @@ Progress: [░░░░░░░░░░] 0%
 *Updated after each plan completion*
 | Phase 21 P01 | 16 min | 3 tasks | 2 files |
 | Phase 21 P02 | 4 min | 2 tasks | 2 files |
+| Phase 22 P01 | 3 min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -72,12 +73,16 @@ v1.5 roadmap shaping decisions (2026-07-06):
 - Extraction hardening (Phase 20) and reliability bugs (Phase 23) are independent tracks; the audit→prompt/fix track (21 → 22) is strictly serial and findings-first.
 - Prompt review + validation + corpus fixes combined into Phase 22 (one "act on the findings" workflow); validation must show audit-check counts drop before fixes are applied.
 - Hard rule for the milestone (research pitfall): all corpus fixes mutate cards in place by `id` — never delete+recreate (cascades wipe FSRS state + ReviewLog history).
-- [Phase ?]: Phase 21-01: audit-checks module delegates to production helpers (sentenceMatch/normalizeFront/filterComponents) — audit truth is production truth by structural construction
-- [Phase ?]: Phase 21-01: superNormalize lifted verbatim from find-duplicates.mjs into lib/audit-checks.ts; slash-removal decision preserved
-- [Phase ?]: Phase 21-01: zero-sentence cards routed to own section with hasLegacyCloze flag, not blankSafety — Phase 22 fix strategy differs
+- [Phase 21]: Phase 21-01: audit-checks module delegates to production helpers (sentenceMatch/normalizeFront/filterComponents) — audit truth is production truth by structural construction
+- [Phase 21]: Phase 21-01: superNormalize lifted verbatim from find-duplicates.mjs into lib/audit-checks.ts; slash-removal decision preserved
+- [Phase 21]: Phase 21-01: zero-sentence cards routed to own section with hasLegacyCloze flag, not blankSafety — Phase 22 fix strategy differs
 - [Phase 21]: Phase 21-02: audit-cards.mts is a thin I/O adapter — zero classification logic; all checks in lib/audit-checks.ts (runAuditChecks). Script: load → runAuditChecks → render markdown → write file → console → exit(0).
 - [Phase 21]: Phase 21-02: env-first dynamic-import preamble (dotenv → await import('../lib/*.js')) — 1039-card live count confirms the real Turso deck was read, not the empty local fallback (Pitfall 4 avoided).
 - [Phase 21]: Phase 21-02: dated report interpolates only findings fields + date (never env/credentials); every finding carries the card id for Phase 22 fix-in-place (STATE.md v1.5 hard rule).
+- [Phase 22]: Phase 22-01: sentenceMatch single-char branch rewritten to word-boundary-aware (D-01/D-02) — isolated single-char tokens (string-edge/whitespace/punctuation both sides) are now blank-safe; embedded ones (Hangul-adjacent either side) stay unsafe; multi-occurrence rule still wins for isolated-but-repeated. Signature unchanged → all 3 consumers (HighlightedSentence/StudySession/CardEditor) inherit with zero call-site edits.
+- [Phase 22]: Phase 22-01: FIX-01 resolved by rule change, not DB mutation — card 다 (cmqlm1w0u014k0gsa6eydclfd) is blank-safe under both existing sentences with zero DB writes (milestone hard rule honored trivially).
+- [Phase 22]: Phase 22-01: reused the exact Hangul character class from normalizeFront (lib/card-key.ts) for the new HANGUL_CHAR regex — single source of truth for "what counts as Hangul" across dedup-key normalizer and blank-safety predicate.
+- [Phase 22]: Phase 22-01: first-occurrence semantics preserved — predicate evaluates the FIRST indexOf hit; an embedded first occurrence is unsafe even if a later one is isolated (matches how blankSentence actually blanks). Locked by an explicit test case.
 
 ### Pending Todos
 
@@ -104,10 +109,10 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-07T08:20:44.384Z
-Stopped at: Phase 22 context gathered
-Resume file: .planning/phases/22-findings-driven-prompt-improvement-corpus-fixes/22-CONTEXT.md
+Last session: 2026-07-08T00:55:44.804Z
+Stopped at: Completed 22-01-PLAN.md
+Resume file: .planning/phases/22-findings-driven-prompt-improvement-corpus-fixes/22-02-PLAN.md
 
 ## Operator Next Steps
 
-- Plan the first phase: `/gsd-plan-phase 20`
+- Continue Phase 22: execute 22-02-PLAN.md (prompt-eval baseline) via `/gsd-execute-phase 22`
