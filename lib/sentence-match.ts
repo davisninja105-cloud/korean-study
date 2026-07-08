@@ -16,14 +16,25 @@ export interface MatchResult {
   /** Index of the first occurrence; -1 if not found */
   index: number
   /**
-   * Whether it is safe to blank the target for fill-in-the-blank / Recall mode.
-   * false when:
-   *   - targetForm.length <= 1  (single Korean syllable → matches inside other words / particles)
-   *   - targetForm occurs more than once in korean (ambiguous which to blank)
-   *   - not found
-   */
+    * Whether it is safe to blank the target for fill-in-the-blank / Recall mode.
+    * false when:
+    *   - targetForm.length <= 1 AND the first occurrence is embedded against
+    *     Hangul on either side (e.g. 다 inside 왔다, or 다 followed by 시 in
+    *     다시) — a single Korean syllable matches inside other words/particles,
+    *     so only an *isolated* single-char (string-edge / whitespace /
+    *     punctuation on both sides) is blank-safe. See D-01/D-02.
+    *   - targetForm occurs more than once in korean (ambiguous which to blank)
+    *     — this rule still wins for an isolated single-char that repeats.
+    *   - not found
+    */
   safeToBlank: boolean
 }
+
+// Hangul character class — same ranges as normalizeFront's hasHangul check in
+// lib/card-key.ts (가-힣 syllables + Jamo + compat Jamo + extended blocks).
+// Used to decide whether a single-char targetForm is embedded (Hangul-adjacent)
+// or isolated (whitespace / punctuation / string-edge on a side).
+const HANGUL_CHAR = /[가-힣ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿]/
 
 export function sentenceMatch(korean: string, targetForm: string): MatchResult {
   if (!targetForm || !korean) {
@@ -35,9 +46,23 @@ export function sentenceMatch(korean: string, targetForm: string): MatchResult {
     return { found: false, index: -1, safeToBlank: false }
   }
 
-  // Single Korean syllable / character — matches too broadly (particles, inside words).
+  // Single Korean syllable / character. D-01/D-02: an isolated single-char
+  // (string-edge / whitespace / punctuation on both sides) is blank-safe; an
+  // embedded one (Hangul-adjacent on either side) is not. If isolated, fall
+  // through to the multi-occurrence check so a repeated isolated single-char
+  // is still unsafe.
   if (targetForm.length <= 1) {
-    return { found: true, index: firstIndex, safeToBlank: false }
+    const beforeChar = firstIndex > 0 ? korean[firstIndex - 1] : ''
+    const afterChar =
+      firstIndex + targetForm.length < korean.length
+        ? korean[firstIndex + targetForm.length]
+        : ''
+    const beforeHangul = beforeChar !== '' && HANGUL_CHAR.test(beforeChar)
+    const afterHangul = afterChar !== '' && HANGUL_CHAR.test(afterChar)
+    if (beforeHangul || afterHangul) {
+      return { found: true, index: firstIndex, safeToBlank: false }
+    }
+    // Both sides isolated — fall through to the multi-occurrence check below.
   }
 
   // Multiple occurrences — can't reliably choose which to blank.
