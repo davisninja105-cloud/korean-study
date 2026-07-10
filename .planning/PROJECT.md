@@ -14,7 +14,16 @@ When you study, what you're meant to learn is always learnable in the moment —
 
 The app is deployed and fully functional. v1.5 audited the extraction pipeline for card-quality issues, hardened the extraction code path with native structured outputs and code-enforced blank-safety, revised the extraction prompt against audit findings and validated it on real lessons, fixed high-confidence existing-card issues in place (9 front rewrites + 3 zero-sentence fixes), and closed two known reliability bugs: silent known-lemmas query degradation in `lib/study-cards.ts` now emits an observable `[study-cards]`-prefixed log before degrading, and forward-reference `CardDependency` edges now auto-relink inside `runSync` after every clean sync with new lessons — retiring the manual `relink-dependencies.mjs` script and consolidating three duplicated relink loops onto one shared, idempotent helper. v1.4 (shipped 2026-07-05) cleaned up the knowledge graph, made review history durable and browsable, and automated daily sync; v1.3 (shipped 2026-07-03) hardened the two authenticated write routes and refactored `StudySession`; v1.2 (shipped 2026-07-01) eliminated the blank/empty-state flash across every main route; v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — all remain in place underneath this milestone's work.
 
-**Next:** v1.5 archived — ready for `/gsd-new-milestone` to define the next milestone's requirements and roadmap.
+**Next:** v1.6 in progress — defining requirements and roadmap.
+
+## Current Milestone: v1.6 Freshness, Performance & E2E Testing
+
+**Goal:** Fix the RSC hydration staleness-vs-speed tradeoff (pages don't show fresh data after navigating back post-study/sync) and stand up a performance-aware test suite with real-browser E2E automation.
+
+**Target features:**
+- Diagnose & fix stale-data-on-revisit across `/`, `/cards`, `/study`, `/habits` without regressing first-load speed
+- Playwright E2E test infrastructure so tests (and Claude Code itself) can drive the dev server in a real browser
+- Performance regression tests (query timing / render cost) + broader E2E coverage of key flows (sync, study, cards CRUD)
 
 <details>
 <summary>v1.5 Extraction Quality & Reliability (archived 2026-07-10)</summary>

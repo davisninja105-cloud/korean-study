@@ -1,20 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.5
-milestone_name: Extraction Quality & Reliability
-current_phase: 5
-status: Awaiting next milestone
-stopped_at: Phase 23 complete + verified + security reviewed, v1.5 milestone ready for archival
-last_updated: "2026-07-10T21:56:54.595Z"
+milestone: v1.6
+milestone_name: Freshness, Performance & E2E Testing
+status: planning
+last_updated: "2026-07-10T22:27:25.529Z"
 last_activity: 2026-07-10
-last_activity_desc: Milestone v1.5 completed and archived
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
-current_phase_name: Reliability Bug Fixes
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -28,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-07-10)
 
 ## Current Position
 
-Phase: Milestone v1.5 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-10 — Milestone v1.5 completed and archived
+Status: Defining requirements
+Last activity: 2026-07-10 — Milestone v1.6 started
 
 ## Performance Metrics
 
