@@ -14,7 +14,7 @@ When you study, what you're meant to learn is always learnable in the moment —
 
 The app is deployed and fully functional. v1.4 cleaned up the knowledge graph, made review history durable and browsable, and automated daily sync. Phase 16 replaced Claude's occasionally-hallucinated `components[]` prerequisite entries with a deterministic deck-lookup filter (`filterComponents`), retroactively cleaning 511 existing cards. Phase 17 added an append-only `ReviewLog` table written inside an idempotency-keyed transaction, so a lost-response retry can never double-apply FSRS state or duplicate a history row — this took two rounds to get fully right (a second, distinct Prisma/`@prisma/adapter-libsql` error-classification shape was found and closed during the milestone-completion audit, backed by the project's first persisted route-level regression test). Phase 18 shipped `/history`, a reverse-chronological, cursor-paginated, per-card-filterable view of that log. Phase 19 added a daily Vercel Cron job that syncs one lesson automatically, authenticated by a fail-closed `CRON_SECRET` bearer check, with a "Last auto-synced" status visible in Settings. v1.3 (shipped 2026-07-03) hardened the two authenticated write routes and refactored `StudySession`; v1.2 (shipped 2026-07-01) eliminated the blank/empty-state flash across every main route; v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — all remain in place underneath this milestone's work.
 
-**Next:** In progress — v1.5 Extraction Quality & Reliability
+**Next:** In progress — v1.5 Extraction Quality & Reliability. Phase 20 (structured-outputs extraction) → Phase 21 (DB audit) → Phase 22 (findings-driven prompt review + corpus fixes) are complete; Phase 23 (reliability bugs) remains.
 
 ## Current Milestone: v1.5 Extraction Quality & Reliability
 
@@ -24,6 +24,8 @@ The app is deployed and fully functional. v1.4 cleaned up the knowledge graph, m
 - Audit existing card DB for quality issues (categorization, sentence quality, components accuracy) — findings-first, then review the `extract-cards.ts` prompt against current card schema/capabilities and the DB audit findings; apply high-confidence fixes found
 - Log known-lemmas query failures in `lib/study-cards.ts` (currently degrades silently to an empty Set)
 - Auto-relink forward-reference `CardDependency` edges once the sync backlog fully drains (`remaining=0`) — replaces the manual `relink-dependencies.mjs` invocation
+
+Phase 22 closed the findings-driven track: the audit's 10 findings (Phase 21) drove a prompt revision covering 4 error classes (Phase 22-02) plus 9 in-place card-front rewrites and one zero-sentence fix (Phase 22-03), each verified against the live deck by card id rather than raw counts. Only Phase 23's two reliability bugs remain before the milestone closes.
 
 ## Requirements
 
@@ -72,6 +74,10 @@ The app is deployed and fully functional. v1.4 cleaned up the knowledge graph, m
 - ✓ `ReviewLog` table logs every review (timestamp, cardId, rating, resulting FSRS state) via idempotent transaction (HIST-01/02/03) — Phase 17
 - ✓ Reverse-chronological, cursor-paginated review history page with per-card filter, RSC + DTO hydration (HIST-04/05/06/07) — Phase 18
 - ✓ Vercel Cron daily auto-sync: fail-closed `CRON_SECRET` bearer auth, cron path stays inside the auth matcher, "last auto-synced" timestamp surfaced in Settings ▸ Advanced (SYNC-02/03/04) — Phase 19, deployed + confirmed via `vercel crons run`
+- ✓ `extract-cards.ts` prompt revised against DB audit findings: no English descriptive labels on grammar fronts, Hangul-only 동사/형용사 disambiguation for bare-marker collisions, Hangul-only Sino-Korean root glosses, explicit loanword/acronym exception (PROMPT-01) — Phase 22
+- ✓ Prompt revision validated against real lessons via a non-persisting eval script before being finalized: `frontRomanization` dropped 4→0, zero-safe/zero-sentence held at 0 (PROMPT-02) — Phase 22
+- ✓ 9 audit-flagged romanized card fronts rewritten in place by id (front + normalizedFront together, zero collisions, zero Card delete/recreate) and 3 sentences added to the deck's sole zero-sentence card (FIX-01) — Phase 22
+- ✓ Corpus fix script follows the dry-run-by-default / `--apply` pattern with a print-before-write DB-host check and a human approval checkpoint before any production write (FIX-02) — Phase 22
 
 ### Active
 
@@ -152,6 +158,12 @@ The app is deployed and fully functional. v1.4 cleaned up the knowledge graph, m
 | `lastAutoSyncedAt` is GET-only on `/api/settings` — omitted from the PUT destructure entirely | Only the cron route can stamp it; a crafted client PUT can't forge a "fresh" timestamp that would mask a silently-failing cron (T-19-05) | ✓ Phase 19 |
 | Rate limiting on `/api/cron/sync` explicitly out of scope; ≥16-char random `CRON_SECRET` is the sole mitigation | Single-tenant app, Vercel Hobby timeout already bounds damage — same posture as the existing shared-password auth (T-19-02, accepted) | ✓ Phase 19 |
 | `vercel crons run /api/cron/sync` used to verify the deployed cron on-demand rather than waiting for the 10:00 UTC schedule | Exercises the real Vercel-invoked path (including its auto-attached `Authorization: Bearer $CRON_SECRET` header) without waiting a full day for the first real firing | ✓ Verified in Phase 19 UAT |
+| `sentenceMatch`'s single-char branch rewritten to word-boundary-aware: an isolated single-char target (string-edge/whitespace/punctuation both sides) is blank-safe; an embedded one (Hangul-adjacent either side) stays unsafe | The old rule treated every single-char target as unsafe, silently dropping genuinely blank-safe cards like 다 in "밥을 다 먹었어요" | ✓ Phase 22-01 (D-01/D-02); signature unchanged, all 3 consumers inherit with zero call-site edits |
+| Card 다's audit finding resolved by the `sentenceMatch` rule change alone — zero DB write | Both of 다's existing sentences already have it isolated between spaces; the milestone's "mutate in place, never delete/recreate" discipline is honored trivially when the fix is a shared predicate, not a data edit | ✓ Phase 22-01 (D-03) |
+| Grammar-card fronts drop English descriptive labels entirely (present + future); bare-marker collisions disambiguate with a Korean grammar-term prefix (동사/형용사), never English | Prior audit flagged 4 fronts carrying full English labels like "Action verb ~는 + noun (present modifier)"; removing the label without disambiguation would collide two grammar points onto the same literal front string, which `Card.normalizedFront @unique` would reject | ✓ Phase 22-02 (D-06/D-07/D-08) |
+| Untranslated English acronyms/loanwords used in authentic Korean speech (CRT, DST, PC방-style) are an explicit romanization exception, not a fix target | These are real Korean usage, not Latin-letter transliteration; treating them as violations would produce unnatural "fixes" and keep re-flagging forever | ✓ Phase 22-02 (D-09) — accepted, documented, expected to keep appearing in future audits |
+| Corpus fix script prints the resolved DB host before any query and defaults to dry-run; `--apply` is required to write, gated behind a human-reviewed report | Threat T-22-04: an `--apply` run against the wrong environment (or without review) could irreversibly rewrite production card fronts | ✓ Phase 22-03; user approved the dry-run report as-is before the `--apply` run |
+| Corpus fix script's only write paths are `card.update()` (in-place field rewrite) and `sentence.create()` (additive-only); no `card.delete`/`card.create` anywhere in the file | Threat T-22-05: a delete-and-recreate pattern would silently destroy FSRS state and `ReviewLog` history — the milestone's hard rule | ✓ Phase 22-03, verified structurally (no delete/create calls) during Phase 22 security review |
 
 ## Evolution
 
@@ -172,4 +184,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-06 after starting v1.5 milestone*
+*Last updated: 2026-07-10 after Phase 22*

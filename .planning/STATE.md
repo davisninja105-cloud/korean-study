@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Extraction Quality & Reliability
-current_phase: 22
-current_phase_name: findings-driven-prompt-improvement-corpus-fixes
-status: verifying
-stopped_at: Completed 22-02-PLAN.md
-last_updated: "2026-07-10T15:58:13.766Z"
+current_phase: 23
+current_phase_name: Reliability Bug Fixes
+status: ready_to_plan
+stopped_at: Phase 22 complete, ready to plan Phase 23
+last_updated: "2026-07-10T17:00:00.000Z"
 last_activity: 2026-07-10
-last_activity_desc: Phase 22 execution resumed (wave continue)
+last_activity_desc: Phase 22 complete, transitioned to Phase 23
 progress:
   total_phases: 4
   completed_phases: 3
@@ -21,19 +21,19 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-05)
+See: .planning/PROJECT.md (updated 2026-07-10)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 22 — findings-driven-prompt-improvement-corpus-fixes
+**Current focus:** Phase 23 — Reliability Bug Fixes
 
 ## Current Position
 
-Phase: 22 (findings-driven-prompt-improvement-corpus-fixes) — EXECUTING
-Plan: 3 of 3
-Status: Phase complete — ready for verification
-Last activity: 2026-07-10 — Phase 22 execution resumed (wave continue)
+Phase: 23 — Reliability Bug Fixes
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-07-10 — Phase 22 complete (UAT 3/3 passed, security review threat-secure), transitioned to Phase 23
 
-Progress: [███████░░░] 71%
+Progress: [████████████████████] 7/7 plans (100%)
 
 ## Performance Metrics
 
@@ -48,7 +48,7 @@ Progress: [███████░░░] 71%
 |-------|-------|-------|----------|
 | 20 | 0/TBD | - | - |
 | 21 | 2/2 | - | - |
-| 22 | 1/3 | - | - |
+| 22 | 3 | - | - |
 | 23 | 0/TBD | - | - |
 
 **Recent Trend:**
@@ -94,6 +94,7 @@ None open.
 ### Blockers/Concerns
 
 - [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch (same shape as the Phase 13-hardened routes) — out of scope; deferred candidate for a future milestone.
+- [Phase 22] 2 new romanization-flagged card fronts (거/게, ids `cmrbwv4h1000504l9tbdf39w0`/`cmrbwv4we000904l99ya3oa8d`) arrived via cron auto-sync between the Phase 21 audit snapshot and Phase 22's post-fix audit — explicitly out of Phase 22's bounded fix scope; a future audit/fix pass should pick these up.
 
 ### Roadmap Evolution
 
@@ -109,13 +110,14 @@ Carried forward, informational only:
 | hardening | `app/api/review/undo/route.ts` missing try/catch (deferred in Phase 13) | Open |
 | feature | Card retirement/mastery flag (MASTERY-01) | Deferred to v2 |
 | gap | Near-duplicate card *merging* (FSRS history absorption) | Out of scripted scope for Phase 22; becomes its own decision if the audit finds a large cluster |
+| gap | 거/게 romanization-flagged fronts (post-audit cron arrivals) | Out of Phase 22's bounded scope; open for a future audit/fix pass |
 
 ## Session Continuity
 
-Last session: 2026-07-10T15:56:42.700Z
-Stopped at: Completed 22-02-PLAN.md
-Resume file: .planning/phases/22-findings-driven-prompt-improvement-corpus-fixes/22-03-PLAN.md
+Last session: 2026-07-10T17:00:00.000Z
+Stopped at: Phase 22 complete, ready to plan Phase 23
+Resume file: None
 
 ## Operator Next Steps
 
-- Continue Phase 22: execute 22-02-PLAN.md (prompt-eval baseline) via `/gsd-execute-phase 22`
+- Plan Phase 23 (Reliability Bug Fixes) via `/gsd-discuss-phase 23` or `/gsd-plan-phase 23`

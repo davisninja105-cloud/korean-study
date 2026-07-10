@@ -1,17 +1,20 @@
 ---
 phase: 22-findings-driven-prompt-improvement-corpus-fixes
 verified: 2026-07-10T09:20:00Z
-status: human_needed
+status: passed
 score: 8/8 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
+
   - test: "Read the revised prompt bullets in lib/extract-cards.ts (front-field rewrite, loanword exception, blank-safety clause b, annotation ledger) for prose quality"
     expected: "Each edit reads naturally and is clearly annotated to its error class (D-06/D-07/D-08/D-09) — not just grep-detectable, but genuinely comprehensible to a future editor"
     why_human: "No automated test can assert prompt prose quality; 22-VALIDATION.md explicitly marks this manual-only"
+
   - test: "Exercise Study flow (flashcard fill-blank/Recall) for one newly-safe isolated single-char card (다) and one still-unsafe embedded case (e.g. 물, 철), plus open CardEditor for 다 and for a rewritten front (e.g. 동사 ~는)"
     expected: "다 now blanks correctly in Recall mode; embedded single-char cards still fall back to Exposure; rewritten fronts render correctly in Cards list and CardEditor with review history (FSRS state) intact"
     why_human: "Visual/interaction correctness in HighlightedSentence/StudySession/CardEditor isn't captured by unit tests; both 22-01-PLAN.md and 22-03-PLAN.md explicitly defer this to phase-level /gsd-verify-work"
+
   - test: "Open card 철 in CardEditor and confirm its 3 new sentences render with 철 (correctly) shown un-blankable, and that the card studies in Exposure/multiple-choice modes without error"
     expected: "Sentences display naturally (철은/철로/지하철); Recall/fill-blank mode is unavailable for this card (accepted per D-04) without a rendering error"
     why_human: "UI rendering verification requires a live browser session; 22-03-SUMMARY.md D7 defers this explicitly"
