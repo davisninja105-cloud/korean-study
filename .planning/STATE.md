@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.5
 milestone_name: Extraction Quality & Reliability
-current_phase: 23
-status: completed
-stopped_at: Completed 23-02-PLAN.md (Phase 23 complete — 2/2 plans)
-last_updated: "2026-07-10T21:50:05.126Z"
+current_phase: 5
+status: Awaiting next milestone
+stopped_at: Phase 23 complete + verified + security reviewed, v1.5 milestone ready for archival
+last_updated: "2026-07-10T21:56:54.595Z"
 last_activity: 2026-07-10
-last_activity_desc: Phase 23 complete
+last_activity_desc: Milestone v1.5 completed and archived
 progress:
   total_phases: 4
   completed_phases: 4
@@ -28,12 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-10)
 
 ## Current Position
 
-Phase: 23 (Reliability Bug Fixes) — COMPLETE
-Plan: 2 of 2
-Status: Milestone v1.5 complete — all 4 phases, 9/9 plans, 12/12 requirements
-Last activity: 2026-07-10 — Phase 23 verified + security reviewed, milestone ready for archival
-
-Progress: [██████████] 9/9 plans (100%)
+Phase: Milestone v1.5 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-10 — Milestone v1.5 completed and archived
 
 ## Performance Metrics
 
@@ -123,6 +121,16 @@ Carried forward, informational only:
 | gap | Near-duplicate card *merging* (FSRS history absorption) | Out of scripted scope for Phase 22; becomes its own decision if the audit finds a large cluster |
 | gap | 거/게 romanization-flagged fronts (post-audit cron arrivals) | Out of Phase 22's bounded scope; open for a future audit/fix pass |
 
+Items acknowledged and deferred at v1.5 milestone close on 2026-07-10 (closeout_type: override_closeout):
+
+| Category | Item | Status |
+|----------|------|--------|
+| uat_gap | Phase 21: 21-UAT.md — 2 pending scenarios (report readability + plausible counts; live smoke test against Turso) | acknowledged |
+| verification_gap | Phase 21: 21-VERIFICATION.md — human_needed (6/6 truths verified on structural/artifact evidence; 2 manual-only items deferred to end-of-phase human review) | acknowledged |
+| verification_gap | Phase 20: no VERIFICATION.md — verify step never ran (plans + requirements complete per SUMMARY evidence) | acknowledged |
+
+Known verification overrides: 3 (see STATE.md Deferred Items)
+
 ## Session Continuity
 
 Last session: 2026-07-10
@@ -131,4 +139,4 @@ Resume file: None
 
 ## Operator Next Steps
 
-- v1.5 milestone complete (4 phases, 9/9 plans, 12/12 requirements). Ready for `/gsd-complete-milestone` to archive v1.5 and prepare for next milestone.
+- Start the next milestone with /gsd-new-milestone

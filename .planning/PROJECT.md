@@ -14,7 +14,10 @@ When you study, what you're meant to learn is always learnable in the moment —
 
 The app is deployed and fully functional. v1.5 audited the extraction pipeline for card-quality issues, hardened the extraction code path with native structured outputs and code-enforced blank-safety, revised the extraction prompt against audit findings and validated it on real lessons, fixed high-confidence existing-card issues in place (9 front rewrites + 3 zero-sentence fixes), and closed two known reliability bugs: silent known-lemmas query degradation in `lib/study-cards.ts` now emits an observable `[study-cards]`-prefixed log before degrading, and forward-reference `CardDependency` edges now auto-relink inside `runSync` after every clean sync with new lessons — retiring the manual `relink-dependencies.mjs` script and consolidating three duplicated relink loops onto one shared, idempotent helper. v1.4 (shipped 2026-07-05) cleaned up the knowledge graph, made review history durable and browsable, and automated daily sync; v1.3 (shipped 2026-07-03) hardened the two authenticated write routes and refactored `StudySession`; v1.2 (shipped 2026-07-01) eliminated the blank/empty-state flash across every main route; v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — all remain in place underneath this milestone's work.
 
-**Next:** v1.5 milestone complete — ready for milestone archival and next milestone planning.
+**Next:** v1.5 archived — ready for `/gsd-new-milestone` to define the next milestone's requirements and roadmap.
+
+<details>
+<summary>v1.5 Extraction Quality & Reliability (archived 2026-07-10)</summary>
 
 ## Current Milestone: v1.5 Extraction Quality & Reliability
 
@@ -26,6 +29,10 @@ The app is deployed and fully functional. v1.5 audited the extraction pipeline f
 - Auto-relink forward-reference `CardDependency` edges once the sync backlog fully drains (`remaining=0`) — replaces the manual `relink-dependencies.mjs` invocation
 
 Phase 22 closed the findings-driven track: the audit's 10 findings (Phase 21) drove a prompt revision covering 4 error classes (Phase 22-02) plus 9 in-place card-front rewrites and one zero-sentence fix (Phase 22-03), each verified against the live deck by card id rather than raw counts. Phase 23 closed the two reliability bugs: known-lemmas query failure now emits an observable `[study-cards]`-prefixed log (RELIABILITY-01), and forward-reference `CardDependency` edges auto-relink inside `runSync` after every clean sync with new lessons via an idempotent pure resolver-diff + server orchestrator (RELIABILITY-02/03), retiring the manual relink script. v1.5 is now fully complete: all 12 requirements satisfied.
+
+Full details: `.planning/milestones/v1.5-ROADMAP.md`
+
+</details>
 
 ## Requirements
 
@@ -74,6 +81,11 @@ Phase 22 closed the findings-driven track: the audit's 10 findings (Phase 21) dr
 - ✓ `ReviewLog` table logs every review (timestamp, cardId, rating, resulting FSRS state) via idempotent transaction (HIST-01/02/03) — Phase 17
 - ✓ Reverse-chronological, cursor-paginated review history page with per-card filter, RSC + DTO hydration (HIST-04/05/06/07) — Phase 18
 - ✓ Vercel Cron daily auto-sync: fail-closed `CRON_SECRET` bearer auth, cron path stays inside the auth matcher, "last auto-synced" timestamp surfaced in Settings ▸ Advanced (SYNC-02/03/04) — Phase 19, deployed + confirmed via `vercel crons run`
+- ✓ `extractCardsFromNotes` uses native Anthropic structured outputs (`output_config.format: zodOutputFormat(ExtractionSchema)`) reading `parsed_output` on the happy path, with truncation salvage via a pre-registered `stream.on('text')` accumulator + `AnthropicError` catch (EXTRACT-01) — Phase 20
+- ✓ Truncation-salvage logic preserved as a fallback for genuine mid-stream cutoffs, adjusted for the new `{ cards: [...] }` response wrapper shape (EXTRACT-02) — Phase 20
+- ✓ `parseExtractionResponse` structurally enforces blank-safety (consults `safeToBlank`, not just `sentenceMatch().found`) and rejects zero-sentence cards by code, not prompt instruction (EXTRACT-03) — Phase 20
+- ✓ Read-only audit script produces a dated findings report covering blank-safety, zero-sentence, romanization leakage, distractor anomalies, `normalizedFront` inconsistency, and near-duplicate clusters (AUDIT-01) — Phase 21
+- ✓ Audit checks implemented as a pure, unit-tested `lib/audit-checks.ts` (60 tests) reusing production helpers rather than reimplementing them (AUDIT-02) — Phase 21
 - ✓ `extract-cards.ts` prompt revised against DB audit findings: no English descriptive labels on grammar fronts, Hangul-only 동사/형용사 disambiguation for bare-marker collisions, Hangul-only Sino-Korean root glosses, explicit loanword/acronym exception (PROMPT-01) — Phase 22
 - ✓ Prompt revision validated against real lessons via a non-persisting eval script before being finalized: `frontRomanization` dropped 4→0, zero-safe/zero-sentence held at 0 (PROMPT-02) — Phase 22
 - ✓ 9 audit-flagged romanized card fronts rewritten in place by id (front + normalizedFront together, zero collisions, zero Card delete/recreate) and 3 sentences added to the deck's sole zero-sentence card (FIX-01) — Phase 22
@@ -84,9 +96,9 @@ Phase 22 closed the findings-driven track: the audit's 10 findings (Phase 21) dr
 
 ### Active
 
-(Defined in `.planning/REQUIREMENTS.md` for v1.5 — see Current Milestone above.)
+(All v1.5 requirements validated and shipped — see Validated above. Next milestone requirements will be defined via `/gsd-new-milestone`.)
 
-**Deferred candidates** (raised during v1.2/v1.3/v1.4, not committed to any milestone):
+**Deferred candidates** (raised during v1.2/v1.3/v1.4/v1.5, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
 - Cross-request `unstable_cache` for DB results (staleness risk outweighed gain for this single-user app at v1.2 scale — revisit only if that tradeoff changes)
 - Move `buttonColor`/`rewardColor` fetch out of `app/layout.tsx` (would require re-architecting pre-paint CSS injection)
@@ -112,6 +124,7 @@ Phase 22 closed the findings-driven track: the audit's 10 findings (Phase 21) dr
 - v1.2 shipped 2026-07-01: 50 commits across 4 phases (9 plans), 2026-06-29 → 2026-07-01. Source-only diff: 24 files, +2143/-1689 lines. Established the RSC + client-shell + DTO pattern (`app/*/page.tsx` async server components → `*Client.tsx` shells) reused across cards, study, home, and habits. New shared modules: `lib/dto.ts` (CardDTO/SentenceDTO/ReviewDTO/LessonDTO/StatsDTO/ActivityDTO), `lib/study-cards.ts` (`getStudyCards`), `lib/dashboard.ts` (`getStats`/`getActivityData`) — all single sources of truth reused by both the RSC pages and the legacy API routes they used to power exclusively.
 - v1.3 shipped 2026-07-03: 89 commits across 3 phases (6 plans, 15 tasks), 2026-07-01 → 2026-07-02. Source-only diff: 21 files, +1481/-491 lines. Sourced directly from the `.planning/codebase/CONCERNS.md` audit — no research phase. New modules: `lib/sentence-selection.ts` (pure, unit-tested sentence-selection + `hashStr`), `components/FlashcardMode.tsx`/`MultipleChoiceMode.tsx`/`FillBlankMode.tsx` (StudySession mode split), `lib/lesson-excerpt.ts` (sync failure naming), `GET /api/gloss/preload` + `getRecentGlosses` (gloss cache bootstrap).
 - v1.4 shipped 2026-07-05: 148 commits across 4 phases (15 plans), 2026-07-02 → 2026-07-05. Diff since v1.3 tag: 158 files, +16292/-5754 lines. New modules: `lib/filter-components.ts` (`filterComponents` deck-lookup filter), `scripts/dry-run-filter.mjs` + `scripts/retro-filter-cleanup.mts` (corpus diagnostics/cleanup), `ReviewLog` Prisma model + `scripts/apply-reviewlog-ddl.mjs`, `lib/db-errors.ts` (`isUniqueConstraintError`, extended twice — see Key Decisions), `lib/review-history.ts` (`getReviewHistory`), `app/history/page.tsx` + `HistoryClient.tsx`, `lib/sync.ts` (`runSync`, extracted from the route), `app/api/cron/sync/route.ts`, `isValidCronAuth` in `lib/auth.ts`. A retroactive milestone-completion audit found and closed a real HIST-02 gap in Phase 17 (see `.planning/milestones/v1.4-MILESTONE-AUDIT.md`) and added the project's first persisted route-level regression test (`tests/review-route.test.ts`).
+- v1.5 shipped 2026-07-10: 100 commits across 4 phases (9 plans, 20 tasks), 2026-07-05 → 2026-07-10. Diff since v1.4 tag: 153 files, +13740/-12350 lines. New modules: `lib/audit-checks.ts` (pure 11-export audit module, 60 tests), `scripts/audit-cards.mts` (read-only deck audit → dated report), `scripts/prompt-eval.mts` (non-persisting prompt eval), `lib/relink-dependencies.ts` (`relinkAllDependencies` orchestrator), `tests/link-dependencies.test.ts` + `tests/relink-dependencies.test.ts` (idempotency suites), `tests/study-cards.test.ts` (RELIABILITY-01 regression). Major changes: `lib/extract-cards.ts` (native structured outputs + `normalizeExtractedCards` shared pipeline + code-enforced blank-safety), `lib/sentence-match.ts` (word-boundary-aware single-char blank-safety), `lib/sync.ts` (auto-relink hook inside `runSync`), `lib/link-dependencies.ts` (`computeMissingEdges` pure resolver-diff). Added `zod ^4.3.6` as explicit dependency. Old `scripts/relink-dependencies.mjs` deleted (consolidated onto shared helper). Closeout: override_closeout — 3 verification overrides acknowledged (Phase 20/21 verification gaps; see STATE.md Deferred Items).
 - Key fix discovered during Phase 1 (v1.0): `card.nextReview` was `undefined` for real cards because the route uses `include: { review: true }` — due-date lived at `card.review.nextReview`. Added `nextReviewMs()` helper.
 - Known-word threshold is state ≥ 1 (seen at least once), not ≥ 2. One prior review unlocks in-context presentation.
 - Design-system token pattern established in v1.1: every new token must appear in 3 globals.css blocks; validate with grep == 3 hits.
@@ -192,4 +205,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-10 after Phase 23 (v1.5 milestone complete)*
+*Last updated: 2026-07-10 after v1.5 milestone archival*

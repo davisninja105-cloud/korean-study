@@ -1,5 +1,29 @@
 # Milestones
 
+## v1.5 Extraction Quality & Reliability (Shipped: 2026-07-10)
+
+**Phases completed:** 4 phases, 9 plans, 20 tasks
+
+**Key accomplishments:**
+
+- Rewrote `parseExtractionResponse` for the `{ cards: [...] }` wrapper with depth-2 truncation salvage, extracted a shared pure `normalizeExtractedCards()`, and added code-enforced blank-safety (safe-first partition + zero-safe whole-card rejection) — no card can reach the DB without a verified blank-safe first sentence, and the parser only accepts the new wrapper contract.
+- Migrated `extractCardsFromNotes` from "ask for JSON in prose and salvage-parse it" to native Anthropic structured outputs — `output_config.format: zodOutputFormat(ExtractionSchema)` on the existing stream call, reading `message.parsed_output` on the happy path, with truncation salvage reached only through a pre-registered `stream.on('text')` accumulator and an `AnthropicError` catch.
+- Pure, Vitest-covered `lib/audit-checks.ts` with 11 named exports covering all six audit check classes by delegating to production helpers (sentenceMatch/normalizeFront/filterComponents) — 60 tests, full suite 209 green
+- Read-only `scripts/audit-cards.mts` (env-first dynamic-import preamble, single findMany, delegates to runAuditChecks) producing the dated `.planning/audits/card-audit-2026-07-07.md` evidence report — 1039 cards scanned, findings non-empty as expected for a legacy deck
+- TDD-driven rewrite of the `sentenceMatch()` single-char branch: isolated 1-char targetForms (string-edge/whitespace/punctuation on both sides) are now blank-safe; embedded ones (Hangul-adjacent) stay unsafe — resolving the audit's one zero-safe finding (card 다) by rule change with zero DB mutation.
+- Revised the exhaustive-extraction prompt per four audit error classes (PROMPT-01), fixed a gating bug in the PROMPT-02 eval script's verdict computation, and validated the revised prompt against the pre-edit baseline on real lessons 4/12/17 — PASS: frontRomanization 4→0, zeroSafe/zeroSentence held at 0.
+- Applied all 9 audit-flagged front rewrites and 3 new 철 sentences in place by id against the live Turso production deck via a dry-run-gated script, proved the findings cleared with a post-fix audit re-run verified by card id, and closed the phase's findings loop with a fix report documenting every accepted residual.
+- Additive `[study-cards]`-prefixed console.error makes the silent known-lemmas query failure observable in Vercel logs before the existing empty-Set fallback, with a 3-test vitest regression suite locking both the new log and the unchanged degradation contract
+- Idempotent full-deck auto-relink inside runSync closes RELIABILITY-02/03: every clean sync with new lessons now resolves forward-reference CardDependency edges via a pure computeMissingEdges → resolveDependencyEdges chain, retiring the manual relink script and consolidating three duplicated relink loops onto one shared helper
+
+**Closeout type:** override_closeout — Known verification overrides: 3 (see STATE.md Deferred Items). Phase 20 verification report absent; Phase 21 verification human_needed (6/6 truths verified structurally, 2 manual-only items deferred) + 2 pending UAT scenarios. All 12 requirements satisfied per plan SUMMARY evidence.
+
+**Delivered:** Audited and hardened the card-extraction pipeline (native structured outputs + code-enforced blank-safety), acted on audit findings (prompt revision + in-place corpus fixes), and closed two known reliability bugs (observable known-lemmas degradation + automatic forward-reference edge relinking).
+
+**Git range:** v1.4..v1.5 — 100 commits, 153 files, +13740/-12350 lines. Timeline: 2026-07-05 → 2026-07-10 (5 days).
+
+---
+
 ## v1.4 Knowledge Graph Quality & History (Shipped: 2026-07-05)
 
 **Phases completed:** 4 phases, 15 plans, 35 tasks
