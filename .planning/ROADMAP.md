@@ -77,7 +77,7 @@ See `.planning/milestones/v1.4-ROADMAP.md` for full phase details.
 
 - [x] **Phase 20: Extraction Pipeline Hardening** - Native structured outputs + code-enforced blank-safety in the extraction path (completed 2026-07-06)
 - [x] **Phase 21: Card Database Quality Audit** - Read-only deterministic audit of the live deck → dated findings report (completed 2026-07-07)
-- [ ] **Phase 22: Findings-Driven Prompt Improvement & Corpus Fixes** - Revise/validate the prompt against the audit, then fix existing cards in place
+- [x] **Phase 22: Findings-Driven Prompt Improvement & Corpus Fixes** - Revise/validate the prompt against the audit, then fix existing cards in place (completed 2026-07-10)
 - [ ] **Phase 23: Reliability Bug Fixes** - Log silent known-lemmas degradation; auto-relink forward-reference edges after clean sync
 
 ## Phase Details
@@ -144,7 +144,7 @@ Plans:
   3. High-confidence quality issues are corrected in the database by mutating cards in place by `id` (dry-run-gated scripts, or `CardEditor` for one-offs) — never delete-and-recreate, preserving FSRS state and `ReviewLog` history
   4. Every fix script defaults to dry-run and requires an explicit `--apply` flag to write, matching the `retro-filter-cleanup.mts` pattern
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -157,7 +157,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2; has blocking human checkpoint before --apply)*
 
-- [ ] 22-03-PLAN.md — Dry-run-gated fix-corpus script: 9 front rewrites in place by id + 철 sentences, post-fix audit re-run, fix report with accepted residuals (FIX-01, FIX-02)
+- [x] 22-03-PLAN.md — Dry-run-gated fix-corpus script: 9 front rewrites in place by id + 철 sentences, post-fix audit re-run, fix report with accepted residuals (FIX-01, FIX-02)
 
 **UI hint**: no
 
@@ -206,7 +206,7 @@ Within v1.5, the audit/prompt track is strictly serial (21 → 22); Phase 20 (ex
 | 19. Vercel Cron Auto-Sync | v1.4 | 3/3 | Complete | 2026-07-05 |
 | 20. Extraction Pipeline Hardening | v1.5 | 2/2 | Complete   | 2026-07-06 |
 | 21. Card Database Quality Audit | v1.5 | 2/2 | Complete   | 2026-07-07 |
-| 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 2/3 | In Progress|  |
+| 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 3/3 | Complete   | 2026-07-10 |
 | 23. Reliability Bug Fixes | v1.5 | 0/TBD | Not started | - |
 
 ---

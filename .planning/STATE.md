@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Extraction Quality & Reliability
 current_phase: 22
 current_phase_name: findings-driven-prompt-improvement-corpus-fixes
-status: executing
+status: verifying
 stopped_at: Completed 22-02-PLAN.md
-last_updated: "2026-07-10T07:38:47.859Z"
+last_updated: "2026-07-10T15:58:13.766Z"
 last_activity: 2026-07-10
 last_activity_desc: Phase 22 execution resumed (wave continue)
 progress:
   total_phases: 4
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 7
-  completed_plans: 6
-  percent: 50
+  completed_plans: 7
+  percent: 75
 ---
 
 # Project State
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-07-05)
 
 Phase: 22 (findings-driven-prompt-improvement-corpus-fixes) — EXECUTING
 Plan: 3 of 3
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-07-10 — Phase 22 execution resumed (wave continue)
 
 Progress: [███████░░░] 71%
@@ -60,6 +60,7 @@ Progress: [███████░░░] 71%
 | Phase 21 P01 | 16 min | 3 tasks | 2 files |
 | Phase 21 P02 | 4 min | 2 tasks | 2 files |
 | Phase 22 P01 | 3 min | 2 tasks | 2 files |
+| Phase 22 P03 | 25min | 1 tasks | 4 files |
 
 ## Accumulated Context
 
@@ -83,6 +84,8 @@ v1.5 roadmap shaping decisions (2026-07-06):
 - [Phase 22]: Phase 22-01: FIX-01 resolved by rule change, not DB mutation — card 다 (cmqlm1w0u014k0gsa6eydclfd) is blank-safe under both existing sentences with zero DB writes (milestone hard rule honored trivially).
 - [Phase 22]: Phase 22-01: reused the exact Hangul character class from normalizeFront (lib/card-key.ts) for the new HANGUL_CHAR regex — single source of truth for "what counts as Hangul" across dedup-key normalizer and blank-safety predicate.
 - [Phase 22]: Phase 22-01: first-occurrence semantics preserved — predicate evaluates the FIRST indexOf hit; an embedded first occurrence is unsafe even if a later one is isolated (matches how blankSentence actually blanks). Locked by an explicit test case.
+- [Phase 22]: Applied the dry-run corpus fix report exactly as approved by the user (Approved as-is) - 9 front rewrites + 3 철 sentences, no adjustments
+- [Phase 22]: Documented 2 cron-sync-drifted cards (거/게) discovered in the post-fix audit as out-of-scope post-audit arrivals rather than folding them into the phase fix count
 
 ### Pending Todos
 
@@ -109,7 +112,7 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-10T07:38:47.854Z
+Last session: 2026-07-10T15:56:42.700Z
 Stopped at: Completed 22-02-PLAN.md
 Resume file: .planning/phases/22-findings-driven-prompt-improvement-corpus-fixes/22-03-PLAN.md
 

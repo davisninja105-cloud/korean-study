@@ -26,7 +26,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### Corpus Fixes
 
 - [x] **FIX-01**: High-confidence quality issues found by the audit are corrected in the existing database via dry-run-gated scripts (or `CardEditor` for one-offs), mutating cards in place by `id` — never delete+recreate
-- [ ] **FIX-02**: Fix scripts follow the existing dry-run-by-default / `--apply` pattern established by `retro-filter-cleanup.mts`
+- [x] **FIX-02**: Fix scripts follow the existing dry-run-by-default / `--apply` pattern established by `retro-filter-cleanup.mts`
 
 ### Reliability Bugs
 
@@ -71,7 +71,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PROMPT-01 | Phase 22 | Pending |
 | PROMPT-02 | Phase 22 | Complete |
 | FIX-01 | Phase 22 | Complete |
-| FIX-02 | Phase 22 | Pending |
+| FIX-02 | Phase 22 | Complete |
 | RELIABILITY-01 | Phase 23 | Pending |
 | RELIABILITY-02 | Phase 23 | Pending |
 | RELIABILITY-03 | Phase 23 | Pending |
