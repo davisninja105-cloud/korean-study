@@ -1,250 +1,154 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-07-05
+**Analysis Date:** 2026-07-10
 
 ## Test Framework
 
 **Runner:**
 - Vitest 4.1.9
-- Config: `vitest.config.ts` (minimal; sets `environment: 'node'` and path alias `@`)
-- No DOM needed — all tests are pure function tests
+- Config: `vitest.config.ts` (`environment: 'node'`; `@` alias → project root)
 
 **Assertion Library:**
-- Vitest built-in `expect` (compatible with Jest)
+- Vitest built-in `expect`
 
 **Run Commands:**
 ```bash
-npm test              # Run all tests once
-npm run lint          # Check lint (must pass clean)
-npm run dev           # Start dev server
-npm run build         # Production build (runs prisma generate)
+npm test               # vitest run (all tests, single pass)
+npx vitest             # Watch mode
+npx vitest run tests/sequence.test.ts   # Single file
 ```
 
-Tests are **deterministic and synchronous** — no mocking framework, no async test utilities, no test database.
+No coverage tooling is configured.
 
 ## Test File Organization
 
 **Location:**
-- Co-located in `tests/` directory at repo root, not scattered alongside source
-- Naming convention: `tests/{source-name}.test.ts` mirrors `lib/{source-name}.ts` or `app/api/{route}.test.ts`
+- Separate `tests/` directory at project root (not co-located). 18 test files as of this analysis.
 
-**Test files present (14 total):**
-- `tests/card-key.test.ts` — normalizeFront() dedup behavior
-- `tests/sequence.test.ts` — foundation-first sequencing + session selection
-- `tests/habit.test.ts` — streak computation, date math, milestone detection
-- `tests/auth.test.ts` — HMAC token validation
-- `tests/proficiency.test.ts` — CEFR band mapping
-- `tests/sentence-match.test.ts` — substring matching + blank-safety rules
-- `tests/known-words.test.ts` — unknown word counting in Korean sentences
-- `tests/extract-cards.test.ts` — Claude response parsing + normalization
-- `tests/filter-components.test.ts` — prerequisite filtering + dedup
-- `tests/review-route.test.ts` — FSRS review API contract
-- `tests/lesson-excerpt.test.ts` — lesson text extraction
-- `tests/review-history.test.ts` — review history aggregation
-- `tests/sentence-selection.test.ts` — sentence picking algorithm
-- `tests/db-errors.test.ts` — database error classification
+**Naming:**
+- `tests/<lib-module>.test.ts` — mirrors the `lib/` module under test (`tests/card-key.test.ts` ↔ `lib/card-key.ts`, `tests/sequence.test.ts` ↔ `lib/sequence.ts`). Route tests are named for the route (`tests/review-route.test.ts`).
+
+**Structure:**
+```
+tests/
+├── audit-checks.test.ts        # largest suite (625 lines)
+├── extract-cards.test.ts       # schema + salvage-path guards (673 lines)
+├── sequence.test.ts            # pure sequencing logic
+├── study-cards.test.ts         # mocked-Prisma pipeline tests
+├── review-route.test.ts        # real route handler against temp SQLite
+├── card-key.test.ts, habit.test.ts, sentence-match.test.ts, …
+```
 
 ## Test Structure
 
 **Suite Organization:**
-
 ```typescript
 import { describe, it, expect } from 'vitest'
-import { normalizeFront } from '../lib/card-key'
+import { sequenceCards, SeqCard, SeqEdge } from '../lib/sequence'
 
-describe('normalizeFront', () => {
-  it('trims whitespace', () => {
-    expect(normalizeFront('  가다  ')).toBe('가다')
-  })
+const NOW = new Date('2026-06-23T12:00:00Z')  // fixed clock — time is always injected
 
-  it('collapses internal whitespace', () => {
-    expect(normalizeFront('가  다')).toBe('가 다')
-  })
-
-  it('strips trailing English gloss in parens', () => {
-    expect(normalizeFront('가다 (to go)')).toBe('가다')
-    expect(normalizeFront('~(으)면 (if/when)')).toBe('~(으)면')
-  })
-
-  it('is idempotent', () => {
-    const s = normalizeFront('가다 (to go)')
-    expect(normalizeFront(s)).toBe(s)
+describe('sequenceCards', () => {
+  it('places prerequisite before dependent card', () => {
+    const edges: SeqEdge[] = [{ cardId: 'dep', prerequisiteId: 'prereq' }]
+    const result = sequenceCards([dep, prereq], edges, NOW)
+    expect(result[0].id).toBe('prereq')
   })
 })
 ```
 
 **Patterns:**
-- One `describe()` block per exported function/feature
-- One `it()` test per behavior (not per assertion)
-- Descriptive test names: "behavior X when Y" or "X yields Z"
-- No `beforeEach` / `afterEach` (tests are independent)
-- No setup/teardown fixtures; data constructed inline in each test
-
-## Test Data Factories
-
-**Inline Object Builders:**
-- No factory libraries; tests build their own fixtures inline
-- Example (`tests/sequence.test.ts`):
-  ```typescript
-  function card(id: string, daysOverdue = 0): SeqCard {
-    const now = new Date('2026-06-23T12:00:00Z')
-    const nextReview = new Date(now.getTime() - daysOverdue * 86_400_000)
-    return { id, review: { nextReview } }
-  }
-  
-  const NOW = new Date('2026-06-23T12:00:00Z')
-  ```
-
-**Deterministic Dates:**
-- All tests use fixed dates (`'2026-06-23T12:00:00Z'`, `'2026-01-01'`) to ensure reproducibility
-- No `new Date()` in test execution; dates passed as parameters or hardcoded
-- Follows ESLint `react-hooks/purity` principle: no impure calls in test logic
-
-**Fixture Reuse:**
-- Helper functions create domain objects (cards, edges, day records)
-- Fixtures are composed inline, never centralized; each test is self-contained
+- Deterministic time: pure lib functions take `now: Date` as a parameter; tests pass a fixed `new Date('…')` constant — never `Date.now()`.
+- Factory helpers at file top build minimal fixtures matching real Prisma relation shapes (`card(id, daysOverdue)` in `tests/sequence.test.ts`; `makePoolCard()` in `tests/study-cards.test.ts` — deliberately "serialization-complete" to survive the DTO block).
+- Regression tests open with a block comment naming the issue ID and the exact failure it guards (RELIABILITY-01, HIST-02, CR-01, EXTRACT-01 — "RED→GREEN regression guard").
+- `beforeEach`/`afterEach` for spy setup + `mockReset()`; `vi.spyOn(console, 'error').mockImplementation(() => {})` to suppress and assert degradation logging.
 
 ## Mocking
 
-**Framework:** No mocking library used
+**Framework:** Vitest `vi.mock` / `vi.fn` / `vi.spyOn`
 
 **Patterns:**
-- All tests exercise pure functions with no side-effects (no DB, no network, no file I/O)
-- Functions like `sequenceCards()`, `normalizeFront()`, `computeStreaks()` are pure
-- Input/output contracts are tested directly without mocks
-
-**What to Test:**
-- Boundary conditions (empty input, single item, duplicates, cycles)
-- Determinism (same input always yields same output)
-- Idempotency (applying operation twice ≈ applying once)
-- Edge cases (Unicode normalization, whitespace handling, off-by-one)
-
-**What NOT to Test:**
-- Integration (Prisma queries, API routes, Claude API calls)
-- Side-effects (database writes, network calls)
-- Third-party library behavior (rely on their tests)
-
-## Example: Sequence Selection Test
-
 ```typescript
-it('pulls a less-due prerequisite into the session with its dependent', () => {
-  // 'dep' is 5 days overdue; 'filler' is 3 days overdue; 'prereq' is 1 day overdue.
-  // sessionSize=2, so a naive most-due-only cap would pick [dep, filler] and skip 'prereq'.
-  // selectSessionCards must pull 'prereq' in as a prerequisite of 'dep' instead.
-  const dep    = card('dep',    5)   // most overdue → selected as first seed
-  const filler = card('filler', 3)   // more overdue than prereq but not a prerequisite
-  const prereq = card('prereq', 1)   // less overdue → excluded by naive cap but required by dep
-  const edges: SeqEdge[] = [{ cardId: 'dep', prerequisiteId: 'prereq' }]
-  const result = selectSessionCards([dep, filler, prereq], edges, 2, NOW)
-  const ids = result.map((c) => c.id)
-  expect(ids).toContain('dep')
-  expect(ids).toContain('prereq')
-  // prerequisite must precede the dependent
-  expect(ids.indexOf('prereq')).toBeLessThan(ids.indexOf('dep'))
-})
+// tests/study-cards.test.ts — mock the prisma singleton (hoisted above imports)
+vi.mock('@/lib/prisma', () => ({
+  prisma: {
+    card: { findMany: vi.fn() },
+    cardDependency: { findMany: vi.fn() },
+  },
+}))
+// Import AFTER the mock declaration
+import { prisma } from '@/lib/prisma'
+import { getStudyCards } from '@/lib/study-cards'
 ```
 
-**Anatomy:**
-1. **Comment block:** scenario setup and expected behavior in plain English
-2. **Fixture construction:** `card()` builder creates input objects
-3. **Function call:** single pure function invocation
-4. **Assertions:** multiple expectations verifying outcome (multiple assertions per test are OK when they verify the same scenario)
+**What to Mock:**
+- The `@/lib/prisma` singleton for pipeline tests — the factory also neutralizes the real module body, so no `DATABASE_URL` is needed.
+- `console.error` spies to lock log-prefix contracts (`[study-cards]`).
 
-## Error Cases
+**What NOT to Mock:**
+- Pure lib functions (`lib/sequence.ts`, `lib/card-key.ts`, `lib/habit.ts`, `lib/sentence-match.ts`) — tested directly with real inputs.
+- The route handler + DB in `tests/review-route.test.ts`: the REAL `POST` from `app/api/review/route.ts` runs against a fresh temp SQLite file with the real schema DDL applied, so UNIQUE-constraint behavior genuinely fires. Env ordering is critical: set `DATABASE_URL` BEFORE dynamic-importing `@/lib/prisma` and the route inside `beforeAll` (ESM static imports are hoisted; `lib/prisma.ts` caches at module eval).
+- The Anthropic SDK schema helpers in `tests/extract-cards.test.ts`: `zodOutputFormat(ExtractionSchema)` wire-schema shape is asserted directly (walks JSON-Schema nodes to require `additionalProperties: false` everywhere; truncated-text parse must throw `AnthropicError`).
 
-Tests verify both happy path and error conditions:
+## Fixtures and Factories
 
-**Type Guards:**
+**Test Data:**
 ```typescript
-describe('isValidCronAuth', () => {
-  it('returns true for a valid bearer header with matching secret', () => {
-    expect(isValidCronAuth('Bearer supersecret123', 'supersecret123')).toBe(true)
-  })
-
-  it('fails closed when cronSecret is undefined', () => {
-    expect(isValidCronAuth('Bearer anything', undefined)).toBe(false)
-  })
-
-  it('returns false for malformed headers', () => {
-    expect(isValidCronAuth('supersecret123', 'supersecret123')).toBe(false)
-    expect(isValidCronAuth('bearer lowercase', 'secret')).toBe(false)
-  })
-})
+// Minimal fixture factory mirroring the real Prisma relation shape
+function card(id: string, daysOverdue = 0): SeqCard {
+  const now = new Date('2026-06-23T12:00:00Z')
+  return { id, review: { nextReview: new Date(now.getTime() - daysOverdue * 86_400_000) } }
+}
 ```
 
-**Boundary Testing:**
-```typescript
-describe('normalizeFront', () => {
-  it('handles empty string', () => {
-    expect(normalizeFront('')).toBe('')
-  })
-
-  it('keeps mixed Hangul+ASCII parens intact', () => {
-    // Inner has Hangul → not stripped
-    expect(normalizeFront('Action verb ~는 (현재형)')).toBe('Action verb ~는 (현재형)')
-  })
-})
-```
+**Location:**
+- Inline per test file (no shared fixtures directory). Real-DB tests seed via `@libsql/client` in `beforeAll` and clean up temp dirs in `afterAll` (`tests/review-route.test.ts`).
 
 ## Coverage
 
-**Scope:** Unit tests only — pure library functions
-
-**Coverage targets (observed):**
-- `lib/card-key.ts` — 100% (normalizeFront logic fully exercised)
-- `lib/sequence.ts` — 100% (all paths: cycles, empty input, urgency boost, prereq closure)
-- `lib/habit.ts` — 100% (streaks, freeze budget, milestone transitions)
-- `lib/auth.ts` — 100% (HMAC validation edge cases)
-
-**No Coverage:**
-- Database models (Prisma)
-- API routes (Next.js routing, HTTP)
-- Components (React UI)
-- External APIs (Claude, Google Docs, TTS)
+**Requirements:** None enforced; no coverage tooling configured.
 
 **View Coverage:**
 ```bash
-# Vitest v4 does not have built-in coverage; coverage would require
-# a separate tool like c8 or @vitest/coverage-c8 (not currently installed)
+# Not configured — would require adding @vitest/coverage-v8
 ```
 
-## Testing Best Practices (Observed)
+## Test Types
 
-**Determinism:**
-- No `Date.now()`, `Math.random()`, dynamic values
-- All inputs passed as explicit parameters
-- Same test run multiple times yields same result
+**Unit Tests:**
+- Dominant type. Pure `lib/` functions with no DB/network: `tests/card-key.test.ts`, `tests/habit.test.ts`, `tests/proficiency.test.ts`, `tests/known-words.test.ts`, `tests/sentence-match.test.ts`, `tests/sequence.test.ts`, `tests/lesson-excerpt.test.ts`, `tests/filter-components.test.ts`.
 
-**Independence:**
-- Each test is standalone (no shared state, no `beforeEach` mutations)
-- Tests can run in any order
-- No test has side-effects that affect others
+**Integration Tests:**
+- Mocked-Prisma pipeline tests (`tests/study-cards.test.ts`, `tests/relink-dependencies.test.ts`, `tests/link-dependencies.test.ts`).
+- Real-handler + real-SQLite route tests (`tests/review-route.test.ts`, `tests/db-errors.test.ts`, `tests/review-history.test.ts`).
 
-**Clarity:**
-- Test name clearly describes the scenario being tested
-- Setup comments explain the "why" (e.g., "naive cap would pick these, but we expect…")
-- Assertions are narrow and targeted
+**E2E Tests:**
+- Not used. No browser/component testing (no Testing Library, no Playwright); components are untested.
 
-**Purity:**
-- All tested functions are pure (no side-effects)
-- Input/output contracts are explicit (interfaces document expected shape)
-- No mocks needed because there are no external dependencies to stub
+## Common Patterns
 
-## Test Execution
-
-**Local:**
-```bash
-npm test                    # Runs all tests once
-npm test -- lib/habit.ts   # Run tests for a specific file
-npm test -- --reporter=verbose  # More verbose output
+**Async Testing:**
+```typescript
+it('degrades to empty known-lemmas set when that query rejects', async () => {
+  ;(prisma.card.findMany as ReturnType<typeof vi.fn>)
+    .mockResolvedValueOnce([makePoolCard()])   // pool query
+    .mockRejectedValueOnce(new Error('boom'))  // known-lemmas query
+  const cards = await getStudyCards({ sessionSize: 20 })
+  expect(errorSpy).toHaveBeenCalled()          // '[study-cards]' log locked
+})
 ```
 
-**CI:** Not configured in this codebase (tests are for local development only)
+**Error Testing:**
+```typescript
+// Contract: parsing truncated LLM output throws AnthropicError
+expect(() => zodOutputFormat(ExtractionSchema).parse('{"cards":[{"type":"vocabulary"')).toThrow(AnthropicError)
+```
 
-**Performance:**
-- All 14 tests run in < 1 second (pure functions, no I/O)
-- No watchers or incremental runs currently used
+**Guidance for new tests:**
+- New pure `lib/` logic gets a `tests/<name>.test.ts` unit suite with injected time.
+- New API-route behavior involving DB constraints follows the `review-route.test.ts` temp-SQLite pattern.
+- Regression fixes get a persisted test with an issue-ID block comment explaining the RED state it guards against.
 
 ---
 
-*Testing analysis: 2026-07-05*
+*Testing analysis: 2026-07-10*
