@@ -172,7 +172,13 @@ Plans:
   2. A sync that completes with `failed === 0 && newLessons > 0` automatically relinks forward-reference `CardDependency` edges, replacing the manual `relink-dependencies.mjs` invocation
   3. The auto-relink pass is idempotent — running it after every qualifying sync produces no duplicate or incorrect edges
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+**Wave 1** *(both independent — no shared files)*
+
+- [ ] 23-01-PLAN.md — RELIABILITY-01: `[study-cards]`-prefixed logging when the known-lemmas query fails, before empty-Set degradation (+ regression tests locking the existing graceful-degradation contract)
+- [ ] 23-02-PLAN.md — RELIABILITY-02/03: idempotent full-deck auto-relink after every clean sync with new lessons (pure `computeMissingEdges` + `lib/relink-dependencies.ts` + `runSync` hook + real-DB double-run test + script consolidation)
+
 **UI hint**: no
 
 ## Progress
