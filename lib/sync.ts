@@ -8,6 +8,7 @@ import { fetchGoogleDoc } from '@/lib/google-docs'
 import { extractCardsFromNotes } from '@/lib/extract-cards'
 import { normalizeFront } from '@/lib/card-key'
 import { resolveDependencyEdges } from '@/lib/link-dependencies'
+import { relinkAllDependencies } from '@/lib/relink-dependencies'
 import { lessonExcerpt } from '@/lib/lesson-excerpt'
 import { prisma } from '@/lib/prisma'
 
@@ -26,6 +27,9 @@ export interface SyncResult {
   failed: number
   failures?: string[]
   message?: string
+  // Count of CardDependency edges the auto-relink pass created (only present
+  // when the relink ran successfully after a clean sync with new lessons).
+  relinkedEdges?: number
 }
 
 export async function runSync(documentId: string): Promise<SyncResult> {
@@ -313,6 +317,34 @@ export async function runSync(documentId: string): Promise<SyncResult> {
     }
   }
 
+  // Auto-relink forward-reference CardDependency edges across the whole deck
+  // once the per-lesson pass completes. Only runs on a clean sync
+  // (failures.length === 0) that actually created new lessons (newLessons > 0)
+  // — a sync with failures or zero new lessons has nothing new to relink and
+  // must skip the pass entirely. A relink failure is non-fatal: lesson
+  // contentHashes are already persisted (so lessons would not retry anyway)
+  // and app/api/cron/sync/route.ts stamps lastAutoSyncedAt only when
+  // result.failed === 0 — polluting failed would falsely mark the sync stale.
+  // The next qualifying sync retries the relink naturally. Both the manual
+  // sync route and the cron route call runSync, so both inherit the hook.
+  let relinkedEdges: number | undefined
+  if (failures.length === 0 && newLessons > 0) {
+    try {
+      const relinkResult = await relinkAllDependencies()
+      console.log(
+        `[sync] auto-relink: created ${relinkResult.edgesCreated} edge(s) across ${relinkResult.cardsScanned} cards`
+      )
+      relinkedEdges = relinkResult.edgesCreated
+    } catch (relinkErr: unknown) {
+      const relinkMsg =
+        relinkErr instanceof Error ? relinkErr.message : 'Unknown error'
+      console.warn(
+        `[sync] auto-relink failed (non-fatal, will retry next qualifying sync):`,
+        relinkMsg
+      )
+    }
+  }
+
   return {
     synced: true,
     newLessons,
@@ -320,6 +352,7 @@ export async function runSync(documentId: string): Promise<SyncResult> {
     remaining,
     failed: failures.length,
     ...(failures.length > 0 && { failures }),
+    ...(relinkedEdges !== undefined && { relinkedEdges }),
     ...(remaining > 0 && { message: `${remaining} more lesson(s) remaining — sync again to continue.` }),
   }
 }
