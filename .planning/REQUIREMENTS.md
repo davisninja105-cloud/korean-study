@@ -31,8 +31,8 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### Reliability Bugs
 
 - [x] **RELIABILITY-01**: `lib/study-cards.ts` logs when the known-lemmas query fails and degrades to an empty Set, so the silent ranking-signal degradation becomes visible
-- [ ] **RELIABILITY-02**: Forward-reference `CardDependency` edges are automatically relinked when a sync completes with no failures and at least one new lesson processed (`failed === 0 && newLessons > 0`), replacing the manual `relink-dependencies.mjs` invocation
-- [ ] **RELIABILITY-03**: The auto-relink pass is idempotent — safe to run after every qualifying sync without creating duplicate or incorrect edges
+- [x] **RELIABILITY-02**: Forward-reference `CardDependency` edges are automatically relinked when a sync completes with no failures and at least one new lesson processed (`failed === 0 && newLessons > 0`), replacing the manual `relink-dependencies.mjs` invocation
+- [x] **RELIABILITY-03**: The auto-relink pass is idempotent — safe to run after every qualifying sync without creating duplicate or incorrect edges
 
 ## Future Requirements
 
@@ -73,8 +73,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | FIX-01 | Phase 22 | Complete |
 | FIX-02 | Phase 22 | Complete |
 | RELIABILITY-01 | Phase 23 | Complete |
-| RELIABILITY-02 | Phase 23 | Pending |
-| RELIABILITY-03 | Phase 23 | Pending |
+| RELIABILITY-02 | Phase 23 | Complete |
+| RELIABILITY-03 | Phase 23 | Complete |
 
 **Coverage:**
 

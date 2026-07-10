@@ -4,17 +4,17 @@ milestone: v1.5
 milestone_name: Extraction Quality & Reliability
 current_phase: 23
 current_phase_name: Reliability Bug Fixes
-status: executing
-stopped_at: Completed 23-01-PLAN.md
-last_updated: "2026-07-10T18:07:41.694Z"
+status: verifying
+stopped_at: Completed 23-02-PLAN.md (Phase 23 complete)
+last_updated: "2026-07-10T19:14:07.073Z"
 last_activity: 2026-07-10
 last_activity_desc: Phase 23 execution started
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 9
-  completed_plans: 8
-  percent: 75
+  completed_plans: 9
+  percent: 100
 ---
 
 # Project State
@@ -28,12 +28,12 @@ See: .planning/PROJECT.md (updated 2026-07-10)
 
 ## Current Position
 
-Phase: 23 (Reliability Bug Fixes) — EXECUTING
+Phase: 23 (Reliability Bug Fixes) — COMPLETE
 Plan: 2 of 2
-Status: Ready to execute
-Last activity: 2026-07-10 — Phase 23 execution started
+Status: Phase complete (2/2 plans) — ready for milestone close-out
+Last activity: 2026-07-10 — Phase 23 complete (23-02 auto-relink plan shipped)
 
-Progress: [████████████████████] 7/7 plans (100%)
+Progress: [██████████] 9/9 plans (100%)
 
 ## Performance Metrics
 
@@ -62,6 +62,7 @@ Progress: [████████████████████] 7/7 pla
 | Phase 22 P01 | 3 min | 2 tasks | 2 files |
 | Phase 22 P03 | 25min | 1 tasks | 4 files |
 | Phase 23 P01 | 3 min | 1 tasks | 2 files |
+| Phase 23 P02 | 58 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -87,11 +88,15 @@ v1.5 roadmap shaping decisions (2026-07-06):
 - [Phase 22]: Phase 22-01: first-occurrence semantics preserved — predicate evaluates the FIRST indexOf hit; an embedded first occurrence is unsafe even if a later one is isolated (matches how blankSentence actually blanks). Locked by an explicit test case.
 - [Phase 22]: Applied the dry-run corpus fix report exactly as approved by the user (Approved as-is) - 9 front rewrites + 3 철 sentences, no adjustments
 - [Phase 22]: Documented 2 cron-sync-drifted cards (거/게) discovered in the post-fix audit as out-of-scope post-audit arrivals rather than folding them into the phase fix count
-- [Phase ?]: Phase 23-01: log placed after pool-rejection throw and before empty-pool early return — visibility-before-degradation
+- [Phase 23]: Phase 23-01: log placed after pool-rejection throw and before empty-pool early return — visibility-before-degradation
 - [Phase 23]: test
 - [Phase 23]: Phase 23-01: additive logging only for RELIABILITY-01 — no new throw/retry/fallback; knownLemmas empty-Set ternary byte-for-byte untouched (observability, not behavior change)
 - [Phase 23]: Phase 23-01: log content limited to fixed [study-cards] prefix + knownRowsResult.reason — never card fronts, lesson-range params, or env (T-23-01 mitigation by construction)
 - [Phase 23]: Phase 23-01: tests mock prisma singleton via vi.mock('@/lib/prisma') — no DATABASE_URL needed; explicit sessionSize avoids getSessionSize; pool vs known-lemmas call distinguished by select vs include
+- [Phase 23]: Phase 23-02: single-source-of-truth consolidation — one resolution implementation remains (relinkAllDependencies → computeMissingEdges → resolveDependencyEdges); old .mjs deleted (its normalizeFront copy + components-only keyToId were the CR-02 leaf-prerequisite bug shape); local-resync final pass consolidated onto the shared helper (IN-02)
+- [Phase 23]: Phase 23-02: auto-relink hook lives inside runSync in lib/sync.ts, gated on failures.length === 0 && newLessons > 0 — both /api/sync and /api/cron/sync inherit with zero route changes (cron auto-relinks for free)
+- [Phase 23]: Phase 23-02: relink failure is non-fatal — try/catch leaves failures/newLessons/newCards untouched; cron stamps lastAutoSyncedAt only when failed === 0, so polluting failed would falsely mark the sync stale; next qualifying sync retries the relink naturally
+- [Phase 23]: Phase 23-02: two-layer idempotency — pure computeMissingEdges subtracts existingEdges (second call returns []), and @@unique([cardId, prerequisiteId]) backstops the DB layer against read/write races (conflicting createMany throws → caught non-fatal → retried next sync)
 
 ### Pending Todos
 
@@ -120,10 +125,10 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-10T18:07:16.041Z
-Stopped at: Completed 23-01-PLAN.md
+Last session: 2026-07-10T19:14:07.073Z
+Stopped at: Completed 23-02-PLAN.md (Phase 23 complete — 2/2 plans)
 Resume file: None
 
 ## Operator Next Steps
 
-- Plan Phase 23 (Reliability Bug Fixes) via `/gsd-discuss-phase 23` or `/gsd-plan-phase 23`
+- Phase 23 complete (2/2 plans). All v1.5 requirements satisfied (12/12). Ready for `/gsd-complete-milestone` to archive v1.5.

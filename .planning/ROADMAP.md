@@ -78,7 +78,7 @@ See `.planning/milestones/v1.4-ROADMAP.md` for full phase details.
 - [x] **Phase 20: Extraction Pipeline Hardening** - Native structured outputs + code-enforced blank-safety in the extraction path (completed 2026-07-06)
 - [x] **Phase 21: Card Database Quality Audit** - Read-only deterministic audit of the live deck → dated findings report (completed 2026-07-07)
 - [x] **Phase 22: Findings-Driven Prompt Improvement & Corpus Fixes** - Revise/validate the prompt against the audit, then fix existing cards in place (completed 2026-07-10)
-- [ ] **Phase 23: Reliability Bug Fixes** - Log silent known-lemmas degradation; auto-relink forward-reference edges after clean sync
+- [x] **Phase 23: Reliability Bug Fixes** - Log silent known-lemmas degradation; auto-relink forward-reference edges after clean sync (completed 2026-07-10)
 
 ## Phase Details
 
@@ -172,12 +172,12 @@ Plans:
   2. A sync that completes with `failed === 0 && newLessons > 0` automatically relinks forward-reference `CardDependency` edges, replacing the manual `relink-dependencies.mjs` invocation
   3. The auto-relink pass is idempotent — running it after every qualifying sync produces no duplicate or incorrect edges
 
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans complete
 
 **Wave 1** *(both independent — no shared files)*
 
 - [x] 23-01-PLAN.md — RELIABILITY-01: `[study-cards]`-prefixed logging when the known-lemmas query fails, before empty-Set degradation (+ regression tests locking the existing graceful-degradation contract)
-- [ ] 23-02-PLAN.md — RELIABILITY-02/03: idempotent full-deck auto-relink after every clean sync with new lessons (pure `computeMissingEdges` + `lib/relink-dependencies.ts` + `runSync` hook + real-DB double-run test + script consolidation)
+- [x] 23-02-PLAN.md — RELIABILITY-02/03: idempotent full-deck auto-relink after every clean sync with new lessons (pure `computeMissingEdges` + `lib/relink-dependencies.ts` + `runSync` hook + real-DB double-run test + script consolidation)
 
 **UI hint**: no
 
@@ -213,7 +213,7 @@ Within v1.5, the audit/prompt track is strictly serial (21 → 22); Phase 20 (ex
 | 20. Extraction Pipeline Hardening | v1.5 | 2/2 | Complete   | 2026-07-06 |
 | 21. Card Database Quality Audit | v1.5 | 2/2 | Complete   | 2026-07-07 |
 | 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 3/3 | Complete    | 2026-07-10 |
-| 23. Reliability Bug Fixes | v1.5 | 1/2 | In Progress|  |
+| 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete   | 2026-07-10 |
 
 ---
 *Last updated: 2026-07-06 — v1.5 roadmap created (Phases 20–23), 12/12 requirements mapped, coarse granularity*
