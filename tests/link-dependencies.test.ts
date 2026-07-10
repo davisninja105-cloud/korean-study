@@ -97,10 +97,13 @@ describe('computeMissingEdges', () => {
   })
 
   it('resolves a forward reference (card synced first, prerequisite created later)', () => {
-    // Order in the array is deliberately "first-synced" card first.
+    // Order in the array is deliberately "first-synced" card first. card B
+    // appears AFTER card A even though A depends on B — the forward-reference
+    // shape that the per-lesson pass misses and the full-deck relink catches.
+    // normalizedFront holds the already-normalized form (as the DB stores it).
     const cards: DeckCardRow[] = [
-      row('A', '공부', ['~(으)로']),     // A's component names a later card's front
-      row('B', '~(으)로 (direction particle)', null), // B created later; normalizedFront strips the gloss
+      row('A', '공부', ['~(으)로']), // A's component names a later card's front
+      row('B', '~(으)로', null),     // B created later; leaf (no own components)
     ]
     expect(computeMissingEdges(cards, [])).toEqual([
       { cardId: 'A', prerequisiteId: 'B' },
