@@ -136,7 +136,7 @@ Each task was committed atomically (Tasks 1 & 2 are TDD RED → GREEN; Task 3 is
 3. **Task 3: Consolidate manual relink script and local-resync final pass onto the shared helper; update CLAUDE.md**
    - `2a1fc32` (refactor) — delete .mjs, add thin .mts wrapper, consolidate local-resync final pass, update CLAUDE.md
 
-**Plan metadata:** *(appended after tracking-file commit)*
+**Plan metadata:** `b5e7bda` (docs: complete auto-relink forward-reference edges plan)
 
 ## Files Created/Modified
 - `lib/link-dependencies.ts` — added exported `DeckCardRow` interface and `computeMissingEdges()` pure resolver-diff (delegates to `resolveDependencyEdges`, no direct resolve loop); module header comment extended to name computeMissingEdges as the shared full-deck relink core. Stays pure/client-safe (only import is `./card-key`).
