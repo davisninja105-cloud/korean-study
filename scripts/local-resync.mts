@@ -209,34 +209,13 @@ for (let i = 0; i < newLessons.length; i++) {
 }
 
 // Final relink pass to catch cross-lesson forward references.
-// Load ALL cards (no where clause) so leaf-node cards without their own
-// components remain resolvable as prerequisites for other cards.
+// Delegates to the shared lib/relink-dependencies.ts helper (IN-02
+// consolidation — the last duplicated full-deck relink persistence loop is
+// gone; resolution lives in lib/link-dependencies.ts, orchestration here).
 console.log('Running final dependency relink pass…')
-const allCards = await prisma.card.findMany({
-  select: { id: true, normalizedFront: true, components: true },
-}) as { id: string; normalizedFront: string; components: string | null }[]
-const keyToId = new Map(allCards.map((c) => [c.normalizedFront, c.id]))
-// IN-02: resolution itself is shared via lib/link-dependencies.ts.
-const finalLinkTargets = allCards
-  .filter((c) => c.components)
-  .map((c) => {
-    let comps: string[] = []
-    try { comps = JSON.parse(c.components as string) } catch { comps = [] }
-    return { id: c.id, components: comps }
-  })
-const finalResolvedEdges = resolveDependencyEdges(keyToId, finalLinkTargets)
-let relinkCount = 0
-for (const { cardId, prerequisiteId } of finalResolvedEdges) {
-  try {
-    await prisma.cardDependency.upsert({
-      where:  { cardId_prerequisiteId: { cardId, prerequisiteId } },
-      create: { cardId, prerequisiteId },
-      update: {},
-    })
-    relinkCount++
-  } catch { /* non-fatal */ }
-}
-console.log(`  ↳ ${relinkCount} edges confirmed/created.`)
+const { relinkAllDependencies } = await import('../lib/relink-dependencies.js')
+const relinkResult = await relinkAllDependencies()
+console.log(`  ↳ ${relinkResult.edgesCreated} edges created (${relinkResult.totalEdges} total across ${relinkResult.cardsScanned} cards).`)
 console.log()
 
 const totalCards = await prisma.card.count()
