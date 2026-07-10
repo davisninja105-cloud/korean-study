@@ -74,6 +74,10 @@ const _extractedCardShapeCheck: AssertShapesEqual<ExtractedCard, z.infer<typeof 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const _extractedSentenceShapeCheck: AssertShapesEqual<ExtractedSentence, z.infer<typeof ExtractedSentenceSchema>> = true
 
+// Phase 22 prompt revisions (card-audit-2026-07-07)
+// - "front" field bullet rewrite  → romanization-flagged-fronts error class (D-06/D-07/D-08)
+// - loanword/acronym exception    → romanization false-positive error class (D-09)
+// - BLANK-SAFETY clause (b)       → zero-safe/zero-sentence error class (D-01/D-02)
 export async function extractCardsFromNotes(
   notes: string,
   existingNormalizedFronts: string[] = [],
@@ -152,9 +156,20 @@ ${existingList}
 - "type": "vocabulary" | "grammar" | "phrase"
 
 - "front": Korean (Hangul). NEVER include romanization (Latin-letter transliteration such as
-  "(kkujunhada)"). You MAY include a short ENGLISH clarifying gloss in parentheses where it
-  genuinely helps disambiguation — e.g. "~(으)로 (direction particle)" or
-  "Action verb ~는 + noun (present modifier)". Hangul-in-parens (e.g. "~(으)면") is fine.
+  "(kkujunhada)").
+  GRAMMAR cards: use bare pattern notation only (e.g. "~(으)면", "~고"). NEVER attach an English
+  descriptive label to a grammar front (no "(present modifier)" or any other English tag) —
+  descriptive English belongs in "back" only, never on the front.
+  When two distinct grammar points would otherwise collide on the identical bare marker (e.g. the
+  action-verb PAST modifier and the descriptive-verb PRESENT modifier both notate as "~(으)ㄴ"),
+  disambiguate with a short Korean grammar-term prefix instead of English — e.g. "동사 ~(으)ㄴ"
+  (verb) vs "형용사 ~(으)ㄴ" (descriptive verb/adjective). Apply this whenever a bare-marker
+  collision arises, not only for these two examples.
+  SINO-KOREAN ROOT vocabulary (e.g. 소, 고, 식): the parenthetical gloss stays Hangul-only — the
+  traditional root reading, such as "소 (작을 소)" — never mixed with an English word or meaning;
+  the English meaning goes in "back" alone.
+  Other vocabulary/phrase cards MAY still carry a short English clarifying gloss in parentheses
+  when genuinely needed for disambiguation (Hangul-in-parens, e.g. "~(으)면", is always fine).
 
 - "back": concise English translation/meaning.
 
@@ -193,8 +208,10 @@ Each element of "sentences" must have:
 - "translation": non-empty English translation of the full sentence.
 
 **BLANK-SAFETY GUARANTEE (CRITICAL):** A sentence is "blank-safe" when its targetForm:
-  (a) appears verbatim in korean, (b) is 2+ Korean characters (not a single syllable/particle
-  like 이, 가, 를, 에), and (c) appears EXACTLY ONCE in korean.
+  (a) appears verbatim in korean, (b) is EITHER 2+ Korean characters, OR a single syllable that
+  stands as an isolated word — space, punctuation, or sentence edge on both sides (e.g. 다 in
+  "밥을 다 먹었어요") — and never a single syllable embedded inside a longer word, and
+  (c) appears EXACTLY ONCE in korean.
 The FIRST sentence for every card MUST be blank-safe — it is used for Recall flashcards and
 fill-in-the-blank mode. If the lesson's sentences are unsafe (e.g. the word is one char, or
 appears twice), compose a blank-safe sentence and list it FIRST; authentic lesson sentences can
@@ -213,6 +230,9 @@ be blank-safe.
 - Do not create duplicate cards within this response either.
 - NEVER include romanization (Latin-letter transliteration) in ANY field — not in front, back,
   notes, or sentences. Hangul for Korean, English for meanings only.
+- EXCEPTION: untranslated English acronyms and loanwords used in authentic Korean speech (e.g.
+  CRT, DST, PC방-style borrowings) are NOT romanization — they may appear inline in fronts and
+  sentences exactly as Koreans write them.
 
 Lesson notes:
 ${notes}`,
