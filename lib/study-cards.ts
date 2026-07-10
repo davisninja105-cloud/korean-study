@@ -67,6 +67,23 @@ export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]
   if (poolResult.status === 'rejected') {
     throw new Error('Database error')
   }
+
+  // RELIABILITY-01: if the non-critical known-lemmas query rejected, log the
+  // reason BEFORE degrading — so the silent ranking-signal degradation
+  // (unknownCount will treat every context word as unknown, since
+  // knownLemmas falls back to an empty Set below) becomes observable in
+  // Vercel logs. Placed before the empty-pool early return so the log fires
+  // even when the pool is empty. No throw/retry/fallback is added; the
+  // empty-Set fallback at the knownLemmas construction further down stays
+  // byte-for-byte untouched. Logs only the fixed prefix message and the
+  // driver rejection reason — never card fronts, lesson-range params, or env.
+  if (knownRowsResult.status === 'rejected') {
+    console.error(
+      '[study-cards] known-lemmas query failed; unknownCount ranking degrading to an empty known-lemma set',
+      knownRowsResult.reason
+    )
+  }
+
   const cards = poolResult.value
 
   if (cards.length === 0) return []
