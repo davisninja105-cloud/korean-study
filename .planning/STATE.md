@@ -5,15 +5,15 @@ milestone_name: Extraction Quality & Reliability
 current_phase: 23
 current_phase_name: Reliability Bug Fixes
 status: executing
-stopped_at: Phase 22 complete, ready to plan Phase 23
-last_updated: "2026-07-10T17:56:53.336Z"
+stopped_at: Completed 23-01-PLAN.md
+last_updated: "2026-07-10T18:07:41.694Z"
 last_activity: 2026-07-10
 last_activity_desc: Phase 23 execution started
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
   percent: 75
 ---
 
@@ -29,8 +29,8 @@ See: .planning/PROJECT.md (updated 2026-07-10)
 ## Current Position
 
 Phase: 23 (Reliability Bug Fixes) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 23
+Plan: 2 of 2
+Status: Ready to execute
 Last activity: 2026-07-10 — Phase 23 execution started
 
 Progress: [████████████████████] 7/7 plans (100%)
@@ -61,6 +61,7 @@ Progress: [████████████████████] 7/7 pla
 | Phase 21 P02 | 4 min | 2 tasks | 2 files |
 | Phase 22 P01 | 3 min | 2 tasks | 2 files |
 | Phase 22 P03 | 25min | 1 tasks | 4 files |
+| Phase 23 P01 | 3 min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -86,6 +87,11 @@ v1.5 roadmap shaping decisions (2026-07-06):
 - [Phase 22]: Phase 22-01: first-occurrence semantics preserved — predicate evaluates the FIRST indexOf hit; an embedded first occurrence is unsafe even if a later one is isolated (matches how blankSentence actually blanks). Locked by an explicit test case.
 - [Phase 22]: Applied the dry-run corpus fix report exactly as approved by the user (Approved as-is) - 9 front rewrites + 3 철 sentences, no adjustments
 - [Phase 22]: Documented 2 cron-sync-drifted cards (거/게) discovered in the post-fix audit as out-of-scope post-audit arrivals rather than folding them into the phase fix count
+- [Phase ?]: Phase 23-01: log placed after pool-rejection throw and before empty-pool early return — visibility-before-degradation
+- [Phase 23]: test
+- [Phase 23]: Phase 23-01: additive logging only for RELIABILITY-01 — no new throw/retry/fallback; knownLemmas empty-Set ternary byte-for-byte untouched (observability, not behavior change)
+- [Phase 23]: Phase 23-01: log content limited to fixed [study-cards] prefix + knownRowsResult.reason — never card fronts, lesson-range params, or env (T-23-01 mitigation by construction)
+- [Phase 23]: Phase 23-01: tests mock prisma singleton via vi.mock('@/lib/prisma') — no DATABASE_URL needed; explicit sessionSize avoids getSessionSize; pool vs known-lemmas call distinguished by select vs include
 
 ### Pending Todos
 
@@ -114,8 +120,8 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-10T17:00:00.000Z
-Stopped at: Phase 22 complete, ready to plan Phase 23
+Last session: 2026-07-10T18:07:16.041Z
+Stopped at: Completed 23-01-PLAN.md
 Resume file: None
 
 ## Operator Next Steps
