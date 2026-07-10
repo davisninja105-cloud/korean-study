@@ -213,7 +213,7 @@ Within v1.5, the audit/prompt track is strictly serial (21 → 22); Phase 20 (ex
 | 20. Extraction Pipeline Hardening | v1.5 | 2/2 | Complete   | 2026-07-06 |
 | 21. Card Database Quality Audit | v1.5 | 2/2 | Complete   | 2026-07-07 |
 | 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 3/3 | Complete    | 2026-07-10 |
-| 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete   | 2026-07-10 |
+| 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete    | 2026-07-10 |
 
 ---
 *Last updated: 2026-07-06 — v1.5 roadmap created (Phases 20–23), 12/12 requirements mapped, coarse granularity*
