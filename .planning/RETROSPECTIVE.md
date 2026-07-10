@@ -247,6 +247,55 @@
 
 ---
 
+## Milestone: v1.5 — Extraction Quality & Reliability
+
+**Shipped:** 2026-07-10
+**Phases:** 4 | **Plans:** 9 | **Tasks:** 20
+
+### What Was Built
+
+- Native Anthropic structured outputs (`zodOutputFormat` + `output_config.format`) replaced text-JSON salvage-parsing in the extraction path; code-enforced blank-safety guarantees no card reaches the DB without a verified blank-safe first sentence
+- A pure, Vitest-covered `lib/audit-checks.ts` (11 exports, 60 tests) audits the live deck across six check classes by delegating to production helpers — audit truth equals production truth by construction
+- A read-only `scripts/audit-cards.mts` produced a dated evidence report (1039 cards, non-zero findings as expected for a legacy deck) driving all downstream prompt/fix decisions
+- The extraction prompt was revised against four audit error classes and validated on real lessons (frontRomanization 4→0) before being trusted; 9 audit-flagged card fronts were rewritten in place by id (zero delete/recreate)
+- Two reliability bugs closed: silent known-lemmas degradation is now observable via `[study-cards]`-prefixed logging; forward-reference `CardDependency` edges auto-relink inside `runSync` after every clean sync with new lessons (retiring the manual relink script)
+
+### What Worked
+
+- **Findings-first methodology:** audit (Phase 21) produced the evidence report *before* any prompt or fix decision was made — every Phase 22 action was traceable to a specific finding with a card id, not an assumption
+- **Pure module over production helpers:** `lib/audit-checks.ts` delegates to `sentenceMatch`/`normalizeFront`/`filterComponents` rather than reimplementing them — the audit can never drift from production behavior
+- **Dry-run-by-default + `--apply` gating:** the corpus fix script prints the resolved DB host before any query and requires an explicit flag + human approval checkpoint — the production rewrite was safe by construction
+- **Auto-relink as a sync hook, not a route:** placing the relink pass inside `runSync` (gated on `failed === 0 && newLessons > 0`) means manual sync, cron, and local-resync all inherit the behavior with zero route changes
+- **Two-layer idempotency:** pure `computeMissingEdges` subtracts existing edges (second call returns `[]`); `@@unique` constraint backstops at the DB layer — safe to run after every qualifying sync
+
+### What Was Inefficient
+
+- **Verification discipline regressed again:** Phase 20 shipped with no VERIFICATION.md at all (the verify step never ran), and Phase 21's `human_needed` status + 2 pending UAT scenarios were left unresolved through milestone close — 3 of 4 phases needed verification overrides. This is the same "VERIFICATION.md missing" pattern that hit v1.4 Phase 17, but now affecting half the milestone
+- **Stale REQUIREMENTS.md checkbox:** EXTRACT-01 was completed and verified in Plan 20-02 (summary explicitly records `requirements-completed: [EXTRACT-01]` with passing tests), but the checkbox in REQUIREMENTS.md was never ticked — discovered at milestone close as a bookkeeping gap, not a real gap
+- **Sandbox credential friction in Phase 22-02:** the prompt-eval script needed live `ANTHROPIC_API_KEY` + Turso credentials; the sandboxed worktree denied `.env` access, escalating to a blocker that required a separate credential-available session to complete
+
+### Patterns Established
+
+- **Native structured outputs pattern:** `output_config.format: zodOutputFormat(Schema)` on the stream call, reading `parsed_output` on the happy path, with a pre-registered `stream.on('text')` accumulator enabling truncation salvage through an `AnthropicError` catch
+- **Pure audit module pattern:** a new pure module (`lib/audit-checks.ts`) delegates to production helpers rather than reimplementing classification logic — extends the `lib/filter-components.ts` pattern established in v1.4
+- **Auto-relink-as-sync-hook:** optional post-processing lives inside `runSync`, not the route, so every caller inherits the behavior with zero call-site changes — extends the v1.4 `runSync` extraction pattern
+- **Pure resolver-diff pattern:** `computeMissingEdges` composes `resolveDependencyEdges` (never reimplements resolution), honoring the single-source-of-truth mandate
+- **Non-fatal hook pattern:** an optional enrichment pass wrapped in try/catch that succeeds or logs+continues, never degrading the primary sync outcome
+
+### Key Lessons
+
+- **Run `/gsd-verify-work` at phase close, not at milestone close:** deferring verification to the milestone boundary concentrates all risk and rework at the worst possible time. The v1.4 retrospective already flagged this; v1.5 repeated it with 3 of 4 phases
+- **Tick REQUIREMENTS.md checkboxes at plan completion:** the SUMMARY frontmatter records `requirements-completed` accurately, but the traceability table must be updated in the same commit or it drifts — a stale checkbox creates false alarm at milestone close
+- **The "mutate in place, never delete/recreate" hard rule was consistently honored:** card 다's audit finding was resolved by a shared predicate change with zero DB writes; the 9 front rewrites used `card.update()` only — FSRS state and ReviewLog history were preserved throughout
+
+### Cost Observations
+
+- Model mix: Sonnet (main session + planner), Haiku (checker, codebase mappers)
+- Sessions: spanning 2026-07-05 to 2026-07-10 (~5 days, 100 commits)
+- Notable: the milestone's efficiency was good (9 plans in 5 days, most plans 3–8 min each), but the verification backlog at close (3 override items) added rework cost that would have been amortized if verification ran per-phase. The 58-min Phase 23-02 plan (auto-relink + consolidation + real-DB idempotency test) was the single longest plan — justified by the scope (8 files, pure + server + test layers, old script deletion).
+
+---
+
 ## Cross-Milestone Trends
 
 | Milestone | Phases | Plans | Key Pattern | Main Pitfall |
@@ -256,3 +305,4 @@
 | v1.2 Performance & Snappiness | 4 | 9 | RSC + client-shell + DTO pattern, established once and reused | Paint-timing/jitter claims left unverified in a browser for 2 of 4 phases; REQUIREMENTS.md checkboxes unticked again |
 | v1.3 Reliability & Hardening | 3 | 6 | Audit-sourced milestone (zero research phase) + risk-ordered phasing (behavior fixes before structural refactor) | Sibling route with the identical gap (`api/review/undo`) not grepped-for and deferred instead of fixed — same "scope corpus-wide" pitfall as v1.1's NAV-01 |
 | v1.4 Knowledge Graph Quality & History | 4 | 15 | Independent re-verification (fresh reproduction, not the fixer's own test) turns a "passed" status into a real guarantee | A phase (17) shipped and closed with no VERIFICATION.md ever generated — silently unnoticed until the milestone audit's retroactive pass found it and, in fixing it, uncovered a real production bug |
+| v1.5 Extraction Quality & Reliability | 4 | 9 | Findings-first methodology (audit → evidence → act); pure audit module over production helpers; auto-relink as sync hook | Verification discipline regressed — 3 of 4 phases needed override at close (Phase 20 no VERIFICATION.md, Phase 21 human_needed + 2 UAT pending); stale REQUIREMENTS.md checkbox for EXTRACT-01 |

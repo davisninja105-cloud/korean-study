@@ -24,7 +24,7 @@ current_phase_name: Reliability Bug Fixes
 See: .planning/PROJECT.md (updated 2026-07-10)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** v1.5 milestone complete — ready for archival
+**Current focus:** v1.5 archived — planning next milestone via `/gsd-new-milestone`
 
 ## Current Position
 
