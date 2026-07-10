@@ -21,7 +21,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 ### Findings-Driven Prompt Review
 
 - [ ] **PROMPT-01**: The `extract-cards.ts` prompt is reviewed against the current card schema/capabilities and the audit findings; instructions are updated to address identified error classes
-- [ ] **PROMPT-02**: Prompt changes are validated against a sample of real lessons (diffing audit-check counts before/after) without re-running the full corpus, before being considered final
+- [x] **PROMPT-02**: Prompt changes are validated against a sample of real lessons (diffing audit-check counts before/after) without re-running the full corpus, before being considered final
 
 ### Corpus Fixes
 
@@ -69,7 +69,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | AUDIT-01 | Phase 21 | Complete |
 | AUDIT-02 | Phase 21 | Complete |
 | PROMPT-01 | Phase 22 | Pending |
-| PROMPT-02 | Phase 22 | Pending |
+| PROMPT-02 | Phase 22 | Complete |
 | FIX-01 | Phase 22 | Complete |
 | FIX-02 | Phase 22 | Pending |
 | RELIABILITY-01 | Phase 23 | Pending |
