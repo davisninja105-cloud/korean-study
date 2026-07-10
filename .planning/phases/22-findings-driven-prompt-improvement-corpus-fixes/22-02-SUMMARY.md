@@ -158,6 +158,17 @@ None - no external service configuration required beyond what already exists (`A
 - The eval script itself (Task 1 infrastructure + this session's verdict fix) is ready to run the instant credentials are available — no further code changes are anticipated to be needed for a clean PASS/FAIL determination.
 - **Action required from the user/orchestrator:** either (a) run `npx tsx scripts/prompt-eval.mts` manually in a credentialed environment and report the result back for this SUMMARY to be finalized, or (b) explicitly grant this worktree permission to access `.env`/`.env.local` for this one operational script, after which this plan can be re-resumed at exactly this point (Task 3, second after-run) with no other rework needed.
 
+## Self-Check: PASSED
+
+- FOUND: scripts/prompt-eval.mts
+- FOUND: .planning/phases/22-findings-driven-prompt-improvement-corpus-fixes/22-02-SUMMARY.md
+- FOUND: .planning/phases/22-findings-driven-prompt-improvement-corpus-fixes/prompt-eval-baseline.json
+- FOUND commit: 7bc2545 (Task 1)
+- FOUND commit: 9317a02 (Task 2)
+- FOUND commit: 95c6219 (Task 3 verdict-fix)
+- FOUND commit: 9bdf9ad (this SUMMARY)
+- Working tree clean; no leftover `.env`/`.env.local` files in the worktree after the denied-and-reverted copy attempt.
+
 ---
 *Phase: 22-findings-driven-prompt-improvement-corpus-fixes*
 *Completed: 2026-07-10 (partial — blocked)*
