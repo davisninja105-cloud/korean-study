@@ -102,10 +102,11 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 - ✓ Known-lemmas query failure in `lib/study-cards.ts` logs a `[study-cards]`-prefixed reason before degrading to an empty Set; the existing `Promise.allSettled` graceful-degradation contract is preserved (RELIABILITY-01) — Phase 23
 - ✓ A sync completing with `failed === 0 && newLessons > 0` automatically relinks forward-reference `CardDependency` edges via an idempotent hook inside `runSync`, replacing the manual `relink-dependencies.mjs` invocation (RELIABILITY-02) — Phase 23
 - ✓ The auto-relink pass is idempotent at both the pure layer (computeMissingEdges subtracts existing edges) and the DB layer (`@@unique` backstop); no duplicate or incorrect edges (RELIABILITY-03) — Phase 23
+- ✓ A throwaway diagnostic script (`scripts/diagnose-freshness.mts`) empirically classifies all 16 route × navigation-path cells on a production build (`next build && next start`), attributing every stale cell to Router Cache reuse or client-shell `useState(initialProps)` non-resync — never left ambiguous (FRESH-01) — Phase 24
 
 ### Active
 
-(All v1.5 requirements validated and shipped — see Validated above. Next milestone requirements will be defined via `/gsd-new-milestone`.)
+(All v1.5 requirements validated and shipped — see Validated above. v1.6 in progress: FRESH-01 shipped Phase 24; remaining v1.6 requirements tracked in REQUIREMENTS.md, next up is Phase 25.)
 
 **Deferred candidates** (raised during v1.2/v1.3/v1.4/v1.5, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
@@ -194,6 +195,9 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 | Relink failure is non-fatal: try/catch leaves `failures`/`newLessons`/`newCards` untouched | Cron stamps `lastAutoSyncedAt` only when `failed === 0`; polluting `failed` would falsely mark the sync stale. Next qualifying sync retries the relink naturally | ✓ Phase 23-02 |
 | Single-source-of-truth consolidation: old `relink-dependencies.mjs` deleted; `computeMissingEdges` composes `resolveDependencyEdges` (never reimplements resolution) | The old script hand-rolled its own `normalizeFront` copy and built `keyToId` only from cards with non-null components (omitting leaf prerequisites — the CR-02 bug). One resolution implementation remains (IN-02) | ✓ Phase 23-02 |
 | Two-layer idempotency: pure `computeMissingEdges` subtracts existing edges (second call returns `[]`); `@@unique([cardId, prerequisiteId])` backstops the DB layer | Pure-layer idempotency prevents redundant computation; DB-layer constraint prevents duplicate edges from read/write races between concurrent syncs | ✓ Phase 23-02 (RELIABILITY-03) |
+| Diagnosis: 16-cell matrix split staleness into two distinct root causes — Router Cache reuse (5 cells: all 4 `resume` cells + `/` `back-forward`, zero RSC re-fetch at all) vs. client-shell `useState(initialProps)` non-resync (4 cells: `/study`/`/cards`/`/habits` `back-forward` + `/habits` `post-mutation-return`, RSC re-fetch happens but the mounted shell never adopts it) | The whole point of the spike — Phase 26's fix must address both mechanisms separately, not assume one bug | ✓ Phase 24; full per-cell attribution in `24-DIAGNOSIS.md` |
+| The primary D-05 regression scenario (real UI grade session → Home → Study via `<Link>`) came back **Fresh**, not stale, on this build | Whatever caused the original bug report is either already fixed, or specific to back-forward/resume paths rather than plain post-session return — Phase 26 must not "fix" a path that isn't actually broken | ✓ Phase 24; `HomeClient` confirmed to never exhibit non-resync (its back-forward/resume cells are pure Router Cache reuse) — only `/habits`'s D-06 variant stayed stale |
+| `back-forward` cell's `about:blank` Chromium/CDP read-time artifact is not papered over with a corrective `page.goto()` | A forced re-navigation always triggers a real fetch, which would silently convert genuine Stale-RouterCache verdicts into false "Fresh" ones — verdicts are computed from fetch-count evidence captured before the artifact appears | ✓ Phase 24; re-verified via a 4th independent full run during UAT — the goto() recovery's own trigger check never fired for any of the 4 affected cells, confirming the verdicts are untampered-with |
 
 ## Evolution
 
@@ -214,4 +218,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-10 after v1.5 milestone archival*
+*Last updated: 2026-07-11 after Phase 24*

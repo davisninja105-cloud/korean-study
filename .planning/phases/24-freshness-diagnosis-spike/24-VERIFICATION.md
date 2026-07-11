@@ -1,11 +1,12 @@
 ---
 phase: 24-freshness-diagnosis-spike
 verified: 2026-07-11T00:00:00Z
-status: human_needed
+status: passed
 score: 9/9 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
+
   - test: "Independently re-verify the 4 back-forward-cell verdicts (/, /study, /cards, /habits) in 24-DIAGNOSIS.md against raw evidence before Phase 25's E2E-06 spec encodes them, per the self-documented CR-01 caveat"
     expected: "Either confirmation that the about:blank goto() recovery branch (scripts/diagnose-freshness.mts lines 828-837) did not fire during the accepted run (so the fetch-count evidence for those 4 cells is clean), or a corrected verdict for any cell where it did fire"
     why_human: "The recovery branch's fetch would be captured into the same evidence window (preLen..log.length) used for classification, but the run log that would show whether it fired was not preserved (per plan scope) and the code was intentionally left unfixed per user decision — this can only be resolved by re-running the script with logging preserved or by reading Chromium/CDP behavior directly, not by static analysis of the current repo state"

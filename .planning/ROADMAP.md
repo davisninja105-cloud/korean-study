@@ -193,7 +193,7 @@ Phases execute in numeric order: 1 → 2 → ... → 23 (all complete) → 24 �
 | 21. Card Database Quality Audit | v1.5 | 2/2 | Complete | 2026-07-07 |
 | 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 3/3 | Complete | 2026-07-10 |
 | 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete | 2026-07-10 |
-| 24. Freshness Diagnosis Spike | v1.6 | 2/2 | Complete   | 2026-07-11 |
+| 24. Freshness Diagnosis Spike | v1.6 | 2/2 | Complete    | 2026-07-11 |
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 0/TBD | Not started | - |
 | 26. Freshness Fix | v1.6 | 0/TBD | Not started | - |
 | 27. E2E Coverage & Performance Validation | v1.6 | 0/TBD | Not started | - |

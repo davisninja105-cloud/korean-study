@@ -2,36 +2,36 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Freshness, Performance & E2E Testing
-current_phase: 24
-current_phase_name: freshness-diagnosis-spike
-status: executing
-stopped_at: Phase 24 context gathered
-last_updated: "2026-07-11T09:00:50.366Z"
+current_phase: 25
+current_phase_name: E2E Test Infrastructure & Baselines
+status: ready_to_plan
+stopped_at: Phase 24 complete, ready to plan Phase 25
+last_updated: "2026-07-11T17:08:23.352Z"
 last_activity: 2026-07-11
-last_activity_desc: Phase 24 execution started
+last_activity_desc: Phase 24 complete, transitioned to Phase 25
 progress:
   total_phases: 4
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 0
-  percent: 0
+  completed_plans: 2
+  percent: 25
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-10)
+See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 24 — freshness-diagnosis-spike
+**Current focus:** Phase 25 — E2E Test Infrastructure & Baselines
 
 ## Current Position
 
-Phase: 24 (freshness-diagnosis-spike) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 24
-Last activity: 2026-07-11 — Phase 24 execution started
+Phase: 25 — E2E Test Infrastructure & Baselines
+Plan: Not started
+Status: Ready to plan Phase 25
+Last activity: 2026-07-11 — Phase 24 complete, transitioned to Phase 25
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -46,7 +46,7 @@ Progress: [░░░░░░░░░░] 0%
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 24 | 0/TBD | - | - |
+| 24 | 2 | - | - |
 | 25 | 0/TBD | - | - |
 | 26 | 0/TBD | - | - |
 | 27 | 0/TBD | - | - |
@@ -70,6 +70,12 @@ v1.6 roadmap shaping decisions (2026-07-10):
 - Hard build-order invariant (research): diagnosis (24) + E2E harness with a red freshness-regression spec and first-load baseline (25) must both exist BEFORE the fix (26) — the fix is proven by red→green, never by feel. Coverage/perf (27) is a non-blocking follow-on.
 - Freshness is a client-side Router Cache problem, not a server caching issue — every main page already declares `dynamic = 'force-dynamic'`. Fix is surgical: `router.refresh()` + gated per-shell prop-sync + a `FreshnessWatcher`, not `force-dynamic`/Route-Handler `revalidatePath` (Pitfall 1).
 - E2E must never touch production Turso: isolated `file:` SQLite + a fail-fast host guard on any `libsql://` URL (Pitfall 5). Only new deps are dev-only (`@playwright/test`, optional `@playwright/mcp`); zero new production dependencies.
+
+Phase 24 diagnosis decisions (2026-07-11):
+
+- 16-cell matrix confirms two distinct root causes, not one: Router Cache reuse (5 cells, zero RSC re-fetch) vs. client-shell `useState(initialProps)` non-resync (4 cells, RSC re-fetch happens but the shell never adopts it). Phase 26's fix must address both mechanisms.
+- The primary regression scenario (real UI grade session → Home → Study via `<Link>`) is currently Fresh, not stale — Phase 26 must not touch that path; only `/habits`'s post-mutation-return path is a confirmed-reproducing bug via that scenario shape.
+- CR-01 (code review): the `back-forward` cell's `about:blank` recovery `page.goto()` was flagged as a possible evidence-corruption risk for 4 verdicts (`/`, `/study`, `/cards`, `/habits`). Re-verified during UAT via a 4th independent full script run — the recovery's own trigger check never fired for any of the 4 cells; verdicts confirmed accurate, no reclassification needed.
 
 ### Pending Todos
 
@@ -97,14 +103,16 @@ Carried forward, informational only:
 | feature | Card retirement/mastery flag (MASTERY-01) | Deferred to v2 |
 | quality | 거/게 romanization-flagged fronts (post-audit cron arrivals) | Open for future audit/fix pass |
 | e2e-v2 | Cards CRUD spec (E2E-08), stubbed sync-route coverage (E2E-09), WebKit project (E2E-10) | Deferred to v2 |
+| hardening | `scripts/diagnose-freshness.mts` REVIEW.md warnings (WR-01 deny-list DB guard, WR-02 diagnostic server binds all interfaces, WR-03 no WAL sidecar cleanup) | Open — throwaway script, low severity, logged in 24-SECURITY.md; worth carrying into Phase 25's real E2E harness as defense-in-depth |
+| debt | Pre-existing `tsc --noEmit` errors in `tests/study-cards.test.ts:132,169` (implicit `any`), predates Phase 24 | Open — unrelated to Phase 24 scope |
 
 ## Session Continuity
 
-Last session: 2026-07-11T05:39:50.429Z
-Stopped at: Phase 24 context gathered
-Resume file: .planning/phases/24-freshness-diagnosis-spike/24-CONTEXT.md
+Last session: 2026-07-11
+Stopped at: Phase 24 complete, ready to plan Phase 25
+Resume file: None
 
 ## Operator Next Steps
 
-- Review the v1.6 roadmap draft (Phases 24–27) below / in `.planning/ROADMAP.md`.
-- On approval, plan Phase 24 with `/gsd-plan-phase 24`.
+- `/gsd-discuss-phase 25` — gather context and clarify approach for the E2E Test Infrastructure & Baselines phase (no 25-CONTEXT.md yet).
+- Or `/gsd-plan-phase 25` — skip discussion, plan directly.
