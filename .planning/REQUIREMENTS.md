@@ -9,7 +9,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Freshness
 
-- [ ] **FRESH-01**: A diagnosis spike identifies, per route (`/`, `/cards`, `/study`, `/habits`), exactly which navigation paths serve stale data on a production build (`next build && next start`), distinguishing back/forward Router Cache reuse from client-shell state non-resync
+- [x] **FRESH-01**: A diagnosis spike identifies, per route (`/`, `/cards`, `/study`, `/habits`), exactly which navigation paths serve stale data on a production build (`next build && next start`), distinguishing back/forward Router Cache reuse from client-shell state non-resync
 - [ ] **FRESH-02**: Client shells (`HomeClient`, `CardsClient`, `StudyClient`, `HabitsClient`) re-sync to fresh server props delivered by `router.refresh()`, gated so an active study session or open editor sheet is never clobbered mid-interaction
 - [ ] **FRESH-03**: Returning to the Home/Habits/Cards pages after completing a study session reflects the updated stats/due-count/cards immediately, without a manual reload
 - [ ] **FRESH-04**: Browser back/forward navigation to a previously-visited route shows fresh data, not a cached stale RSC payload
@@ -67,7 +67,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FRESH-01 | Phase 24 | Pending |
+| FRESH-01 | Phase 24 | Complete |
 | FRESH-02 | Phase 26 | Pending |
 | FRESH-03 | Phase 26 | Pending |
 | FRESH-04 | Phase 26 | Pending |

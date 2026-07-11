@@ -49,3 +49,9 @@ next-env.d.ts
 
 # GSD planning tool research cache (ephemeral, not meaningful history)
 .planning/**/.cache/
+
+# Phase 24 diagnosis script scratch dir: isolated test DB + WAL/SHM companion
+# files (from the WAL journal-mode pragma) + raw run logs. *.db above already
+# covers the .db file itself, but not -shm/-wal or the .log — ignore the
+# whole scratch dir so no diagnosis-run artifact is ever accidentally staged.
+/scripts/.tmp/
