@@ -90,7 +90,7 @@ See `.planning/milestones/v1.5-ROADMAP.md` for full phase details.
 
 **Build-order invariant (research):** diagnosis (Phase 24) and the E2E harness + red freshness-regression spec (Phase 25) must both exist *before* the fix (Phase 26), so the fix is validated by a red→green spec and guarded by a first-load baseline — never shipped by feel. Coverage + perf (Phase 27) is a non-blocking follow-on.
 
-- [ ] **Phase 24: Freshness Diagnosis Spike** - Empirically identify, per route, which navigation paths serve stale data on a production build
+- [x] **Phase 24: Freshness Diagnosis Spike** - Empirically identify, per route, which navigation paths serve stale data on a production build (completed 2026-07-11)
 - [ ] **Phase 25: E2E Test Infrastructure & Baselines** - Playwright harness (isolated DB, auth setup), smoke + first-load baseline, and a red freshness-regression spec
 - [ ] **Phase 26: Freshness Fix** - Gated client-shell prop re-sync + resume/mutation-boundary refresh; turn the regression spec green without regressing first-load speed
 - [ ] **Phase 27: E2E Coverage & Performance Validation** - Study grade-flow spec, generous page/API timing budgets, and a documented Playwright MCP workflow
@@ -107,7 +107,7 @@ See `.planning/milestones/v1.5-ROADMAP.md` for full phase details.
   3. The diagnosis is captured as a concrete, reproducible scenario (steps + expected-vs-actual) that Phase 25's freshness-regression spec can encode directly.
   4. Paths already fresh (e.g. plain `<Link>` under `staleTimes.dynamic = 0`) are explicitly confirmed non-stale, so the fix stays surgical and leaves them untouched.
 
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans complete
 
 Plans:
 **Wave 1**
@@ -116,7 +116,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 24-02-PLAN.md — Empirical RSC-signature confirmation, 16-cell route×path matrix run with binary root-cause classification, and 24-DIAGNOSIS.md authoring
+- [x] 24-02-PLAN.md — Empirical RSC-signature confirmation, 16-cell route×path matrix run with binary root-cause classification, and 24-DIAGNOSIS.md authoring
 
 #### Phase 25: E2E Test Infrastructure & Baselines
 
@@ -193,7 +193,7 @@ Phases execute in numeric order: 1 → 2 → ... → 23 (all complete) → 24 �
 | 21. Card Database Quality Audit | v1.5 | 2/2 | Complete | 2026-07-07 |
 | 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 3/3 | Complete | 2026-07-10 |
 | 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete | 2026-07-10 |
-| 24. Freshness Diagnosis Spike | v1.6 | 1/2 | In Progress|  |
+| 24. Freshness Diagnosis Spike | v1.6 | 2/2 | Complete   | 2026-07-11 |
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 0/TBD | Not started | - |
 | 26. Freshness Fix | v1.6 | 0/TBD | Not started | - |
 | 27. E2E Coverage & Performance Validation | v1.6 | 0/TBD | Not started | - |
