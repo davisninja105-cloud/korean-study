@@ -55,3 +55,12 @@ next-env.d.ts
 # covers the .db file itself, but not -shm/-wal or the .log — ignore the
 # whole scratch dir so no diagnosis-run artifact is ever accidentally staged.
 /scripts/.tmp/
+
+# Phase 25 Playwright E2E harness: reusable storageState (a real session
+# cookie), Playwright's own report/artifact dirs, and the isolated E2E test
+# DB's scratch dir (*.db above already covers the .db file itself, but not
+# its -wal/-shm sidecars).
+/playwright/.auth/
+/playwright-report/
+/test-results/
+/e2e/.tmp/
