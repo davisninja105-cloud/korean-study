@@ -104,7 +104,11 @@ See `.planning/milestones/v1.5-ROADMAP.md` for full phase details.
   2. Every stale path is attributed to a root cause — back/forward Router Cache reuse vs. client-shell `useState(initialProps)` non-resync — not left ambiguous.
   3. The diagnosis is captured as a concrete, reproducible scenario (steps + expected-vs-actual) that Phase 25's freshness-regression spec can encode directly.
   4. Paths already fresh (e.g. plain `<Link>` under `staleTimes.dynamic = 0`) are explicitly confirmed non-stale, so the fix stays surgical and leaves them untouched.
-**Plans**: TBD
+**Plans**: 2 plans
+
+Plans:
+- [ ] 24-01-PLAN.md — Playwright install (blocking [SUS] legitimacy checkpoint) + diagnosis-script plumbing: libsql:// hard-fail guard, isolated file: DB seed, prod-server orchestration, ks_auth cookie injection, end-to-end smoke check
+- [ ] 24-02-PLAN.md — Empirical RSC-signature confirmation, 16-cell route×path matrix run with binary root-cause classification, and 24-DIAGNOSIS.md authoring
 
 #### Phase 25: E2E Test Infrastructure & Baselines
 **Goal**: Stand up an isolated, authenticated Playwright harness that boots a production build, with a smoke/first-load baseline as a performance guard rail and a red freshness-regression spec encoding the Phase 24 diagnosis — the guard rails that must exist before any fix lands.
