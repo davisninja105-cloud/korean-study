@@ -9,6 +9,8 @@ import type { PrismaClient } from '../app/generated/prisma/client'
 import { normalizeFront } from '../lib/card-key'
 import { habitDateStr, shiftDate, DEFAULT_DAY_START_HOUR } from '../lib/habit'
 import { TEST_DB_URL } from './helpers/test-db'
+import { execFileSync } from 'node:child_process'
+import path from 'node:path'
 
 let prismaSingleton: PrismaClient | null = null
 
@@ -19,6 +21,11 @@ let prismaSingleton: PrismaClient | null = null
  * a static top-of-file import would be hoisted by ESM and would read
  * process.env before this override runs, risking picking up an ambient
  * DATABASE_URL from the invoking shell instead of the isolated test DB.
+ *
+ * Only safe to call from a `tsx`-run process (e.g. e2e/global-setup.ts via
+ * e2e/run-global-setup.ts, or e2e/run-reset-baseline.ts) — see
+ * resetToBaseline()'s doc comment below for why calling this directly from
+ * inside a Playwright test/worker process fails.
  */
 export async function getTestPrisma(): Promise<PrismaClient> {
   if (prismaSingleton) return prismaSingleton
@@ -184,11 +191,12 @@ export async function seedFixture(): Promise<void> {
 
 /**
  * Deletes all fixture rows in FK-safe order (children before parents), then
- * re-seeds. Called from test.beforeEach in Plans 02/03 so every spec starts
- * from the same baseline regardless of file ordering or prior mutations.
- * Leaves the Setting table alone (no fixture rows live there).
+ * re-seeds. Leaves the Setting table alone (no fixture rows live there).
+ *
+ * Only safe to call from a `tsx`-run process — see resetToBaseline()'s doc
+ * comment below for why. e2e/run-reset-baseline.ts is the sole caller.
  */
-export async function resetToBaseline(): Promise<void> {
+export async function resetToBaselineDirect(): Promise<void> {
   const prisma = await getTestPrisma()
   await prisma.cardDependency.deleteMany()
   await prisma.sentence.deleteMany()
@@ -198,4 +206,36 @@ export async function resetToBaseline(): Promise<void> {
   await prisma.lesson.deleteMany()
   await prisma.studyDay.deleteMany()
   await seedFixture()
+}
+
+/**
+ * Resets the isolated E2E test DB to the D-13 baseline fixture. Called from
+ * test.beforeAll/beforeEach in Plans 02/03 spec files so every spec starts
+ * from the same baseline regardless of file ordering or prior mutations.
+ *
+ * IMPLEMENTATION NOTE (Rule 3 blocking-issue fix, same class of bug as
+ * 25-01-SUMMARY's `globalSetup` finding, now hit from spec files instead of
+ * Playwright's globalSetup hook): calling resetToBaselineDirect() in-process
+ * from inside a Playwright test/worker fails with `SyntaxError: Cannot use
+ * 'import.meta' outside a module`. Root cause — a dynamic
+ * `import('../lib/prisma')` from a Playwright worker is handed off to
+ * Node's native ESM-to-CJS translator bridge
+ * (`node:internal/modules/esm/translators`), which `require()`s the target
+ * as CommonJS; `lib/prisma.ts` transitively imports the Prisma-generated
+ * `app/generated/prisma/client.ts`, which is an ESM-only module using
+ * `import.meta` — invalid syntax once forced through the CJS bridge.
+ * Confirmed via a standalone repro (bare `await import('../lib/prisma')`
+ * inside a Playwright test) before applying this fix. `tsx` resolves this
+ * correctly (proven by e2e/run-global-setup.ts's identical pattern), so
+ * this function spawns a `tsx`-run subprocess (e2e/run-reset-baseline.ts)
+ * that performs the actual Prisma work, rather than running it in-process.
+ * `lib/prisma.ts` itself is untouched — this is a test-harness-only shim,
+ * not a production code change.
+ */
+export async function resetToBaseline(): Promise<void> {
+  const tsxBin = path.resolve(process.cwd(), 'node_modules', '.bin', 'tsx')
+  execFileSync(tsxBin, ['--tsconfig', './tsconfig.json', 'e2e/run-reset-baseline.ts'], {
+    stdio: 'inherit',
+    env: { ...process.env, DATABASE_URL: TEST_DB_URL },
+  })
 }
