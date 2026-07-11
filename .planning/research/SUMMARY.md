@@ -1,169 +1,137 @@
 # Project Research Summary
 
-**Project:** Korean Study — v1.5 Extraction Quality & Reliability
-**Domain:** LLM-powered extraction quality auditing & validation over an identity-anchored SRS database
-**Researched:** 2026-07-05 to 2026-07-06
-**Confidence:** HIGH across all areas
+**Project:** Korean Study — v1.6 Freshness, Performance & E2E Testing
+**Domain:** Client-side cache invalidation + E2E test infrastructure for a single-tenant Next.js 16 RSC-hydrated hobby app
+**Researched:** 2026-07-10
+**Confidence:** MEDIUM-HIGH (HIGH for architecture patterns grounded in this codebase; MEDIUM-HIGH for Next.js/Playwright behavior, cross-verified against official docs)
 
 ## Executive Summary
 
-v1.5 is a findings-first, pyramid-shaped quality milestone: audit the existing ~511-card deck to surface real extraction errors, review/improve the prompt with evidence in hand, then apply targeted fixes. The stack needs exactly one addition (`zod`, for native structured outputs); the installed Anthropic SDK (0.80.0) already has full support at GA. The real work is the audit-and-fix pipeline, which is designed from the start to avoid the classic mistakes of this kind of retrofit: it treats deterministic checks as the primary signal and reuses production helpers rather than reimplementing them.
+The v1.6 milestone targets stale-data-after-back-navigation, a regression whose *prior* fix attempt destroyed first-load performance ("all tabs take forever"). Research conclusively identifies this as a **client-side Router Cache problem, not a server caching issue** — every main page already declares `export const dynamic = 'force-dynamic'`, so the server render is always fresh. The correct fix is **mutation-boundary invalidation via `router.refresh()` plus gated prop-sync in the four client shells** — a surgical intervention that preserves the v1.2 RSC/DTO performance architecture rather than fighting it.
 
-The highest-leverage stack change is native structured outputs (`output_config.format` + `zodOutputFormat`), which eliminates malformed-JSON parsing failures at generation time. The existing truncation-salvage parser stays as a fallback for genuine mid-stream cutoffs only — no downstream code changes required beyond adjusting the JSON-depth check for the new wrapper object.
+The app already has all required freshness infrastructure — `next@16.2.1` ships all three invalidation APIs (`router.refresh()`, `revalidatePath` from a Server Action, and the Client Router Cache itself) with zero new production dependencies. The only new dependencies are **dev-only E2E infrastructure**: `@playwright/test` (`^1.61.1`) and, optionally, `@playwright/mcp` for interactive Claude Code browser driving. Critically, this milestone should stand up Playwright infrastructure and a red "freshness" spec *before* the fix lands — the prior regression went undetected precisely because it shipped with no automated regression baseline to catch the first-paint slowdown.
 
-The architectural backbone is a three-stage pipeline (read-only audit → evidence-driven prompt review → dry-run-gated fixes) with one load-bearing pattern: all audit checks live in a pure `lib/audit-checks.ts` module used for both (1) auditing already-persisted cards and (2) validating prompt changes against a small sample. This means "did the prompt fix actually reduce this error class?" is answerable by diffing check counts — no eyeballing required, no full corpus re-run needed.
-
-**Critical risks, each with a concrete mitigation:**
-- Delete-and-recreate "fixes" silently wipe FSRS state and `ReviewLog` history via cascades — mitigation: mutate cards in place by `id` (`prisma.card.update`), never delete+create.
-- Updating the prompt does not repair existing cards — `contentHash`-based skip means already-synced lessons are never re-extracted, and even a forced re-extract only refreshes a few fields. Existing-card fixes need dedicated dry-run scripts, not a re-sync.
-- Prompt phrasing changes can create undetected near-duplicates that slip past the exact-match `normalizedFront` dedup — mitigate with a before/after fuzzy-key diff (reusing `find-duplicates.mjs`'s key).
-- Prompt changes to `components[]` phrasing can interact with `filterComponents`'s deck-lookup filter in unexpected ways — validate with a before/after edge-count metric, not just spot checks.
-- A naive "auto-relink when `remaining === 0`" trigger is the wrong condition (also fires when a sync legitimately produced zero new lessons, or when a lesson failed) — the correct trigger is `failed === 0 && newLessons > 0`.
+**Key risk:** repeating the prior regression by skipping empirical diagnosis of which navigation paths are actually stale (Pitfall 1), or by missing that `router.refresh()` re-renders client shells *without remounting* them — so any shell doing `useState(initialProps)` will silently ignore the refreshed props unless each shell adopts an explicit, gated prop-sync strategy (Pitfall 2). Both are avoidable if the plan is explicit about diagnosis-first and per-shell sync strategy before implementation begins.
 
 ## Key Findings
 
 ### Recommended Stack
 
-One new dependency: `zod` (`^4.4.3`, the Anthropic SDK's declared peer-dependency range `^3.25.0 || ^4.0.0`). The installed `@anthropic-ai/sdk@0.80.0` already ships `output_config.format`, `zodOutputFormat` (`helpers/zod`), and `parsed_output` on both the plain and streaming (`messages.stream(...).finalMessage()`) response shapes — verified directly against the installed package, not just documentation. This lets `lib/extract-cards.ts` define the card schema in zod and read `message.parsed_output` on the happy path, eliminating fence-stripping/preamble/malformed-JSON failures at generation time.
+No new production dependencies are required for the freshness fix — every mechanism needed already ships in the installed `next@16.2.1`. The staleness is a *client-side Router Cache* behavior that `staleTimes` config cannot address (explicitly documented as exempt for back/forward navigation). For E2E, two new **dev-only** dependencies cover the full need.
 
-**Core changes:**
-- `zod` (^4.4.3): defines the wire schema; also hardens `isValidExtractedCard`-style guards via `safeParse` on the salvage fallback path — new dependency
-- `output_config.format` + `zodOutputFormat`: native structured output, replaces "ask for JSON in text, regex/salvage-parse it" — already available in the installed SDK, no upgrade needed
-- Truncation-salvage logic stays, demoted to a true-truncation-only fallback; the `{ cards: [...] }` wrapper shifts `findLastTopLevelCardBoundary`'s depth check from 1 to 2
-- `max_tokens` 32000 → 64000 (headroom to reduce truncation at the source)
-- Prompt caching: restructure prompt stable-rules-first for future cache-breakpoint readiness, but don't count on hits per-request (real payoff is mainly in `local-resync.mts` bulk runs)
-- Not adding: LangChain, vector DBs, queues, ajv/jsonrepair, eval platforms, a second-pass verifier LLM — all explicitly out of scope for a single-tenant hobby app
+**Core technologies:**
+- `router.refresh()` (built into `next@16.2.1`) — re-fetches the current route's RSC payload and merges without remounting; use at same-route mutation boundaries (e.g. after a study session ends)
+- `revalidatePath('/', 'layout')` called from a **Server Action** (not a Route Handler) — purges the entire Client Router Cache including back/forward entries; Route Handler calls to `revalidatePath` do NOT affect the client cache, a documented trap this app must avoid since it mutates exclusively via Route Handlers today
+- `@playwright/test` (`^1.61.1`) — E2E test runner; `webServer` config can boot `next build && next start` automatically and override `DATABASE_URL` to an isolated `file:` SQLite DB, keeping E2E runs off production Turso
+- `@playwright/mcp` (`0.0.78`, optional, run via `npx`) — Microsoft's official MCP server giving Claude Code interactive accessibility-tree browser control against the running dev server, complementing the deterministic headless suite
 
 ### Expected Features
 
-**Must have (table stakes for this audit):**
-- Deterministic, read-only audit script over the existing DB (blank-safety violations, zero-sentence cards, romanization leakage, distractor-count check, `normalizedFront` self-consistency, near-dup fuzzy scan)
-- Blank-safety and zero-sentence enforcement moved from prompt-only into `parseExtractionResponse` itself — currently `parseExtractionResponse` filters sentences only on `sentenceMatch().found`, never consulting the `safeToBlank` flag that already exists in `lib/sentence-match.ts`. This is a verified, real gap: the "first sentence must be blank-safe" guarantee is not code-enforced today.
-- Evidence-driven prompt review (concrete failure examples from the audit inform prompt edits, not guesswork)
-- Dry-run-by-default fix scripts, following the `retro-filter-cleanup.mts` precedent exactly (`--apply` to mutate)
+**Must have (table stakes for v1.6):**
+- Diagnosis spike reproducing staleness against a production build (`next build && next start`, never `next dev` — dev mode never caches)
+- Prop→state re-sync in all four `*Client.tsx` shells, gated so an active study session or open editor sheet is never clobbered mid-interaction
+- `router.refresh()` fired at real mutation boundaries only (session-end, sync-completion, card CRUD) — never per-grade, to avoid reintroducing the v1.2-eliminated grade-button jitter
+- Playwright E2E infrastructure: `playwright.config.ts`, prod-mode `webServer`, auth `setup` project (one API POST to `/api/login` → `storageState`), isolated `file:./e2e.db` test DB
+- Smoke spec + study-flow spec + a dedicated freshness-regression spec that encodes the bug as a failing test until the fix lands
 
-**Should have (differentiators, worth it if audit volume justifies):**
-- Sampled LLM re-grade pass for error classes deterministic checks can't catch (type miscategorization, wrong-but-plausible translations, components[] that are real relationships but semantically wrong)
-- Source-traceability check (sentence text actually appears in the source `Lesson.rawContent`) — blocked today because `emphasized[]` spans aren't persisted, so this needs either a doc re-fetch or a small schema addition
-- A small "golden lesson" regression fixture to protect prompt changes going forward
+**Should have (v1.6.x):** Cards CRUD E2E spec, informational performance timings (behavioral proxies, generous budgets — not strict CI wall-clock gates), an MCP-driven exploratory workflow documented for future use.
 
-**Defer / anti-features:**
-- Self-consistency double-extraction (2× Opus cost, doesn't fit the Vercel Hobby budget)
-- In-request LLM-as-judge scoring, or any auto-applied LLM-suggested fix
-- A review/admin UI — no admin surface exists today; a dated markdown report in `.planning/audits/` is the right scope
-- Full wipe-and-re-extract of the corpus — destroys FSRS state and `ReviewLog` identity
+**Defer (v2+):** WebKit/Firefox projects (Chromium-only is sufficient for a personal app), visual regression testing, cross-browser matrix, E2E cloud services (no CI budget need for a single-tenant hobby app).
 
 ### Architecture Approach
 
-A three-stage pipeline, matching the milestone's already-decided sequencing (audit first, then prompt, then bug fixes): (1) a pure `lib/audit-checks.ts` module (no Prisma, unit-testable, importing the *real* production helpers — `sentenceMatch`, `splitParticle`, `normalizeFront`, `filterComponents` — rather than reimplementing them, to avoid the drift already seen once in `dry-run-filter.mjs`) driven by a thin read-only `scripts/audit-cards.mts` (cloning the `retro-filter-cleanup.mts` env-loading pattern) that writes a dated markdown report to `.planning/audits/`; (2) a human-driven prompt review pass against `lib/extract-cards.ts`, informed directly by that report, validated by a new non-persisting `scripts/prompt-eval.mts` that re-runs `extractCardsFromNotes()` against a handful of real `Lesson.rawContent` rows and diffs audit-check counts against a saved baseline — critically, `local-resync.mts` cannot be used for this validation because it skips every already-synced lesson by `contentHash`; (3) targeted, dry-run-gated fix scripts (or direct `CardEditor` edits for one-off semantic cases) that mutate existing cards in place by id.
+Two complementary mechanisms close the gap without touching the server-fetch architecture: a lightweight **FreshnessWatcher** component (mirrors the existing `ThemeWatcher` pattern) that listens for `pageshow` (with `event.persisted`) and `visibilitychange` and calls `router.refresh()` on resume/back-forward restore; and **gated render-phase prop-sync** inside each client shell — `HomeClient`/`HabitsClient` can re-derive from fresh props directly, while `CardsClient` only re-syncs when no editor sheet is open and `StudyClient` only re-syncs when `phase === 'select-mode'` (never mid-session).
 
 **Major components:**
-1. `lib/audit-checks.ts` — pure, unit-tested deterministic check catalog (~18 checks), shared by both the audit driver and the prompt-validation harness
-2. `scripts/audit-cards.mts` — read-only driver, writes `.planning/audits/card-audit-<date>.md`
-3. `scripts/prompt-eval.mts` — non-persisting prompt-change validator (baseline vs. after, on a sample of lessons)
-4. Targeted fix scripts (dry-run/`--apply`, cloning the Phase 16 `retro-filter-cleanup.mts` contract) for any error class large enough to script; `CardEditor` for one-offs
+1. `components/FreshnessWatcher.tsx` (new) — mounted once in `app/layout.tsx`, triggers `router.refresh()` on back/forward restore and tab-resume
+2. Gated prop-sync logic in the four existing `*Client.tsx` shells (modified, not rewritten) — reconciles refreshed server props into client state without clobbering in-flight interaction
+3. `playwright.config.ts` + `e2e/` directory (new) — webServer lifecycle, auth setup project, seed script, specs
+4. Mutation call sites (study session end, sync completion, card CRUD) — each fires `router.refresh()` at the right boundary, not on every write
 
 ### Critical Pitfalls
 
-1. **Delete-and-recreate cascades wipe FSRS state and review history** — `Card.id` cascades into `CardReview`, `ReviewLog`, `Sentence`, and both directions of `CardDependency`; no error is raised, the learner just silently loses scheduling state. Avoid: hard rule for the whole milestone — fixes always `prisma.card.update` by id, never delete+create.
-2. **Updating the prompt does not repair existing cards** — `contentHash`-based skip means already-synced lessons are never re-extracted, and even a forced re-extract only refreshes `back`/`notes`/`distractors` (sentences only backfill when a card currently has zero; `type` never refreshes). Avoid: plan explicit fix scripts for existing rows; treat the new prompt as prospective-only.
-3. **Prompt phrasing drift creates undetected near-duplicates** — a rephrased front can miss the exact `normalizedFront` unique constraint entirely. Avoid: run the existing fuzzy-key logic (`find-duplicates.mjs`) before/after any prompt change that touches front-phrasing conventions.
-4. **`components[]` phrasing changes can interact with `filterComponents` in surprising ways** — a prompt change that alters how prerequisite lemmas are phrased changes what the deck-lookup filter resolves. Avoid: capture an edge-count metric before and after any prompt change touching `components[]`.
-5. **A naive `remaining === 0` auto-relink trigger is wrong** — it also fires on a sync that produced zero new lessons or that had a failure. Avoid: gate on `failed === 0 && newLessons > 0`, and keep the relink idempotent so it's safe to run more than once.
+1. **Diagnosing the wrong cache layer before treating it** — reaching for `force-dynamic` or a Route-Handler `revalidatePath` call feels like progress but doesn't fix client-side back/forward staleness and does slow every request. Avoid by writing the diagnosis as a failing Playwright spec against a *production build* first, before touching any fix code.
+2. **`useState(initialProps)` shells silently ignoring refreshed props** — `router.refresh()` re-renders without remounting, so a shell that only reads props once on mount never sees the update. Avoid by finalizing an explicit, documented prop-sync strategy per shell in the plan before implementation.
+3. **Refreshing at the wrong moment** — per-grade or mid-session refreshes reintroduce jitter and can race the optimistic FSRS queue. Avoid by refreshing only at session/sync completion boundaries, never inside the active study loop.
+4. **Regressing first-paint performance (the exact prior incident)** — any fix that reintroduces client-side fetch-on-mount or forces broader dynamic rendering undoes the entire v1.2 win. Avoid by having the E2E baseline (first-load content assertion + skeleton-only client nav) in place *before* the fix lands, so a regression is caught mechanically, not by feel.
+5. **E2E tests running against production Turso** — CRUD/study specs would corrupt real FSRS history; sync specs would hit real Claude/Google APIs. Avoid with a host guard in Playwright global setup that fails fast on any `libsql://` URL, and inject `DATABASE_URL=file:./e2e.db` via `webServer.env`.
 
 ## Implications for Roadmap
 
-Research suggests a 9-phase structure in strict dependency order (matching the milestone's already-agreed sequencing: DB audit first, then prompt, then the two bug fixes):
+Suggested five-phase structure, ordered by hard dependencies (diagnosis and E2E infrastructure must exist before the fix can be built and validated without repeating the prior regression):
 
-### Phase 1: Structured Outputs Foundation
-**Rationale:** Unblocks reliable extraction before auditing off of it; independent of the audit itself.
-**Delivers:** `zod` added, `lib/extract-cards.ts` wired to `output_config.format`/`zodOutputFormat`, `max_tokens` raised, salvage-parser depth check adjusted for the new wrapper shape.
-**Uses:** Anthropic SDK 0.80.0 native structured outputs (already installed).
-**Avoids:** No new pitfall — self-contained.
+### Phase 1: Diagnosis Spike
+**Rationale:** The prior fix attempt failed because nobody empirically confirmed which navigation paths were actually stale before choosing a mechanism. Research strongly suspects back/forward restore and PWA resume, not plain `<Link>` navigation (already fresh via `staleTimes.dynamic = 0`), but this must be verified against a real production build, not assumed.
+**Delivers:** A written diagnosis of exactly which paths are stale and why, encoded as a failing test scenario.
+**Addresses:** The root-cause requirement underlying the whole milestone.
+**Avoids:** Pitfall 1 (treating the wrong cache layer).
 
-### Phase 2: Audit Checks Module
-**Rationale:** The check catalog must exist and be trustworthy (unit-tested against production helpers) before either the audit driver or the prompt-validation harness can use it.
-**Delivers:** Pure `lib/audit-checks.ts` (~18 deterministic checks) with full Vitest coverage.
-**Implements:** Shared-checks architecture component.
+### Phase 2: E2E Infrastructure
+**Rationale:** Needs to exist before the fix so the fix can be validated by a real regression test, and so the first-load performance baseline is protected mechanically rather than by feel.
+**Delivers:** `playwright.config.ts`, prod-mode `webServer`, auth setup project, isolated `file:./e2e.db` test DB with host guard, Vitest/Playwright test-discovery separation, a passing smoke spec.
+**Uses:** `@playwright/test`, Chromium only.
+**Implements:** The `e2e/` directory and seed script.
 
-### Phase 3: Audit Driver (Read-Only)
-**Rationale:** Produces the evidence that drives every subsequent phase — the critical deliverable of the milestone.
-**Delivers:** `scripts/audit-cards.mts` → `.planning/audits/card-audit-<date>.md` report against the live ~511-card deck.
-**Addresses:** Deterministic MVP feature set from FEATURES.md.
+### Phase 3: Freshness Fix
+**Rationale:** Only attempted once diagnosis (Phase 1) and a validating test harness (Phase 2) exist, so the fix can't silently regress performance again.
+**Delivers:** `FreshnessWatcher` component + per-shell gated prop-sync + `router.refresh()` calls at the correct mutation boundaries. Phase 2's freshness-regression spec turns from red to green; the first-load baseline spec stays green throughout.
+**Implements:** The architecture's two-part invalidation approach.
 
-### Phase 4: Parse-Path Fix (Blank-Safety Enforcement)
-**Rationale:** Independent of the audit findings; a real, already-identified structural gap (`safeToBlank` never consulted in `parseExtractionResponse`) that can be fixed in parallel with Phases 2–3.
-**Delivers:** `parseExtractionResponse` structurally enforces blank-safety and zero-sentence rejection, not just prompt instruction.
-**Avoids:** Pitfall of relying on prompt-only guarantees for something FSRS/study-mode correctness depends on.
+### Phase 4: E2E Coverage Expansion
+**Rationale:** With infrastructure and the fix both proven, broaden coverage to the other explicitly-requested flows.
+**Delivers:** Cards CRUD spec, full study-session flow spec, trace-on-failure debugging docs.
 
-### Phase 5: Findings-Driven Prompt Review
-**Rationale:** Requires Phase 3's report as concrete input — this is the "review the prompt against current DB findings" step the milestone scoped first.
-**Delivers:** Updated `lib/extract-cards.ts` prompt instructions, each edit annotated against the specific audit finding it addresses.
-
-### Phase 6: Prompt Validation
-**Rationale:** Must follow Phase 5 directly (validate before trusting); depends on Phase 2's shared checks module.
-**Delivers:** `scripts/prompt-eval.mts` — runs the updated prompt against a sample of real lessons, diffs audit-check counts against baseline.
-**Avoids:** Pitfall of assuming re-sync validates the prompt (it structurally can't, per Pitfall 2).
-
-### Phase 7: Corpus Fixes
-**Rationale:** Only after the prompt is validated does it make sense to spend effort fixing existing rows (otherwise fixes and new prompt could disagree).
-**Delivers:** Dry-run-gated fix scripts (or direct `CardEditor` edits) for whichever error classes the audit found at meaningful volume, mutating cards in place by id.
-**Avoids:** Pitfall 1 (delete-and-recreate) and Pitfall 3 (undetected near-dupes) explicitly.
-
-### Phase 8: Auto-Relink Forward-Reference Edges (Bug-Fix-2)
-**Rationale:** Independent of the audit/prompt work; can land any time after Phase 1.
-**Delivers:** Sync completion wires an automatic relink pass gated on `failed === 0 && newLessons > 0`, replacing the manual `relink-dependencies.mjs` invocation.
-**Avoids:** The wrong-trigger pitfall identified above.
-
-### Phase 9: Known-Lemmas Degradation Logging (Bug-Fix-1)
-**Rationale:** Fully independent, smallest scope — sequenced last since it's unrelated to everything else.
-**Delivers:** `lib/study-cards.ts` logs a `[study-cards]`-prefixed reason when the known-lemmas query degrades to an empty Set, preserving the existing `Promise.allSettled` graceful-degradation contract.
+### Phase 5: Performance & MCP Polish
+**Rationale:** Non-blocking follow-on once functional correctness is locked in.
+**Delivers:** Informational performance timings (behavioral proxies, generous budgets), `@playwright/mcp` workflow documentation for future agent-driven exploratory QA.
 
 ### Phase Ordering Rationale
 
-- Stack (Phase 1) is foundational and unblocks trustworthy future extraction, but doesn't block auditing the *existing* deck — it could run in parallel with Phase 2 if desired.
-- Audit (2–3) must precede prompt review (5) because the milestone is explicitly findings-first — this ordering was already decided in the milestone summary.
-- Prompt review and validation (5–6) are strictly serial: validation depends on having a prompt to validate.
-- Corpus fixes (7) come after validated prompt changes so fixes don't fight a still-changing prompt.
-- The two bug fixes (8–9) are orthogonal to the audit/prompt track and to each other — sequenced last only because they're independent, not because they're less important.
-- Phase 4 (parse-path fix) can run in parallel with Phases 2–3 since it touches a different code path.
+- Diagnosis before fix: prevents repeating the exact regression this milestone exists to fix.
+- E2E infrastructure before the fix (not after): the freshness-regression spec needs to exist as a red test the fix turns green, and the first-load performance spec needs to exist as a guard rail the fix must not break.
+- Coverage expansion and perf polish are explicitly non-blocking follow-ons — they don't gate the core deliverable.
 
 ### Research Flags
 
-Phases with standard, fully-specified patterns (no additional research-phase needed):
-- **All 9 phases** — stack, architecture, and pitfalls are fully specified by this research; no phase surfaced a need for deeper domain research during planning.
+Phases likely needing deeper research/verification during planning:
+- **Phase 1 (Diagnosis):** Requires empirical verification against a real production build — which stale paths actually exist (back/forward vs. PWA resume vs. something else) can only be confirmed by testing, not inferred from docs alone.
+- **Phase 3 (Fix):** The per-shell prop-sync strategy (which of the four shells need what gating condition) must be finalized explicitly in the plan before coding — this is the highest-risk implementation detail in the milestone.
+
+Phases with standard, well-documented patterns (skip research-phase):
+- **Phase 2 (E2E Infrastructure):** Playwright setup with Next.js is officially documented and this repo already has a precedent pattern (Phase-22's dry-run/host-guard script) to model the test-DB host guard on.
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | SDK 0.80.0 structured-outputs support verified directly against the installed package, not just docs; zod peer-dep range confirmed via npm registry |
-| Features | HIGH | Error taxonomy grounded directly in source (`parseExtractionResponse`, `sentence-match.ts`); each error class maps to a real code location |
-| Architecture | HIGH | Three-stage pipeline and shared-checks pattern grounded in three existing script precedents read in full (`retro-filter-cleanup.mts`, `find-duplicates.mjs`, `dry-run-filter.mjs`) |
-| Pitfalls | HIGH | All pitfalls verified against direct reads of `lib/sync.ts`, `lib/extract-cards.ts`, `lib/card-key.ts`, `lib/filter-components.ts`, `lib/link-dependencies.ts`, `lib/study-cards.ts`, `prisma/schema.prisma` |
+| Stack | HIGH | Versions verified directly against the npm registry and installed `package.json`; all freshness APIs confirmed already present in `next@16.2.1` |
+| Features | MEDIUM-HIGH | Next.js and Playwright official docs cross-verified with no conflicts; some sources are practitioner blogs (LOW individually) but cross-consistent |
+| Architecture | HIGH | Patterns grounded directly in this codebase (`ThemeWatcher` precedent, existing shell structure, existing DTO boundary) |
+| Pitfalls | MEDIUM-HIGH | The core pitfall (regressing v1.2 performance) is grounded in a real, user-reported prior incident, not a hypothetical; cache-layer mechanics cross-checked against official docs and GitHub issues |
 
-**Overall confidence:** HIGH — codebase-grounded throughout, not inferred from generic LLM-pipeline advice.
+**Overall confidence:** MEDIUM-HIGH — ready to plan and execute. Two items need resolution during phase planning rather than now: the empirical diagnosis (Phase 1 output) and the finalized per-shell prop-sync strategy (Phase 3 input).
 
 ### Gaps to Address
 
-- Actual frequency of each audit error class is unknown until Phase 3's sweep runs — this determines whether a Phase 6-style sampled LLM re-grade pass is worth adding as a differentiator.
-- Audit rule precision should be calibrated against ~20 hand-checked cards before trusting the full corpus report.
-- Near-duplicate *merging* (surviving card absorbing FSRS history from a duplicate) is out of scripted scope for Phase 7 — if the audit finds a large near-dup cluster, that becomes its own phase-level decision during planning.
-- Whether `Lesson.rawContent` fidelity (whitespace/punctuation drift from the Google Docs export) supports reliable sentence-containment checking needs a quick empirical spot-check before committing to a source-traceability feature.
+- Which of the four routes actually exhibit staleness, and via which exact mechanism (back/forward cache vs. state non-resync vs. both) — resolved by Phase 1's diagnosis spike, not assumable up front.
+- Whether `StudyClient`'s existing lesson-range-filter re-fetch could double-fetch against a route-level `router.refresh()` — flag for the Phase 3 plan to check explicitly.
+- Whether the test DB seed should reuse `prisma/schema.prisma` DDL generation or a plain `prisma db push` against a `file:` URL — either is viable; decide during Phase 2 planning.
 
 ## Sources
 
-### Primary (HIGH confidence — direct codebase reads)
-- `lib/extract-cards.ts`, `lib/sentence-match.ts`, `lib/sync.ts`, `lib/card-key.ts`, `lib/filter-components.ts`, `lib/link-dependencies.ts`, `lib/study-cards.ts`, `prisma/schema.prisma`, `scripts/retro-filter-cleanup.mts`, `scripts/find-duplicates.mjs`, `scripts/dry-run-filter.mjs`, `scripts/local-resync.mts`, `app/api/cron/sync/route.ts`, `.planning/codebase/CONCERNS.md`
-- `node_modules/@anthropic-ai/sdk` (0.80.0) — direct inspection of `output_config`, `zodOutputFormat`, `parsed_output` type definitions
-- npm registry — `zod` version/peer-range verification (2026-07-05)
+### Primary (HIGH confidence)
+- Direct code inspection: `package.json`, `app/*/page.tsx` (confirms `force-dynamic` already present), `components/*Client.tsx` shells, `middleware.ts`, `next.config.ts`
+- npm registry direct query: `@playwright/test@1.61.1`, `@playwright/mcp@0.0.78`, `next@16.2.10` latest patch
 
 ### Secondary (MEDIUM confidence)
-- Anthropic API reference docs — structured outputs mechanics, prompt caching minimum-prefix behavior
+- Next.js official docs (v16.2.10): `staleTimes`, glossary (Client Cache / back-forward behavior), `useRouter`/`router.refresh`, `revalidatePath` (Server Action vs. Route Handler distinction), caching guide
+- Playwright official docs: `webServer`, authentication (`storageState`/setup projects), parallelism/worker isolation
+- `vercel/next.js` GitHub issues #69979, #52370/#54075, #43650/#44056 — real-world reports of the exact stale-after-navigation behavior and `router.refresh()` edge cases
+- Project memory: `.planning/PROJECT.md` (v1.2 RSC/DTO decisions, UX-01 optimistic grading), `CLAUDE.md` (Turso `file:` vs `libsql://` DDL constraint, dev-vs-build RSC testing gotcha, fire-and-forget review-save pattern)
 
-### Tertiary (LOW confidence — general pattern cross-checks only, not load-bearing)
-- Various public write-ups on LLM data-extraction error taxonomies and LLM-as-judge patterns (used only to confirm the error taxonomy is a recognized category, not to source any specific implementation decision)
+### Tertiary (LOW confidence)
+- Practitioner blogs/guides: Checkly (perf budgets/medians), Builder.io (Playwright MCP + Claude Code workflow), joulev.dev (Router Cache behavior explainer), various Next.js+Prisma E2E dev.to/Makerkit guides — individually low-tier but cross-consistent with each other and with the official docs above
 
 ---
-*Research completed: 2026-07-06*
+*Research completed: 2026-07-10*
 *Ready for roadmap: yes*

@@ -1,387 +1,298 @@
 # Architecture Research
 
-**Domain:** Card-quality audit + extraction-prompt review architecture for v1.5 "Extraction Quality & Reliability" (existing Next.js 16 / Prisma 7 + libSQL Korean-study app, ~511-card deck)
-**Researched:** 2026-07-05
-**Confidence:** HIGH (codebase-grounded; every integration point verified against the actual files: `scripts/retro-filter-cleanup.mts`, `scripts/find-duplicates.mjs`, `scripts/dry-run-filter.mjs`, `scripts/local-resync.mts`, `scripts/reextract-lesson.mjs`, `lib/extract-cards.ts`, `lib/filter-components.ts`, `lib/card-key.ts`, `lib/sentence-match.ts`, `lib/link-dependencies.ts`, `prisma/schema.prisma`)
+**Domain:** RSC freshness-on-navigation + Playwright E2E infrastructure for an existing Next.js 16 thin-RSC/DTO/Prisma app
+**Researched:** 2026-07-10
+**Confidence:** HIGH for codebase-grounded integration points (read directly from source); MEDIUM-HIGH for Next.js/Playwright behavior claims (verified against first-party docs — nextjs.org v16.2.10, playwright.dev)
 
-This file supersedes the 2026-07-02 ARCHITECTURE.md (v1.4 milestone — cron sync, ReviewLog, components filter; all shipped). It is scoped to the v1.5 audit-first pipeline: **DB audit → prompt review → validated fixes**.
+This file supersedes the 2026-07-05 ARCHITECTURE.md (v1.5 milestone — audit pipeline; all shipped). It is scoped to v1.6: **freshness-on-navigation fix + Playwright E2E harness**.
 
 ---
+
+## Context: What Already Exists (verified in source)
+
+Three facts from the actual codebase change the problem's shape:
+
+1. **Every main RSC page is already `export const dynamic = 'force-dynamic'`** (`app/page.tsx`, `app/study/page.tsx` — with comments explaining the build-time-snapshot bug it fixed). The *server* render is always fresh. Staleness is therefore a **client-side Router Cache / client-shell-state problem**, not a server caching problem.
+2. **Since Next.js 15, `staleTimes.dynamic` defaults to 0 seconds** — dynamic page segments are *not* reused on a normal `<Link>` navigation. A fresh tab-bar navigation to `/` or `/habits` should already hit the server. But per the official docs, `staleTimes` **"doesn't change back/forward caching behavior"** — back/forward navigation (browser back button, iOS swipe-back) always restores the cached RSC payload to preserve scroll position, regardless of config. This is the primary suspected staleness vector, plus PWA resume-from-background (no navigation event at all).
+3. **Every `*Client.tsx` shell initializes state from props once**: `useState<CardDTO[]>(initialCards)` in `StudyClient`, `useState<StatsDTO>(initialStats)` in `HomeClient`. `router.refresh()` re-renders the RSC and passes fresh props **without remounting client components** — so fresh props are silently ignored by these `useState` initializers. Any fix built on `router.refresh()` is a no-op until the shells also sync state from prop changes.
 
 ## Standard Architecture
 
-### System Overview — the three-stage pipeline
+### System Overview — freshness data flow (target state)
 
 ```
-STAGE 1 — DB AUDIT (read-only, deterministic, no LLM calls)
-┌──────────────────────────────────────────────────────────────────────────┐
-│  scripts/audit-cards.mts  (NEW — thin driver, tsx, dotenv-first preamble)│
-│      │ one bulk load: prisma.card.findMany({ include: sentences,        │
-│      │ lesson: {orderIndex} }) + prisma.cardDependency.findMany()       │
-│      ▼                                                                   │
-│  lib/audit-checks.ts  (NEW — pure check registry, no Prisma, unit-      │
-│      │ testable; imports the SAME production helpers the write path     │
-│      │ uses: sentenceMatch/splitParticle (lib/sentence-match.ts),       │
-│      │ normalizeFront (lib/card-key.ts), filterComponents               │
-│      │ (lib/filter-components.ts))                                      │
-│      ▼                                                                   │
-│  Finding[] → console summary (always)                                   │
-│            → .planning/audits/card-audit-<date>.md (report artifact)    │
-│            → --json flag for machine-diffable baseline                  │
-└──────────────────────────────────────────────────────────────────────────┘
-                                    │  report = the input artifact
-                                    ▼
-STAGE 2 — PROMPT REVIEW (human + Claude, informed by Stage 1 examples)
-┌──────────────────────────────────────────────────────────────────────────┐
-│  lib/extract-cards.ts  (MODIFIED — prompt text only; parser +           │
-│      │ parseExtractionResponse() untouched unless a check demands it)   │
-│      ▼                                                                   │
-│  scripts/prompt-eval.mts  (NEW — non-persisting sample harness)         │
-│      reads N Lesson.rawContent rows from DB → extractCardsFromNotes()   │
-│      → runs the SAME lib/audit-checks.ts on the in-memory               │
-│      ExtractedCard[] → per-check counts, diffed old-prompt vs new       │
-└──────────────────────────────────────────────────────────────────────────┘
-                                    │  only after prompt validated
-                                    ▼
-STAGE 3 — TARGETED FIXES (dry-run-by-default, --apply gated)
-┌──────────────────────────────────────────────────────────────────────────┐
-│  scripts/fix-*.mts  (NEW, one per mechanically-fixable finding class,   │
-│      │ cloned from the retro-filter-cleanup.mts skeleton: dry-run       │
-│      │ default, --apply flag, idempotent, chunked $transaction writes)  │
-│      OR manual edits via the existing CardEditor for small counts       │
-│      ▼                                                                   │
-│  re-run scripts/audit-cards.mts → finding counts drop to zero/accepted  │
-└──────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────── Browser ──────────────────────────────┐
+│  Trigger events                                                     │
+│  ┌──────────────┐ ┌──────────────┐ ┌───────────────────────────┐    │
+│  │ pageshow     │ │ visibility-  │ │ mutation-complete moments │    │
+│  │ (persisted / │ │ change →     │ │ (session complete, sync   │    │
+│  │  back-nav)   │ │ visible      │ │  done, card CRUD)         │    │
+│  └──────┬───────┘ └──────┬───────┘ └────────────┬──────────────┘    │
+│         └────────────────┴──────────────────────┘                   │
+│                          ↓ (throttled)                              │
+│              router.refresh()  ← NEW: FreshnessWatcher +            │
+│                          │        targeted calls in client shells   │
+├──────────────────────────┼──────────────────────────────────────────┤
+│                          ↓ RSC re-render request                    │
+│  ┌── Server (unchanged) ────────────────────────────────────────┐   │
+│  │ app/*/page.tsx (force-dynamic) → lib/study-cards.ts /        │   │
+│  │ lib/dashboard.ts → Prisma → DTO serialization                │   │
+│  └──────────────────────────┬───────────────────────────────────┘   │
+│                             ↓ fresh props (NO remount)              │
+│  ┌── Client shells (MODIFIED) ──────────────────────────────────┐   │
+│  │ *Client.tsx: gated prop→state sync                           │   │
+│  │ (render-phase compare-and-set; gated so an active study      │   │
+│  │  session / open editor sheet is never clobbered)             │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-The load-bearing architectural decision is the **shared check module**: audit checks live in a pure `lib/audit-checks.ts` that operates on a minimal card shape both `Card`-rows-from-DB and fresh `ExtractedCard[]` satisfy. That single decision makes Stage 1 (audit persisted data) and Stage 2 (validate a prompt change) the *same code path*, so "did the prompt change fix the failure class?" is answerable by diffing check counts — no eyeballing.
+### E2E harness overview (target state)
+
+```
+playwright.config.ts
+  ├─ webServer: next build && next start   (prod-mode — cache behavior
+  │    env: DATABASE_URL=file:./e2e.db,     differs under `next dev`;
+  │         AUTH_SECRET/APP_PASSWORD=test   CLAUDE.md already documents this)
+  ├─ project "setup" → e2e/auth.setup.ts
+  │    POST /api/login via APIRequestContext → storageState
+  │    → playwright/.auth/user.json (gitignored)
+  └─ project "chromium" (depends on setup, uses storageState)
+       └─ e2e/*.spec.ts — study flow, cards CRUD, freshness scenarios
+
+globalSetup: reset file:./e2e.db → prisma db push → seed fixtures
+  (`prisma db push` WORKS against file: URLs — only libsql:// fails;
+   the CLAUDE.md Turso gotcha does not apply to the local test DB)
+```
 
 ### Component Responsibilities
 
-| Component | Status | Responsibility |
-|-----------|--------|----------------|
-| `lib/audit-checks.ts` | **NEW** | Pure check registry: `runAuditChecks(cards: AuditableCard[], ctx): Finding[]`. No Prisma, no side effects — mirrors the `lib/sequence.ts` / `lib/sentence-selection.ts` convention (pure logic in `lib/`, driver elsewhere). |
-| `scripts/audit-cards.mts` | **NEW** | Thin driver: env preamble → bulk Prisma load → map rows to `AuditableCard` → run checks → print console summary → write markdown report. Read-only; no `--apply` flag needed at all. |
-| `scripts/prompt-eval.mts` | **NEW** | Prompt-change validation harness: selects sample lessons, calls `extractCardsFromNotes()` (real Opus call), runs the same checks on the un-persisted output, prints/diffs counts. Never writes to `Card`. |
-| `scripts/fix-<class>.mts` | **NEW** (as needed, per finding class) | Deterministic corpus repair following the `retro-filter-cleanup.mts` contract: dry-run default, `--apply`, idempotent, chunked writes, developer-run only. |
-| `tests/audit-checks.test.ts` | **NEW** | Vitest unit tests for each check (pure functions — no DB needed, same as `tests/sequence.test.ts`). |
-| `lib/extract-cards.ts` | **MODIFIED** (prompt only) | The exhaustive-extraction prompt (`claude-opus-4-8`, `thinking: {type:'adaptive'}`, `.stream(...).finalMessage()`). Stage 2 edits the prompt template string; the salvage parser, `isValidExtractedCard`, CR-01 batch-fronts union, and `filterComponents` wiring stay as-is. |
-| `lib/filter-components.ts`, `lib/card-key.ts`, `lib/sentence-match.ts`, `lib/link-dependencies.ts` | **UNCHANGED — reused** | The audit imports these directly so audit semantics can never drift from production semantics. |
-| `scripts/find-duplicates.mjs` | **UNCHANGED** | Its `superNormalize()` fuzzy-key logic is *absorbed* into `lib/audit-checks.ts` as the near-dup cluster check; the standalone script keeps working but becomes redundant. Do not modify it — do copy its level-2 key rules. |
-| `scripts/retro-filter-cleanup.mts` | **UNCHANGED — pattern template** | The canonical dry-run/--apply/idempotent skeleton (env preamble lines 27–41, reporting-always structure, chunked `$transaction` writes). Every Stage 3 fix script clones this shape. |
-| `scripts/local-resync.mts` | **UNCHANGED** | Explicitly **not** the validation vehicle (see Anti-Pattern 3). Stays as the bulk-ingest tool for genuinely new lessons. |
-| `scripts/reextract-lesson.mjs` | **FLAG FOR RETIREMENT** | Stale drift hazard: still uses `claude-sonnet-4-6`, the pre-v1.0 "be selective" prompt, the old `lastIndexOf('},')` salvage, and raw SQL inserts that omit `normalizedFront` and `components` entirely. Running it today would create cards invisible to dedup and the knowledge graph. The audit milestone should delete it or stamp a do-not-use header. |
-
----
+| Component | Responsibility | New / Modified |
+|-----------|----------------|----------------|
+| `components/FreshnessWatcher.tsx` | Renders nothing (like `ThemeWatcher`). Listens for `pageshow` with `event.persisted` (bfcache/back-forward restore) and `visibilitychange` → visible (PWA resume); calls `router.refresh()` throttled (e.g. ≥5s between refreshes). Mounted once in `app/layout.tsx`. | **New** |
+| `components/HomeClient.tsx` | Add render-phase prop-sync: when `initialStats`/`initialActivity` prop identity changes, adopt it into state. Always safe to sync (no in-progress interaction to protect). | Modified |
+| `components/StudyClient.tsx` | Prop-sync `initialCards` **gated on `phase === 'select-mode'`** — a `router.refresh()` firing mid-session must never replace the active queue. | Modified |
+| `components/CardsClient.tsx` | Prop-sync `initialCards` gated on no editor/add sheet open (don't clobber an in-progress edit). | Modified |
+| `components/HabitsClient.tsx` | Prop-sync activity/mastered props; always safe. | Modified |
+| Mutation-complete call sites | Targeted `router.refresh()` after the *last* review of a session flushes (StudyClient completion), after sync completes (SyncPanel / pull-to-refresh in HomeClient), after card create/edit/delete (CardsClient). Ensures the *current* route's Router Cache entry is fresh before any later back-nav restores it. | Modified |
+| `playwright.config.ts` | webServer, projects (setup + chromium), storageState wiring, `testDir: 'e2e'`. | **New** |
+| `e2e/auth.setup.ts` | Programmatic login: `request.post('/api/login', { data: { password } })` → `request.storageState({ path })`. No UI login per test; no duplication of `lib/auth.ts` HMAC logic. | **New** |
+| `e2e/global-setup.ts` (or setup project step) | Delete/recreate `e2e.db`, `prisma db push` against `file:./e2e.db`, run seed. | **New** |
+| `e2e/seed.ts` | Deterministic fixtures via Prisma client: ~3 lessons, ~15 cards with sentences/components/CardDependency edges, a mix of due/not-due `CardReview` rows, a few `StudyDay` rows. Reuses `normalizeFront` from `lib/card-key.ts`. | **New** |
+| `e2e/*.spec.ts` | Freshness scenarios, study flow, cards CRUD, smoke/perf checks. | **New** |
+| Vitest config / test script | Exclude `e2e/**` from Vitest so `npm test` stays unit-only (Vitest's default include globs would match `e2e/*.spec.ts`). | Modified |
+| `package.json` | `@playwright/test` devDep; scripts `test:e2e`, `test:e2e:ui`. | Modified |
+| `.gitignore` | `playwright/.auth/`, `e2e.db`, `playwright-report/`, `test-results/`. | Modified |
 
 ## Recommended Project Structure
 
 ```
-lib/
-├── audit-checks.ts          # NEW — pure: AuditableCard, Finding, CHECKS registry, runAuditChecks()
-├── extract-cards.ts         # MODIFIED — prompt template only
-├── filter-components.ts     # unchanged (imported by audit-checks)
-├── card-key.ts              # unchanged (imported by audit-checks)
-├── sentence-match.ts        # unchanged (imported by audit-checks)
-scripts/
-├── audit-cards.mts          # NEW — read-only driver (tsx)
-├── prompt-eval.mts          # NEW — non-persisting extraction eval (tsx)
-├── fix-card-types.mts       # NEW (example) — dry-run-default fix script, only if audit justifies it
-├── retro-filter-cleanup.mts # unchanged — the skeleton fix scripts clone
-├── find-duplicates.mjs      # unchanged — logic absorbed, script kept
-tests/
-├── audit-checks.test.ts     # NEW — pure unit tests, `npm test`
-.planning/audits/
-├── card-audit-2026-07-XX.md # generated report artifact (input to prompt review)
-├── prompt-eval-baseline.json# generated — old-prompt check counts for diffing
+e2e/                        # NEW — Playwright specs (separate from tests/ = Vitest)
+├── auth.setup.ts           # login once → storageState
+├── global-setup.ts         # reset + push schema + seed e2e.db
+├── seed.ts                 # deterministic Prisma fixtures
+├── freshness.spec.ts       # back-nav / resume / post-mutation staleness scenarios
+├── study.spec.ts           # full study session flow (grade → complete → due count drops)
+├── cards.spec.ts           # cards CRUD (add via sheet, edit, swipe-delete)
+└── smoke.spec.ts           # all routes render authenticated, login redirect works
+playwright/.auth/           # NEW — gitignored storage state
+playwright.config.ts        # NEW
+components/FreshnessWatcher.tsx  # NEW
+tests/                      # EXISTING Vitest unit tests — untouched
 ```
 
 ### Structure Rationale
 
-- **Checks in `lib/`, driver in `scripts/`:** the project already learned this lesson twice — `lesson-excerpt.ts` was extracted from a route "for unit testability" (Phase 14 Nyquist fix), and `sentence-selection.ts` from `StudySession` (REFACTOR-02). Pure check functions get Vitest coverage for free (`npm test` runs pure lib functions, no DB).
-- **`.mts` + dotenv-first dynamic-import preamble, not `.mjs`:** `dry-run-filter.mjs` had to *re-derive* `normalizeFront()` because plain `.mjs` can't import the TS modules — and its WR-04 comment records that the replica **actually diverged** (missing Hangul Jamo ranges) before being caught. `retro-filter-cleanup.mts` fixed this pattern: `config()` from dotenv first, then `await import('../lib/*.js')`. The audit script must do the same; a checker that re-implements the rules it checks is a false-negative machine.
-- **Report artifact under `.planning/audits/`:** `.planning/` is already the artifacts home, already excluded from Tailwind's source scan (`@source not "../.planning"` in `globals.css`, Phase 14), and already what the roadmap/plan phases read. A dated filename gives before/after audit runs a natural diff trail.
-
----
+- **`e2e/` separate from `tests/`:** the existing Vitest tests are pure/unit and run with no server. Playwright specs need a running server + seeded DB — different lifecycle, different runner, must not be picked up by `npm test`.
+- **Seed via Prisma client, not raw SQL:** reuses `lib/card-key.ts` and the real schema; survives schema evolution automatically after `prisma generate`.
+- **`FreshnessWatcher` mirrors `ThemeWatcher`:** the codebase already has the "renders-nothing watcher mounted in layout" pattern — same shape, zero new conventions.
 
 ## Architectural Patterns
 
-### Pattern 1: Pure check registry over a shared card shape
+### Pattern 1: `router.refresh()` + gated render-phase prop-sync
 
-**What:** A minimal structural interface both persisted rows and fresh extractions satisfy, plus a flat list of check functions.
+**What:** `router.refresh()` re-fetches the current route's RSC payload server-side and re-renders, *preserving client state* (no remount). The client shells then adopt fresh props via React's documented "adjusting state when props change" pattern — a render-phase compare-and-set, not an effect.
+**When to use:** Any moment the client knows the DB changed (post-mutation) or suspects it (bfcache restore, tab re-focus).
+**Trade-offs:** Preserving client state is exactly right here (an active study session or open sheet survives), but it's why the prop-sync half is mandatory. The sync must be *gated* per shell.
 
-**Why:** the same checks score the DB (Stage 1) and the prompt (Stage 2). This is what makes "validate a prompt change without re-running the corpus" cheap.
-
-```typescript
-// lib/audit-checks.ts — pure; no Prisma, no 'use client'
-import { sentenceMatch, splitParticle } from './sentence-match'
-import { normalizeFront } from './card-key'
-
-export interface AuditableSentence { korean: string; targetForm: string; translation: string; orderIndex: number }
-export interface AuditableCard {
-  id: string                    // Card.id, or `batch-${i}` for un-persisted ExtractedCards
-  type: string
-  front: string
-  back: string
-  notes: string | null
-  distractors: string[]         // pre-parsed from JSON by the driver
-  components: string[]          // pre-parsed; [] when null
-  componentsMalformed: boolean  // JSON.parse failed (driver sets; mirrors retro-filter-cleanup WR-03)
-  sentences: AuditableSentence[]
-  lessonOrderIndex: number | null  // provenance for the report; null for un-persisted
-  createdAt: string | null         // ISO; used to segment pre/post-prompt-era rows
+```tsx
+// In HomeClient — render-phase adjustment (NOT an effect; satisfies
+// react-hooks/set-state-in-effect, and is the React-docs-endorsed pattern)
+const [prevStats, setPrevStats] = useState(initialStats)
+if (initialStats !== prevStats) {
+  setPrevStats(initialStats)
+  setStats(initialStats)
 }
 
-export type Severity = 'critical' | 'warn' | 'info'
-export interface Finding {
-  checkId: string; severity: Severity
-  cardId: string; front: string; lessonOrderIndex: number | null
-  detail: string
+// In StudyClient — same, but gated:
+if (initialCards !== prevInitialCards) {
+  setPrevInitialCards(initialCards)
+  if (phase === 'select-mode') setStudyCards(initialCards)
 }
-
-export interface AuditContext {
-  deckNormalizedFronts: Set<string>          // for component resolution checks
-  edges: { cardId: string; prerequisiteId: string }[]  // for graph checks; [] in prompt-eval mode
-}
-
-type Check = (card: AuditableCard, ctx: AuditContext) => Finding[]
-const CHECKS: Record<string, Check> = { /* see check catalog below */ }
-
-export function runAuditChecks(cards: AuditableCard[], ctx: AuditContext): Finding[] {
-  return cards.flatMap((c) => Object.values(CHECKS).flatMap((check) => check(c, ctx)))
-}
-// plus corpus-level checks that need the whole set (dup clusters, dependency cycles):
-export function runCorpusChecks(cards: AuditableCard[], ctx: AuditContext): Finding[] { /* ... */ }
 ```
 
-**Check catalog** (all deterministic; each maps to a concrete prompt clause or data-fix path):
+Verify early that this render-phase pattern passes this repo's strict `react-hooks` rules (`purity` allows it — deterministic given props; `set-state-in-effect` targets effects, not render-phase adjustment). If the lint config rejects it, the fallback is `useEffect` keyed on the prop with the setter inside a `.then()`/callback per the existing codebase idiom.
 
-| checkId | Severity | Rule (uses production helper) | Why it matters / prompt clause it tests |
-|---|---|---|---|
-| `SENT-NONE` | critical | `sentences.length === 0` | Card unusable in sentence-centric modes |
-| `SENT-TARGET-MISSING` | critical | `!sentenceMatch(s.korean, s.targetForm).found` | Extraction filters these at write time, so any hit is a legacy/edited row — un-highlightable, wrong fill-blank answer |
-| `SENT-FIRST-NOT-BLANK-SAFE` | critical | `!sentenceMatch(sentences[0].korean, sentences[0].targetForm).safeToBlank` | The prompt's BLANK-SAFETY GUARANTEE; violations silently disable Recall + fill-blank |
-| `SENT-EMPTY-TRANSLATION` | warn | `s.translation.trim() === ''` | Prompt requires non-empty translation |
-| `SENT-DUP-TARGETFORM` (grammar) | warn | grammar card where 2+ sentences share a `targetForm` | Prompt requires different targetForms per grammar sentence |
-| `DIST-COUNT` | warn | `distractors.length !== 3` | Multiple-choice degrades |
-| `DIST-COLLIDES-BACK` | warn | any distractor `===` back (case-folded) | Trivial/broken multiple-choice |
-| `TYPE-GRAMMAR-SHAPED` | warn | `type !== 'grammar'` but front matches `/^~|\(으\)|아\/어|은\/는|\/를|~\s*$/`-style pattern markers | Miscategorization heuristic — badge color, distractor register, particle-tint rendering all key off type |
-| `TYPE-PHRASE-SHAPED` | info | `type === 'vocabulary'` and front has 2+ space-separated Hangul words | Likely phrase mislabeled vocabulary |
-| `FRONT-ROMANIZATION` | critical | Latin letters in front *outside* a trailing paren gloss (reuse `normalizeFront`'s own gloss regex to except the allowed case) | Standing "no romanization" invariant |
-| `NOTES-THIN-GRAMMAR` | info | `type === 'grammar'` and (`notes` null or `< ~20` chars) | Grammar cards carry conjugation/usage load in notes; thin notes = weak card. Info-only — notes are optional by schema |
-| `COMP-UNRESOLVED` | warn | any component where `filterComponents([comp], deckSet).length === 0` | Should be **zero** post-v1.4 retro cleanup; any hit means drift since the cleanup (e.g. a prerequisite card was deleted) |
-| `COMP-STEM-ONLY-RESOLVED` | info | component resolves only via the `splitParticle` fallback, not direct match | Higher false-positive class (the documented 기다리는-style mis-split ambiguity) — human-review list, not auto-fix |
-| `COMP-SELF` | warn | `normalizeFront(comp) === normalizeFront(front)` | Should be impossible (write path self-excludes); a hit = legacy row |
-| `COMP-MALFORMED-JSON` | warn | `componentsMalformed` | Mirrors retro-filter-cleanup's WR-03 skip set |
-| `DUP-CLUSTER` (corpus-level) | warn | groups sharing `superNormalize` level-2 key (copied verbatim from `find-duplicates.mjs`: strip `~`, strip all paren groups, collapse whitespace) | Near-duplicate concepts split across cards fragment FSRS history |
-| `EDGE-CYCLE` (corpus-level) | info | DFS cycle detection over `ctx.edges` | `sequenceCards()` is cycle-safe so nothing breaks, but a cycle is always bad data worth listing |
-| `EDGE-NO-SOURCE` (corpus-level) | warn | a `CardDependency` edge whose prerequisite's `normalizedFront` no longer appears in the card's `components[]` | Edge/components drift since last reconcile |
+### Pattern 2: FreshnessWatcher — refresh on restore/resume
 
-**Trade-off:** heuristic checks (`TYPE-*`, `NOTES-THIN-*`, `DUP-CLUSTER`) will have false positives. That is fine **because the audit only reports** — severity `warn`/`info` findings are human-review queues, never auto-fix inputs (see Anti-Pattern 5).
+**What:** A layout-mounted null component handling the two paths `staleTimes` cannot fix: back/forward Router-Cache restore (`pageshow` with `persisted`) and PWA resume (`visibilitychange` → `visible`).
+**When to use:** Always mounted; throttle so a rapid tab-flick doesn't spam `getStudyCards()` (each refresh is a full force-dynamic server render — cheap for this single-user app, but Vercel-billed).
+**Trade-offs:** A refresh while a session is active triggers a server render whose props the gated sync ignores — harmless but wasted; throttle + gate make this acceptable. Do **not** instead re-key the client shells to force remounts — that destroys active session state.
 
-### Pattern 2: Report artifact as the prompt-review handoff (findings-first)
-
-**What:** `scripts/audit-cards.mts` always prints a console summary table (counts per checkId) and writes a full markdown report to `.planning/audits/card-audit-<YYYY-MM-DD>.md` with, per check: count, severity, and up to ~15 concrete examples (card front, back, lesson `orderIndex`, offending detail). An optional `--json <path>` emits machine-readable counts for later diffing.
-
-**Where findings surface — decision:** console + markdown file. **Not** an admin view.
-
-| Option | Verdict | Why |
-|---|---|---|
-| Console only | Insufficient alone | The milestone's next phase (prompt review) needs to *read* concrete failure examples; scrollback is not an artifact. Precedent: every existing script reports to console, but none of their output feeds a downstream phase. |
-| **Console + markdown report (chosen)** | ✅ | The report *is* the deliverable of the audit phase and the input to the prompt-review phase — same role RESEARCH/dry-run baselines played in Phase 16 (`retro-filter-cleanup.mts` hard-codes the human-approved 16-01 dry-run numbers as its `BASELINE`). Dated files give a before/after trail once fixes land. |
-| Lightweight admin view | ❌ Defer | No admin UI exists; single-tenant; the audit is developer-run and episodic. Building a route + RSC + client shell for a one-time report is scope creep — and would push audit logic into request paths where the 60s Vercel Hobby limit lives. If a recurring need appears later, the JSON output is the seam a future `/audit` page would read. |
-
-**Report section anatomy** (one per check):
-
-```markdown
-## SENT-FIRST-NOT-BLANK-SAFE — 14 cards (critical)
-First sentence's targetForm is 1 char or appears more than once → Recall/fill-blank silently degrade.
-| Lesson | Front | targetForm | Sentence |
-|---|---|---|---|
-| 7 | ~에 | 에 | 학교에 가요 |
-...
-**Era split:** 11/14 created before 2026-06-XX (pre-exhaustive-prompt); 3/14 current-prompt era.
+```tsx
+'use client'
+// components/FreshnessWatcher.tsx — renders nothing, like ThemeWatcher
+const THROTTLE_MS = 5000
+export default function FreshnessWatcher() {
+  const router = useRouter()
+  useEffect(() => {
+    let last = 0
+    const refresh = () => {
+      const now = Date.now() // inside handler — purity-safe
+      if (now - last < THROTTLE_MS) return
+      last = now
+      router.refresh()
+    }
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) refresh() }
+    const onVis = () => { if (document.visibilityState === 'visible') refresh() }
+    window.addEventListener('pageshow', onPageShow)
+    document.addEventListener('visibilitychange', onVis)
+    return () => { /* remove both listeners */ }
+  }, [router])
+  return null
+}
 ```
 
-The **era split line is load-bearing**: `Card.createdAt` segments failures into "old rows from an earlier prompt" (→ data fix, no prompt change needed) vs "the current prompt still produces this" (→ prompt clause needs work). Without it, the prompt review will chase already-fixed ghosts — the deck contains rows from at least three prompt generations (the `reextract-lesson.mjs` "be selective" era, the pre-v1.4 unfiltered-components era, and the current exhaustive+filtered era).
+### Pattern 3: Programmatic auth via setup project + storageState
 
-### Pattern 3: Non-persisting prompt-eval harness (validate without corpus re-run)
+**What:** Playwright's recommended pattern: authenticate **once** in a `setup` project, persist cookies to `playwright/.auth/user.json`, and give every test project `storageState` + `dependencies: ['setup']`. Because `middleware.ts` only compares the `ks_auth` cookie against a deterministic HMAC, a single `request.post('/api/login', { data: { password: process.env.APP_PASSWORD } })` followed by `request.storageState({ path })` captures the cookie with zero UI steps.
+**When to use:** All authenticated specs (everything except a dedicated login/redirect spec that intentionally starts unauthenticated via `storageState: { cookies: [], origins: [] }`).
+**Trade-offs:** Computing the HMAC directly in test code (importing `lib/auth.ts` and `context.addCookies`) also works and is fully offline — but it duplicates knowledge of the cookie name/shape in tests and skips exercising `/api/login`. The API-login setup project is the better default.
 
-**What:** `scripts/prompt-eval.mts` — the Stage 2 validation loop:
+### Pattern 4: Prod-mode webServer for cache-behavior tests
 
-1. Select sample lessons by `orderIndex` (CLI args, e.g. `npx tsx scripts/prompt-eval.mts 3 7 12 18 24`), stratified as: lessons that produced current-era findings + 1–2 clean lessons as regression guards. Read `Lesson.rawContent` straight from the DB — no Google Docs fetch needed.
-2. Call the real `extractCardsFromNotes(rawContent, existingNormalizedFronts, [])` — the actual production function, actual `claude-opus-4-8` + adaptive thinking + streaming path, actual deck-fronts dedup hint.
-3. Map the returned `ExtractedCard[]` to `AuditableCard[]` (`componentsMalformed: false`, `lessonOrderIndex` from the arg, `createdAt: null`) and run `runAuditChecks()` with `edges: []`.
-4. Print per-check counts; with `--baseline <path>` compare against a saved JSON from the pre-change run and print deltas.
-
-**Workflow:** run once on the old prompt → save baseline JSON → edit the prompt in `lib/extract-cards.ts` → run again on the *same lessons* → counts must drop for the targeted checks and not rise elsewhere. Two runs × ~5 lessons ≈ 10 Opus extraction calls — dollars, not tens of dollars, vs. an unbounded full-corpus resync.
-
-**Why not `local-resync.mts` on a sample:** it can't. `local-resync.mts` filters to lessons whose `contentHash` has no `Lesson` row (lines 39–51) — every already-synced lesson is a **no-op**. "Re-run local-resync to validate" would require wiping lessons first (`wipe-card-data.mjs` nukes the whole deck including `CardReview` state) — the nuclear option. The eval harness exists precisely to avoid that.
-
-**Nondeterminism caveat:** LLM output varies run-to-run, so treat count deltas directionally, not as exact assertions. For a targeted check (e.g. blank-safety) expect a clear signal (e.g. 6 → 0/1), not noise-level movement. If a delta is ambiguous, re-run the same lessons once more before concluding.
-
-### Pattern 4: Fix scripts clone the `retro-filter-cleanup.mts` contract exactly
-
-For any finding class that is mechanically fixable *and* large enough to script (likely candidate: `TYPE-*` recategorization after human review of the flagged list), the fix script copies the established contract verbatim:
-
-- Header comment: DRY-RUN BY DEFAULT / mutates only with `--apply` / never in a request path / idempotent (re-run after `--apply` reports 0 changes).
-- Same env preamble (dotenv `config()` → dynamic `await import('../lib/*.js')`).
-- Reporting section runs in **both** modes; `if (!APPLY) process.exit(0)` before any write.
-- Writes are chunked `prisma.$transaction` **updates by `id`** (CHUNK = 50, same as retro-filter-cleanup lines 202–212).
-- Input is an explicit **human-approved allowlist** (e.g. a reviewed JSON/CSV of `cardId → newType` exported from the audit report), not the raw heuristic — the heuristic proposes, the human disposes, the script applies.
-
-For small counts (< ~20 cards), skip the script: the existing `CardEditor` sheet + `PUT /api/cards/[id]` (which already re-computes `normalizedFront` on front edits) is the safer path.
-
----
+**What:** `webServer: { command: 'npm run build && npm run start', url: 'http://localhost:3000', reuseExistingServer: !process.env.CI, env: { DATABASE_URL: 'file:./e2e.db', AUTH_SECRET: 'e2e-secret', APP_PASSWORD: 'e2e-password' } }`.
+**When to use:** Always for freshness specs. `next dev` alters caching/prefetch behavior — CLAUDE.md already documents "Test RSC first-paint behavior with `npm run build && npm start`, not `next dev`". A freshness test that passes under dev proves nothing.
+**Trade-offs:** Build adds ~1–2 min per cold run. Mitigate locally with `reuseExistingServer: true` against a manually-started server. For fast iteration on non-cache specs (CRUD, study flow), an env switch flipping the command to `next dev` is fine — but freshness specs must run prod-only.
 
 ## Data Flow
 
-### Stage 1 — audit run
+### Freshness flow — before vs after
 
 ```
-npx tsx scripts/audit-cards.mts [--json out.json]
-    ↓
-dotenv preamble → dynamic import lib modules (Prisma sees Turso env)
-    ↓
-prisma.card.findMany({ include: { sentences: {orderBy: orderIndex},
-                                  lesson: {select: {orderIndex}} } })   // ~511 rows, one query
-prisma.cardDependency.findMany({ select: {cardId, prerequisiteId} })
-    ↓
-rows → AuditableCard[] (JSON.parse distractors/components in try/catch → componentsMalformed)
-deckSet = Set(normalizedFront)   // same construction as retro-filter-cleanup Phase A
-    ↓
-runAuditChecks() + runCorpusChecks()
-    ↓
-console: counts table   +   .planning/audits/card-audit-<date>.md   +   optional JSON
+BEFORE (stale path):
+  study session grades cards → POST /api/review (fire-and-forget) → DB updated
+  user swipes back to /  →  Router Cache restores old RSC payload  →  STALE hero/due count
+  (staleTimes cannot fix this; revalidatePath in the route handler cannot fix this)
+
+AFTER:
+  swipe back → pageshow(persisted) → FreshnessWatcher → router.refresh()
+  → server re-runs getStats()/getActivityData() → fresh DTO props
+  → HomeClient render-phase sync adopts fresh props → CORRECT due count
 ```
 
-Read-only end to end — there is deliberately **no** `--apply` mode on the audit script; repair is a separate script per class (single-responsibility, mirrors the v1.4 split of `dry-run-filter.mjs` (diagnose) from `retro-filter-cleanup.mts` (repair)).
-
-### Stage 2 — prompt review loop
+### E2E flow
 
 ```
-card-audit report (era-split, current-prompt failures only)
-    ↓ concrete failure examples per prompt clause
-edit lib/extract-cards.ts prompt template
-    ↓
-npx tsx scripts/prompt-eval.mts 3 7 12 --baseline .planning/audits/prompt-eval-baseline.json
-    ↓ per-check deltas on identical lessons
-accept (commit prompt change)  /  iterate
+npx playwright test
+  → global setup: rm e2e.db → prisma db push (file: URL — works) → seed fixtures
+  → webServer: next build && next start (env-scoped to e2e.db)
+  → setup project: POST /api/login → save storageState
+  → specs run with ks_auth cookie pre-loaded
+      freshness.spec: visit / (note due count) → study N cards → page.goBack()
+        → expect due count decreased  ← this is the regression test for the fix
 ```
 
-### Stage 3 — corpus repair
+### Key Data Flows
 
-```
-audit report warn/info queues → human review → approved fix list
-    ↓
-npx tsx scripts/fix-<class>.mts            # dry run, prints would-change set
-npx tsx scripts/fix-<class>.mts --apply    # chunked updates by id
-    ↓
-npx tsx scripts/audit-cards.mts            # finding count for that class → 0 (or accepted residue)
-```
-
----
+1. **Post-review freshness:** client-side FSRS (optimistic) → background `POST /api/review` → on session complete, one `router.refresh()` after the last background save settles (hook the existing bounded-retry helper's resolution) → current-route props fresh; FreshnessWatcher covers cross-route back-nav.
+2. **Post-sync freshness:** `SyncPanel`/pull-to-refresh already refetch `/api/stats` client-side; add `router.refresh()` so the RSC payload for the current route is also refreshed (otherwise a later back-nav restores pre-sync props).
+3. **E2E ↔ external services:** `/api/sync` calls Google Docs + Claude — non-deterministic, billable, needs real creds. **Do not E2E the extraction pipeline.** Seed lessons/cards directly; E2E sync coverage stops at auth/shape assertions (e.g. cron route without bearer → 401). Extraction already has its own eval script (`scripts/prompt-eval.mts`) and unit coverage.
 
 ## Scaling Considerations
 
-| Scale | Notes |
-|-------|-------|
-| ~511 cards / ~1.5k sentences (today) | One `findMany` with includes, everything in memory. Whole audit is O(cards × checks) + O(cards) dup-grouping + O(V+E) cycle DFS — sub-second after the network round-trip. |
-| ~5k cards | Still fine in one load. Sentence include is the only payload that grows meaningfully; select only `{korean, targetForm, translation, orderIndex}`. |
-| Beyond | Irrelevant for a single-tenant personal deck. If it ever mattered: paginate by `createdAt` cursor, stream findings to the report file incrementally. Do not build for this now. |
+| Scale | Architecture Adjustments |
+|-------|--------------------------|
+| Current (single user) | Everything above. `router.refresh()` per resume/back-nav is a full dynamic render — trivially cheap at this scale. |
+| If refresh volume ever mattered | Raise throttle; or move Home/Habits data into `use cache` + `cacheTag`/`updateTag` (Next 16 Cache Components) with tag updates from write routes — cross-request caching was explicitly deferred in v1.2 ("staleness risk outweighed gain"); this milestone does not reopen that decision. |
+| E2E suite growth | Keep freshness specs serial (they depend on nav history); CRUD specs parallel with per-spec unique card fronts to avoid `normalizedFront @unique` collisions in the shared e2e.db. |
 
-None of this touches Vercel — audit, eval, and fix scripts are all local (`npx tsx`), so the 60s Hobby function limit never applies. That constraint only binds if someone tries to move the audit into an API route (don't — see Integration Points).
+### Scaling Priorities
 
----
+1. **First bottleneck:** E2E wall-clock from `next build` per run — mitigate with `reuseExistingServer` locally and build caching in CI.
+2. **Second bottleneck:** flaky perf assertions — see Anti-Pattern 4.
 
 ## Anti-Patterns
 
-### Anti-Pattern 1: Re-deriving lib helpers inside a `.mjs` script
+### Anti-Pattern 1: `revalidatePath()` in the API route handlers as the freshness fix
 
-**What people do:** copy `normalizeFront`/`sentenceMatch` into the script "because .mjs can't import TS."
-**Why it's wrong:** this codebase has a documented divergence scar — `dry-run-filter.mjs` WR-04 records that its `normalizeFront` replica missed three Hangul Jamo ranges and disagreed with production. `reextract-lesson.mjs` replicates `sentenceMatch` too, and is now stale in four other ways. An audit built on drifted replicas reports wrong findings with full confidence.
-**Do this instead:** `.mts` + the `retro-filter-cleanup.mts` preamble (dotenv `config()` first, then `await import('../lib/sentence-match.js')` etc.). One source of truth for every rule being audited.
+**What people do:** Add `revalidatePath('/')` inside `POST /api/review` / `POST /api/sync`.
+**Why it's wrong:** Per the official docs, in Route Handlers `revalidatePath` only "marks the path for revalidation … on the next visit" — it invalidates *server-side* caches, and these pages are already `force-dynamic` with no server cache to invalidate. It **does not purge the browser's Router Cache**, which is where the staleness lives. Only Server Functions push invalidation to the client.
+**Do this instead:** Client-initiated `router.refresh()` (Patterns 1–2).
 
-### Anti-Pattern 2: LLM-judge per card for the audit
+### Anti-Pattern 2: Converting review grading to a Server Action for its cache-purge behavior
 
-**What people do:** loop 511 cards through Claude asking "is this card good?"
-**Why it's wrong:** ~511 Opus calls per audit run (cost + minutes of wall time), nondeterministic verdicts (an audit you can't re-run to the same result can't gate a fix), and it answers a vaguer question than the deterministic checks already answer precisely. The question directive for this milestone explicitly requires cheap/deterministic.
-**Do this instead:** deterministic checks for everything mechanically checkable (all 18 in the catalog are). Reserve LLM spend for Stage 2's eval harness — ~10 extraction calls on a handful of lessons, where the LLM *is* the system under test.
+**What people do:** Rewrite `POST /api/review` as a Server Action so `revalidatePath` "updates the UI immediately."
+**Why it's wrong:** Grading is deliberately optimistic and fire-and-forget (UX-01, a validated v1.2 requirement) — awaiting a Server Action round-trip per grade reintroduces the 100–200 ms jitter that was explicitly engineered out; the bounded-retry helper (REVIEW-04) would also need reworking.
+**Do this instead:** Keep the write path untouched; refresh once at session boundaries.
 
-### Anti-Pattern 3: Using `local-resync.mts` as the prompt-validation loop
+### Anti-Pattern 3: Forcing remounts (key-ing the client shell, or `window.location.reload()`)
 
-**What people do:** "change the prompt, re-run local-resync on a few lessons, diff the cards."
-**Why it's wrong:** two independent failures. (a) `local-resync.mts` skips every lesson whose `contentHash` already has a `Lesson` row — for synced lessons it is a guaranteed no-op; nothing gets re-extracted. (b) Even if forced (deleting Lesson rows), the card upsert path *persists* the new output over live data mid-experiment — the experiment mutates production.
-**Do this instead:** `scripts/prompt-eval.mts` — reads `Lesson.rawContent`, extracts in memory, audits the output, writes nothing (Pattern 3).
+**What people do:** `<StudyClient key={...}>` with a changing key, or full reloads, to "guarantee" fresh state.
+**Why it's wrong:** Destroys active session state, undo snapshots, and open sheets; impure key sources (`Date.now()`) also violate `react-hooks/purity`. A reload throws away the entire instant-feel work of v1.2.
+**Do this instead:** Gated prop-sync (Pattern 1) — adopt freshness only where it's safe.
 
-### Anti-Pattern 4: Delete + recreate cards to "fix" them
+### Anti-Pattern 4: Wall-clock performance assertions as CI gates
 
-**What people do:** for a miscategorized/duplicate card, delete it and let a re-extraction recreate it.
-**Why it's wrong:** `Sentence`, `CardReview`, **and `ReviewLog`** are all `onDelete: Cascade` off `Card` (schema lines 65, 76, 104). Delete destroys the FSRS state and the append-only review history v1.4 just made durable. The recreated card starts from state 0.
-**Do this instead:** fix scripts issue `prisma.card.update({ where: { id } })` only. For true near-duplicates where one card must die, merging is a *manual, per-card* decision (the `find-duplicates.mjs` footer already says exactly this) — and if the surviving card should absorb history, that's out of scope for scripted fixes.
+**What people do:** `expect(navigationTime).toBeLessThan(300)` style budgets.
+**Why it's wrong:** Cold Prisma clients, machine variance, and CI noise make tight wall-clock budgets chronically flaky.
+**Do this instead:** Assert *behavioral* performance invariants: first HTML response contains real seeded data (no empty-state flash — assert on the SSR body), no client `/api/cards/due` request fires on first load, navigation shows skeleton-then-content. Keep timing assertions to generous smoke budgets (e.g. < 5 s), informational before gating.
 
-### Anti-Pattern 5: Auto-applying heuristic findings
+### Anti-Pattern 5: Testing cache behavior under `next dev`
 
-**What people do:** pipe `TYPE-GRAMMAR-SHAPED` findings straight into an `--apply` update.
-**Why it's wrong:** the type heuristics are regex shape-guesses; Korean fronts like set phrases containing particles will false-positive. The v1.4 precedent is instructive: the components filter was only wired into the write path *after* a human reviewed the dry-run drop rates per type (the Success Criterion 4 gate in `dry-run-filter.mjs`'s header).
-**Do this instead:** heuristic checks emit `warn`/`info` review queues in the report; a human approves a concrete list; the fix script's input is that approved list, not the heuristic.
-
-### Anti-Pattern 6: Building an admin audit UI in this milestone
-
-**What people do:** "surface findings in the app" → new route, RSC page, client shell, DTOs.
-**Why it's wrong:** the audit is developer-run, episodic, and its consumer is the prompt-review phase, not the app user. Every prior surface in this app earned its RSC+DTO plumbing by being part of the daily study loop; a report viewer is not. It also drags corpus-scan work toward request paths governed by the 60s limit.
-**Do this instead:** markdown report artifact + optional JSON. The JSON output is the future seam if a UI is ever actually wanted.
-
----
+**What people do:** Run freshness specs against the dev server because it boots faster.
+**Why it's wrong:** Dev mode disables/alters Router Cache, prefetching, and static optimization — the exact behaviors under test. This repo already learned this (CLAUDE.md gotcha for RSC first-paint).
+**Do this instead:** Pattern 4 — prod-mode webServer for freshness specs; dev-mode escape hatch only for functional specs.
 
 ## Integration Points
 
 ### External Services
 
-| Service | Used by | Notes |
-|---------|---------|-------|
-| Turso (libSQL) via `lib/prisma.ts` | audit, eval, fix scripts | Same env preamble as `retro-filter-cleanup.mts` — dotenv before dynamic import, or Prisma initializes against the wrong `DATABASE_URL` (documented ESM-hoisting gotcha). |
-| Claude API (`claude-opus-4-8`, adaptive thinking, streaming) | `prompt-eval.mts` only, via the unmodified `extractCardsFromNotes()` | Stage 1 and Stage 3 make **zero** LLM calls. Keep model/params untouched during prompt review — one variable at a time; the milestone is about prompt content, not model choice. |
-| Google Docs API | **not used** by any v1.5 script | Eval reads `Lesson.rawContent` from the DB; no doc fetch, no `GOOGLE_SERVICE_ACCOUNT_KEY` needed for the audit path. |
+| Service | Integration Pattern | Notes |
+|---------|---------------------|-------|
+| Playwright (`@playwright/test`) | devDependency + `playwright.config.ts`; browsers via `npx playwright install chromium` (chromium-only is enough initially; add webkit later if iOS-Safari-specific bugs appear) | First new dependency in several milestones — call it out explicitly in the plan given the "no new packages" streak |
+| SQLite (`file:./e2e.db`) | `webServer.env.DATABASE_URL` override; schema via `prisma db push` — **the Turso DDL gotcha does not apply** to `file:` URLs | Prod/dev DBs untouchable from tests by construction |
+| Google Docs / Claude APIs | **Excluded from E2E.** Seed data replaces sync output | Non-deterministic + billable; covered by unit tests + `prompt-eval.mts` |
+| Claude Code as test driver | The same harness (`npm run test:e2e`, headed mode, traces) is what lets Claude Code drive the app in a real browser — no extra infra beyond the config | Milestone explicitly wants this |
 
 ### Internal Boundaries
 
 | Boundary | Communication | Notes |
 |----------|---------------|-------|
-| `scripts/audit-cards.mts` ↔ `lib/audit-checks.ts` | direct import (dynamic, post-dotenv) | Driver owns all I/O (Prisma, fs, console); checks own all judgment. Same split as `local-resync.mts` ↔ `lib/link-dependencies.ts` (IN-02). |
-| `scripts/prompt-eval.mts` ↔ `lib/extract-cards.ts` | calls `extractCardsFromNotes()` verbatim | Must be the real function — evaluating a copy of the prompt evaluates nothing. `existingNormalizedFronts` should be the real deck fronts so the dedup-hint behavior is realistic. |
-| `lib/audit-checks.ts` ↔ `lib/sentence-match.ts` / `card-key.ts` / `filter-components.ts` | static imports (all pure) | Legal because every import is itself pure/no-Prisma — `audit-checks.ts` stays a "safe server AND client" module by the project's own convention, though nothing client-side needs it today. |
-| Audit report ↔ prompt review phase | file artifact `.planning/audits/card-audit-<date>.md` | The findings-first contract from the milestone definition; the prompt-review plan should cite specific checkIds + example cards from this file. |
-| Fix scripts ↔ `CardDependency` | reuse `resolveDependencyEdges()` from `lib/link-dependencies.ts` if any fix touches `components` | Never hand-roll edge reconciliation — `retro-filter-cleanup.mts` Phase C is the reference implementation (including the WR-03 malformed-row skip set). |
-
----
+| `FreshnessWatcher` ↔ App Router | `router.refresh()` only | No props, no context; mounted in `app/layout.tsx` next to `ThemeWatcher`/`GlossProvider` |
+| RSC pages ↔ client shells | Existing DTO props — **contract unchanged**, but shells gain prop-change adoption | The DTO pattern (RSC-05) is untouched; only the "props read once" assumption changes |
+| Study session ↔ refresh timing | Session-complete `router.refresh()` must fire **after** the final background review save settles, else refreshed props can still be pre-write | The one subtle ordering constraint in the whole fix |
+| Vitest ↔ Playwright | Disjoint dirs (`tests/` vs `e2e/`); `npm test` must not glob `e2e/**` | Add an explicit Vitest `exclude` — its default include pattern matches `**/*.spec.ts` |
+| E2E seed ↔ `lib/` | Seed imports `normalizeFront` (and optionally DTO types) from `lib/` | Same single-source-of-truth discipline the existing scripts follow |
 
 ## Suggested Build Order
 
-Matches the milestone's already-decided sequencing (audit → prompt review → fixes):
+1. **Playwright infrastructure first** (config, prod-mode webServer, e2e DB reset+seed, auth setup project, one smoke spec: login redirect + all four routes render seeded data). Rationale: the staleness diagnosis *is* a browser-navigation experiment — Playwright is the diagnostic instrument, and the fix needs a red test before it lands.
+2. **Freshness diagnosis as failing specs**: encode each suspected stale path as a spec — (a) grade cards → `page.goBack()` → assert due count; (b) grade cards → `<Link>` nav to Home → assert due count (*expected to already pass*, per `staleTimes.dynamic=0` — confirming this narrows the fix); (c) dispatch `visibilitychange` via `page.evaluate` to simulate PWA resume. Whatever fails here is the ground truth that picks which pieces of the fix ship.
+3. **Freshness fix**: `FreshnessWatcher` + gated prop-sync in the four shells + session-complete/sync-complete `router.refresh()` calls — turn step 2's reds green.
+4. **Broader coverage + perf checks**: study flow, cards CRUD, no-client-refetch-on-first-load invariants, informational timing budgets.
 
-1. **`lib/audit-checks.ts` + `tests/audit-checks.test.ts`** — pure module first; each check unit-tested with hand-built `AuditableCard` fixtures (including a known-bad legacy shape per check). No DB required to develop.
-2. **`scripts/audit-cards.mts`** — driver; run against production (read-only, so safe immediately); produce `card-audit-<date>.md` with the era-split lines. Retire/flag `scripts/reextract-lesson.mjs` in the same commit.
-3. **Prompt review of `lib/extract-cards.ts`** — driven by the report's *current-era* findings only; each prompt edit annotated with the checkId it targets.
-4. **`scripts/prompt-eval.mts`** — capture old-prompt baseline JSON *before* committing prompt changes if feasible (or from git stash/checkout of the old prompt), then validate: targeted check counts drop on identical sample lessons, no regressions elsewhere.
-5. **Stage 3 fixes** — per approved class: `scripts/fix-<class>.mts` (retro-filter-cleanup clone, dry-run default) for scriptable volume, `CardEditor` for handfuls. Re-run the audit; the new report is the milestone's closing evidence.
-
-Step 4's harness is deliberately built *after* step 3 starts, not before — the audit report tells you which lessons to sample; building the harness first would be guessing at the sample set.
-
----
+Steps 1–2 and 3 are separable phases; step 2's findings may shrink step 3 (e.g. if `<Link>` navigation proves fresh, only back/forward + resume handling ships).
 
 ## Sources
 
-- `scripts/retro-filter-cleanup.mts` — dry-run/--apply contract, env preamble, chunked writes, WR-03 malformed-JSON skip set, baseline-comparison reporting (HIGH — read in full)
-- `scripts/find-duplicates.mjs` — `superNormalize` level-2 fuzzy key, standalone report format (HIGH)
-- `scripts/dry-run-filter.mjs` — WR-04 helper-replica drift scar; diagnose-vs-repair script split precedent (HIGH)
-- `scripts/local-resync.mts` — contentHash skip behavior (why it can't validate prompt changes); upsert semantics (HIGH)
-- `scripts/reextract-lesson.mjs` — stale prompt/model/schema drift hazard (HIGH)
-- `lib/extract-cards.ts` — current prompt clauses each check maps to; salvage parser; CR-01 batch-fronts union; `filterComponents` wiring (HIGH)
-- `lib/filter-components.ts`, `lib/card-key.ts`, `lib/sentence-match.ts` (`sentenceMatch`/`splitParticle`/`MatchResult`), `lib/link-dependencies.ts` (`resolveDependencyEdges`) — the production helpers the audit must import, not replicate (HIGH)
-- `prisma/schema.prisma` — cascade topology (`Sentence`/`CardReview`/`ReviewLog` all cascade off `Card`), `normalizedFront @unique`, `ReviewLog` append-only note (HIGH)
-- `.planning/PROJECT.md` — v1.5 goal ("findings-first"), v1.4 outcomes (511-card retro clean, Phase 16 filter), key decisions log (HIGH)
+- [Next.js docs — staleTimes](https://nextjs.org/docs/app/api-reference/config/next-config-js/staleTimes) (v16.2.10 site: `dynamic` default 0s since v15, `static` 5min; explicitly "doesn't change back/forward caching behavior") — first-party, verified
+- [Next.js docs — revalidatePath](https://nextjs.org/docs/app/api-reference/functions/revalidatePath) (Route Handlers: next-visit invalidation only; Server Functions: immediate UI update) — first-party, verified
+- [Playwright docs — Authentication](https://playwright.dev/docs/auth) (setup project + storageState; API-based login via `APIRequestContext`) — first-party, verified
+- [Playwright docs — Web server](https://playwright.dev/docs/test-webserver) (webServer `command`/`url`/`env`/`reuseExistingServer`) — first-party, verified
+- [vercel/next.js #69979 — Stale data after navigation (app router)](https://github.com/vercel/next.js/issues/69979); [Next.js App Router caching deep dive](https://pockit.tools/blog/nextjs-app-router-caching-deep-dive/) — corroborating community reports (MEDIUM)
+- Codebase (HIGH — read directly): `app/study/page.tsx`, `app/page.tsx`, `components/HomeClient.tsx`, `components/StudyClient.tsx`, `middleware.ts`, `lib/auth.ts`, `package.json`, `next.config.ts`
 
 ---
-*Architecture research for: v1.5 Extraction Quality & Reliability — card-DB audit + prompt-review pipeline*
-*Researched: 2026-07-05*
+*Architecture research for: v1.6 Freshness, Performance & E2E Testing (Korean Study app)*
+*Researched: 2026-07-10*

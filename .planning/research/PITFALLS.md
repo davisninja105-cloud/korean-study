@@ -1,311 +1,376 @@
 # Pitfalls Research
 
-**Domain:** Auditing/modifying an existing LLM extraction pipeline over a live, identity-anchored SRS database (v1.5 Extraction Quality & Reliability)
-**Researched:** 2026-07-06
-**Confidence:** HIGH (grounded in direct reads of `lib/sync.ts`, `lib/extract-cards.ts`, `lib/card-key.ts`, `lib/filter-components.ts`, `lib/link-dependencies.ts`, `lib/study-cards.ts`, `scripts/relink-dependencies.mjs`, `app/api/cron/sync/route.ts`, `prisma/schema.prisma`, `.planning/codebase/CONCERNS.md`; web corroboration LOW confidence, used only for cross-checking general patterns)
+**Domain:** Adding cache-freshness fixes + first-time Playwright E2E to an RSC-hydration-optimized Next.js 16 / Prisma / Turso app with cookie auth (v1.6 Freshness, Performance & E2E Testing)
+**Researched:** 2026-07-10
+**Confidence:** MEDIUM-HIGH (Next.js/Playwright behavior cross-checked against official docs = MEDIUM; architecture-specific pitfalls grounded in this repo's actual code and a real prior incident = HIGH)
+
+**Context that shapes everything below:** v1.2 deliberately moved all four main routes to server-side RSC data fetching with `*Client.tsx` shells fed by props, specifically to kill the blank-loading flash. A **prior attempt to fix staleness regressed exactly this win** — the user's words: "it felt like the hydration aspect was completely forgotten about and now all tabs take forever to load even on the first try." Every freshness pitfall below is really the same meta-pitfall: *fixing staleness by destroying the performance architecture instead of invalidating at mutation boundaries.*
 
 Phase legend used throughout:
-- **audit** — DB audit of ~511 existing cards
-- **prompt-review** — reviewing/updating the `extract-cards.ts` prompt from audit findings
-- **bug-fix-1** — logging the silent known-lemmas degradation in `lib/study-cards.ts`
-- **bug-fix-2** — auto-relinking forward-reference `CardDependency` edges when the sync backlog drains
+- **freshness** — diagnose & fix stale-data-on-revisit across `/`, `/cards`, `/study`, `/habits` without regressing first-load speed
+- **e2e-setup** — Playwright infrastructure (webServer, auth, test DB, conventions)
+- **e2e-coverage / perf** — flow coverage (sync, study, cards CRUD) + performance regression tests
 
-## Critical Pitfalls
+## Critical Pitfalls — Freshness Fix
 
-### Pitfall 1: Delete-and-recreate "fixes" silently wipe FSRS state AND review history
+### Pitfall 1: Fixing the wrong cache layer (no diagnosis before treatment)
 
 **What goes wrong:**
-An audit fix (or a "just re-extract this lesson cleanly" instinct) deletes a card and recreates it with corrected content. `Card.id` is the FK anchor for everything: `CardReview` (`onDelete: Cascade`), `ReviewLog` (`onDelete: Cascade` — the WR-04 schema comment explicitly documents that history dies with its card), `Sentence`, and `CardDependency` in **both directions** (`CardToPrereqs` and `PrereqToCards` both cascade). Deleting one card also silently deletes every edge where it was someone else's prerequisite. No error is raised anywhere — the learner just loses months of scheduling state and the `/history` page loses rows.
+Next.js has four distinct caches (fetch/data cache, full route cache, client-side Router Cache, browser bfcache). The reported symptom — *fresh on hard reload, stale after navigating back* — points specifically at the **client-side Router Cache**, which restores back/forward navigations from cache **regardless of `staleTimes`** (it deliberately mirrors bfcache). Developers who don't pin down which layer is serving stale data reach for the biggest hammer (`export const dynamic = 'force-dynamic'`, `fetchCache = 'force-no-store'`), which operates on the *server-side* layers, slows every request — and can **still leave back/forward navigation stale**, because the Router Cache is client-side. You pay the full cost and don't even fix the symptom.
 
 **Why it happens:**
-Delete-and-recreate is the easiest way to apply a batch of content fixes, and `wipe-card-data.mjs` sits right there in `scripts/` as a tempting precedent. The cascades make it *feel* clean — nothing errors.
+The cache layers are invisible and their interactions are the most-complained-about part of the App Router. `force-dynamic` "feels" like the freshness switch. The prior incident here almost certainly followed this path.
 
 **How to avoid:**
-- Hard rule for the entire milestone: **fixes mutate cards in place by `id`** (`prisma.card.update`), never delete+create. Mirror the `app/api/cards/[id]/route.ts` precedent: when changing `front`, recompute and set `normalizedFront` in the same update, and handle the P2002 collision (that collision means you found a true duplicate — see Pitfall 3 for the merge procedure).
-- Any fix script follows the `retro-filter-cleanup.mts` template: **dry-run by default**, `--apply` to mutate, idempotent, developer-run locally.
-- Before any `--apply` run against Turso, snapshot: `turso db shell korean-study ".dump"` (or at minimum export `Card`, `CardReview`, `ReviewLog`, `CardDependency`) so recovery is possible.
+Make the first task of the freshness phase a **written diagnosis**, not a fix: (1) run `npm run build` and record each route's rendering mode (`○` static vs `ƒ` dynamic) from the build output; (2) reproduce staleness in a production build (`npm run build && npm start`, never `next dev`); (3) distinguish the three navigation paths — `<Link>`/tab tap, browser back/forward, hard reload — and record which are stale. Only then choose the invalidation point. For this app the expected fix shape is **targeted invalidation at mutation boundaries**: `router.refresh()` fired once when a study session completes and when a sync completes (both moments are already explicit events in `StudySession.tsx` / SyncPanel / pull-to-refresh), not global cache disabling.
 
 **Warning signs:**
-Any plan step containing "recreate", "re-add", or `prisma.card.delete` outside an explicit user-initiated card deletion; `ReviewLog` or `CardDependency` row counts dropping after a fix run.
+- Any diff adding `export const dynamic = 'force-dynamic'`, `fetchCache = 'force-no-store'`, `revalidate = 0`, or `Cache-Control: no-store` to `app/*/page.tsx` or `layout.tsx`
+- A "fix" verified only in `next dev` (dev doesn't exercise the production Router Cache behavior — the repo's own CLAUDE.md gotcha)
+- Staleness "fixed" for tab-tap navigation but nobody tested browser back/forward specifically
 
-**Phase to address:** audit (fix-application step), enforced as a constraint in prompt-review too.
+**Phase to address:** freshness — as its *first* plan (diagnosis task gating the fix task).
 
 ---
 
-### Pitfall 2: Expecting the improved prompt to repair existing cards via re-sync — it structurally cannot
+### Pitfall 2: `useState(initialProps)` shells silently ignore refreshed server data
 
 **What goes wrong:**
-The team updates the prompt, runs a sync (or `local-resync.mts`), and expects existing card quality to improve. It won't, for two independent reasons in the current code:
-1. `Lesson.contentHash @unique` + the hash-skip in `runSync` (and `local-resync.mts`, which is "idempotent — skips already-synced lessons by contentHash") means **already-synced lessons are never re-extracted at all**. The new prompt only applies to *future* lessons.
-2. Even if a lesson were force-re-extracted (Lesson row deleted first), the sync UPDATE branch deliberately preserves most of the card: `lessonId` and `review` are never touched (good), but **sentences are refreshed only when the card currently has zero** (`existing.sentences.length === 0`), and `components` only when the new extraction returned a non-empty array (WR-02). `type` isn't even in `updateData`; only `back`, `notes`, `distractors` refresh. So a prompt change that produces better sentences or better categorization does not propagate to existing cards.
+This is the pitfall most specific to THIS architecture. `CardsClient` initializes `useState<CardDTO[]>(initialCards)`; `HomeClient`, `HabitsClient`, `StudyClient` follow the same props-to-initial-state pattern. React only reads a `useState` initializer on **first mount**. After a correct `router.refresh()`, the RSC re-renders and passes *fresh props* — but the mounted client shell keeps its *stale state*. The freshness fix "doesn't work," the developer concludes `router.refresh()` is broken, and escalates to `force-dynamic` or re-introducing client-side `useEffect` fetching. This escalation chain plausibly explains the prior regression.
 
 **Why it happens:**
-The pipeline was designed for *incremental ingestion*, not *retroactive repair*. That design is correct (it's what protects FSRS state), but it means "fix the prompt" and "fix the 511 existing cards" are two entirely separate workstreams, and the milestone must treat them as such.
+The v1.2 pattern (`useState(initialProp)`, no sync effect) was *correct* when props never changed after mount. `router.refresh()` changes that contract: props now update in place on a mounted component.
 
 **How to avoid:**
-- Set the expectation in the phase plan explicitly: **prompt changes are prospective**. Retroactive fixes to existing cards come from the audit's targeted fix scripts (in-place updates by `id`), not from re-syncing.
-- If a lesson genuinely must be re-extracted (e.g., its extraction was badly truncated), the procedure is deliberate: delete only the `Lesson` row, re-sync, and accept that existing cards are only partially refreshed (and check how orphaned `lessonId` values interact with the lesson-range filter, which joins through the `lesson` relation). This should be rare, not the default repair mechanism.
-- Do NOT "fix" the UPDATE branch to overwrite sentences/type wholesale as part of prompt-review — that turns every routine re-sync into a destructive overwrite of any manual `CardEditor` edits the user has made. If sentence refresh is ever wanted, gate it behind an explicit flag only scripts pass.
+Decide per shell how refreshed props flow in, and write it down as the pattern:
+- **Derive, don't copy:** where the prop is only read (Home/Habits stats, heatmap), render directly from props — delete the state copy entirely.
+- **Where local mutation exists** (CardsClient edits/deletes cards locally): either re-mount the shell via a `key` derived from a server-provided token, or reconcile props→state deliberately — mindful that `react-hooks/set-state-in-effect` forbids synchronous `setState` in effect bodies (use the render-time "previous props" comparison pattern from the React docs, or sync inside async callbacks).
+- **Never** re-sync `StudyClient` mid-session — see Pitfall 3.
 
 **Warning signs:**
-A plan that says "re-run local-resync to apply the new prompt"; audit findings marked "will be fixed by prompt update" for cards that already exist.
+- `router.refresh()` visibly re-runs the server (network tab shows the RSC payload) but the UI doesn't change
+- A shell both holds `useState(initialProp)` *and* is expected to receive refreshed props
+- New `useEffect(() => setX(prop), [prop])` blocks added hastily without handling in-flight local edits
 
-**Phase to address:** prompt-review (scope definition), audit (owns retroactive fixes).
+**Phase to address:** freshness — the props→state reconciliation strategy per shell must be in the PLAN, not improvised.
 
 ---
 
-### Pitfall 3: Prompt phrasing drift creates near-duplicate cards that the `@unique` constraint cannot catch
+### Pitfall 3: Refreshing at the wrong moment — mid-session, per-grade, or on mount
 
 **What goes wrong:**
-`normalizeFront` is intentionally narrow: NFC + whitespace collapse + strip *one trailing English-ASCII paren group*. It does **not** strip the `~` prefix (rule 4: "Leave a leading ~ — it's meaningful"), does not unify `~(으)면` / `(으)면` / `~으면`, and keeps Hangul-containing parens. The DB constraint only blocks *exact* normalized collisions. The real near-dupe defense is the prompt itself — the "Existing cards already in the deck — DO NOT generate" list plus the instruction to "match by the core Hangul content, ignoring ~ prefix and English glosses". A prompt rewrite that changes front-formatting conventions (different gloss style, different pattern notation, dropping/reordering the existing-fronts list, or weakening the match-by-core-Hangul instruction) makes future extractions phrase *already-known concepts* differently → `findUnique` misses → a fresh card with fresh FSRS state is created alongside the old one. The learner now reviews the same grammar pattern twice, and history/graph edges split across two ids. Web corroboration (LOW): identity drift under prompt changes is the standard failure mode for LLM extraction over identity-keyed stores; the standard mitigation is exactly what this system does — feed existing keys as reuse hints + post-hoc dedup.
+`router.refresh()` re-renders the current route's server components. If fired during an active study session it re-runs `getStudyCards()` (a Turso round-trip + selection + sequencing) and pushes a *new* card list at `StudyClient` while the mutable queue, optimistic FSRS state, undo snapshots, and `seenCardIdsRef` are live. Fired per-grade, it also races the fire-and-forget `POST /api/review` (the optimistic write may not have landed yet, so the refreshed server data is *older* than client state — fresh-looking stale data). Fired in a mount effect, it doubles every navigation's server work.
 
 **Why it happens:**
-The prompt's dedup-hint sections look like verbose fat to trim during a prompt review ("the DB constraint handles dedup anyway"). It doesn't — the constraint handles only exact-match; the prompt handles semantic-match.
+"Refresh after mutation" gets interpreted as "refresh after *every* mutation." In this app a grade is a mutation, but the session is designed to be atomic (PROJECT.md: "study sessions are atomic — no real-time updates").
 
 **How to avoid:**
-- Treat these prompt sections as **load-bearing API**: the existing-fronts list, the "match by core Hangul, ignore ~ prefix" rule, the one-card-per-base-form rule, and the front-formatting conventions. Changes to any of them require a dedup regression check.
-- Add a **dry-run extraction diff** to prompt-review's verification: run the new prompt against 2–3 already-synced lessons' raw text (offline, no DB writes), `normalizeFront` every returned front, and diff against the deck. Every returned front should either exact-match an existing `normalizedFront` or match nothing under `find-duplicates.mjs`'s fuzzy key (strips `~` and all parens). Any fuzzy-hit-but-not-exact-hit is a near-dupe the new prompt would create.
-- Run `scripts/find-duplicates.mjs` after the first few post-change syncs; make it part of the milestone's verification checklist.
-- If the audit finds existing near-dupes: the merge procedure is (1) pick survivor (usually higher FSRS reps), (2) re-point loser's `ReviewLog` rows and `CardDependency` edges (both directions) to survivor, (3) merge sentences if survivor lacks them, (4) delete loser. Steps 2–3 must run **before** the delete or the cascades destroy what you meant to migrate. Script it; don't do it by hand per card.
+Refresh only at **session boundaries**: session complete screen, session abandon/navigate-away, sync complete (SyncPanel + pull-to-refresh success). Because review saves are fire-and-forget with bounded retries (~500ms/~1500ms backoff), a session-complete refresh should either await/observe the last pending review POST or explicitly tolerate eventual consistency (the due list is computed from `CardReview.nextReview`, so a lost race shows one already-graded card as still due — decide which is acceptable and document it).
 
 **Warning signs:**
-`newCards > 0` on a sync of a doc with no genuinely new vocabulary; `find-duplicates.mjs` groups growing after the prompt change; two cards whose fronts differ only by `~`, parens, or gloss text.
+- `router.refresh()` inside `submitReview`/grade handlers
+- Cards reappearing or the queue resetting mid-session
+- Home hero showing a due count that disagrees with the session just completed (write race)
 
-**Phase to address:** prompt-review (primary), audit (detects pre-existing near-dupes and owns the merge script).
+**Phase to address:** freshness — the write-race tolerance decision belongs in the plan's binding truths.
 
 ---
 
-### Pitfall 4: Prompt changes to `components[]` phrasing silently thin the knowledge graph via `filterComponents`
+### Pitfall 4: Regressing first-paint by re-introducing client-side fetching or killing prefetch
 
 **What goes wrong:**
-`filterComponents` (v1.4) keeps a component only if it resolves to a real deck card — direct `normalizeFront` match or particle-stem fallback. It cannot distinguish "hallucinated" from "real prerequisite phrased in a way that doesn't resolve." If prompt-review changes how the model phrases components (e.g., more abstract grammar notation, polite forms like 이에요 instead of 이다, or surface forms instead of base lemmas), a larger fraction of *legitimate* components stops resolving and gets silently dropped before persist. The graph doesn't error — it quietly loses edges, and foundation-first sequencing degrades with no signal. WR-02 makes the shrinkage asymmetric: a persisted non-empty-but-smaller `components` value replaces the fuller old one for good, while an empty result never overwrites — drift accumulates unevenly.
+Two "freshness" moves directly undo v1.2: (a) moving data fetching back into `useEffect` in the client shells ("always fresh!") — restores the blank-flash and adds a client round-trip on every visit; (b) slapping `prefetch={false}` on the Nav `<Link>`s or forcing dynamic rendering so every tab tap waits on a full Vercel-function + Turso round-trip with no cached RSC payload. The user's report — "all tabs take forever to load **even on the first try**" — is the signature of (b) combined with lost skeleton coverage: each navigation became an uncached serverless invocation against Turso (cold start + DB latency per tap).
 
 **Why it happens:**
-The prompt's components section and the deterministic filter were tuned *together* in Phase 16. Reviewing the prompt in isolation treats the filter as a safety net when it's actually a coupled contract: the prompt must emit components in exactly the shape `normalizeFront`/`splitParticle` can resolve.
+Each move genuinely does deliver freshness; the cost is just paid on every navigation instead of once per mutation.
 
 **How to avoid:**
-- Any change to the components prompt section must be validated with a before/after metric on the same lesson texts: **count of components surviving `filterComponents` per card**, old prompt vs new. A drop means the new prompt emits unresolvable phrasings, not that hallucinations decreased.
-- Keep the prompt's component examples (`먹다 not 먹어요; 은/는 for the topic particle`) aligned with what actually resolves — those examples are the model's format spec for the filter.
-- The audit's "components accuracy" check should measure two distinct things separately: (a) stored components that don't resolve to deck cards (stale pre-filter rows — fixable by re-running `retro-filter-cleanup.mts`), and (b) cards with suspiciously few/zero components (possible over-filtering). Conflating them produces a misleading "accuracy" number.
+Adopt an explicit invariant for the milestone: **first-load and tab-navigation performance are regression-gated.** Concretely: (1) no `useEffect` initial-data fetching returns to any `*Client.tsx`; (2) Nav `<Link>` prefetch stays default; (3) `loading.tsx` skeletons must still render on tab navigation (if the fix makes navigations slower-but-fresher, the skeleton is the floor of acceptability); (4) an E2E check asserts real content in the first server-rendered paint and skeleton-then-content on tab switch *before* the freshness change lands, so any regression is mechanically visible.
 
 **Warning signs:**
-Average `components[]` length per newly-synced card drops sharply after the prompt change; new cards with `components: null` for obviously composite grammar patterns; `CardDependency` edge count per new lesson trending toward zero.
+- `fetch('/api/...')` on mount reappearing in client shells
+- The empty-state flash returning ("No cards yet" blink)
+- Build output flipping previously-fine routes' rendering mode
+- Tab switches showing a blank frame instead of the skeleton
 
-**Phase to address:** prompt-review (with audit providing the baseline metric).
+**Phase to address:** freshness defines the invariant; e2e-setup encodes it as a regression test. **Strong ordering recommendation: stand up the E2E baseline (or at minimum the first-load/tab-nav test) *before* merging the freshness fix** — this milestone exists because the last attempt shipped without one.
 
 ---
 
-### Pitfall 5: Auto-relink triggered on `remaining === 0` fires at the wrong times — and `remaining=0` doesn't mean "drained"
+### Pitfall 5: Breaking the DTO boundary or the shared-pipeline contract while adding refresh paths
 
 **What goes wrong:**
-The obvious trigger — "run relink when the sync response says `remaining === 0`" — is wrong in three directions:
-1. **False positive (fires when not drained):** `remaining = newLessonData.length - batch.length`. A batch lesson whose extraction *fails* is not persisted (no Lesson row), so with a 1-lesson backlog that fails: `remaining=0, failed=1` — the backlog is NOT drained (the lesson reappears as new next sync), but the naive trigger fires anyway. The real drain condition includes `failed === 0`.
-2. **Fires constantly:** every no-new-content sync returns `remaining: 0` (`'No new content since last sync'`). The daily cron plus every pull-to-refresh would run a full-corpus relink — idempotent, but O(cards-with-components) lookups plus per-edge upserts against Turso from a Vercel function, i.e., hundreds of sequential WAN round-trips added to every sync.
-3. **Timeout stacking:** the one sync that *actually* drains the backlog just spent 30–90 s in Opus extraction. On Hobby's hard 60 s cap, appending relink to that same request risks the function being killed mid-relink — the response never reaches the client, SyncPanel reports failure for a sync that succeeded (contentHash dedup protects the data, but the UX reads as breakage and the relink is half-done until the next trigger).
+New refresh paths (a server action calling `revalidatePath`, a new re-fetch endpoint, an RSC returning extra fields) leak raw Prisma `Date` objects across the server→client boundary, violating RSC-05 — which either throws at serialization or silently produces wrong client behavior. Similarly, adding a freshness-specific data path that *bypasses* `lib/study-cards.ts` / `lib/dashboard.ts` forks the single-source-of-truth pipeline that the RSC pages and API routes share — RSC render and client re-fetch start disagreeing about what "the data" is.
 
 **Why it happens:**
-`SyncResult.remaining` was designed as UI copy ("N more — sync again"), not as a lifecycle event. Overloading it as a completion signal imports its edge cases.
+Freshness work touches every server→client seam at once; it's the highest-traffic moment for boundary violations since v1.2 itself.
 
 **How to avoid:**
-- Trigger condition: `remaining === 0 && failed === 0 && newLessons > 0` — "this request persisted the last lesson of a backlog." Fires exactly once per drain, never on no-op syncs.
-- Make the relink pass **cheap enough for budget leftovers**: one `findMany` for all cards with components (`id`, `normalizedFront`, `components`), one `findMany` for existing edges, resolve in memory via `resolveDependencyEdges` from `lib/link-dependencies.ts`, set-diff, and insert **only the missing edges** (usually a handful — forward references only). Never re-upsert all ~1500 edges per run.
-- If even that is too tight after a 50+ s extraction, defer: set a `Setting` flag (`relinkPending`) when the drain condition hits and execute the relink at the *start* of the next sync request (the no-new-content fast path has the whole 60 s free). This also gives idempotent recovery from a killed relink for free.
+Any new data crossing the boundary goes through `lib/dto.ts` types; any new fetch path calls the existing `lib/study-cards.ts`/`lib/dashboard.ts` functions. If a server action is introduced, its return value is DTO-typed too. Code-review check: grep changed prop interfaces for `Date` types.
 
 **Warning signs:**
-Sync latency increasing on no-op syncs; Vercel function duration near 60 s on the final backlog sync; `failures[]` non-empty in the same response that triggered a relink.
+- A changed `*Client.tsx` prop interface with a `Date` type
+- A new `app/api/*` route duplicating a `lib/` query inline
 
-**Phase to address:** bug-fix-2.
+**Phase to address:** freshness (code-review checklist item).
 
 ---
 
-### Pitfall 6: Automating relink by porting `relink-dependencies.mjs` re-embeds already-drifted logic
+### Pitfall 6: Adopting `unstable_cache` / Cache Components / `staleTimes` tuning as the fix
 
 **What goes wrong:**
-The manual script carries its own **copy** of `normalizeFront` ("Must mirror lib/card-key.ts") — and it has *already drifted*: the script's Hangul-detection regex is `[가-힣ᄀ-ᇿ]` (line 61) while `lib/card-key.ts` uses `[가-힣ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿]` (line 33, with compatibility Jamo ranges). Porting the script's logic into the sync path — instead of importing `lib/card-key.ts` + `lib/link-dependencies.ts` — ships that drift into production, where relink and sync compute *different* keys for the same component and disagree about which edges exist.
-
-There is also a subtler, pre-existing asymmetry the automation will trip over: `filterComponents` **retains** a component via the `splitParticle` stem fallback (e.g., `학교에` retained because card `학교` exists), but `resolveDependencyEdges` resolves by **direct `normalizeFront` lookup only** — a stem-retained component is persisted in `components` yet creates **no edge**, on the sync path and on any relink built from the same resolver. Consequence: "relink ran and created 0 new edges" is NOT proof the graph is complete; and a relink that "helpfully" adds stem-fallback resolution would create edges the live sync path never creates — two code paths, two graphs.
+Current ecosystem advice gravitates toward Next 16 Cache Components (`"use cache"`, `cacheLife`, `updateTag`) or the experimental `staleTimes` config. For this app: cross-request DB caching was **already evaluated and rejected in v1.2** ("staleness risk outweighed gain for a single-user app" — it's in PROJECT.md Out of Scope), and this milestone's problem is *too much* caching, not too little. Adding a new cache layer to fix staleness inverts the problem. `staleTimes` tuning is also a red herring here because back/forward restoration ignores it.
 
 **Why it happens:**
-The script predates `lib/link-dependencies.ts` (its IN-02 header notes this exact resolve loop was independently reimplemented four times, which is how CR-02 slipped through one call site). Automation naturally starts from the thing being automated — the script — rather than the shared lib.
+Searching "Next.js stale data" in 2026 surfaces Cache Components migration content; it looks like The Modern Answer.
 
 **How to avoid:**
-- The auto-relink implementation imports `resolveDependencyEdges` and `normalizeFront` from `lib/` — zero ported logic from the `.mjs` script. Once automated, delete `relink-dependencies.mjs` or reduce it to a thin wrapper over the same lib code so the drifted copy can't be run again.
-- Decide the stem-fallback asymmetry **explicitly** and document it: either (a) keep direct-lookup-only in both places and accept that stem-form components are metadata without edges, or (b) add stem-fallback to `resolveDependencyEdges` itself so sync and relink change together. Never fix it in only one call site.
-- Auto-relink must be **add-only** (upsert on the `cardId_prerequisiteId` compound key, self-edge skip preserved). Pruning stale edges stays in the developer-run `retro-filter-cleanup.mts` — an automatic pruner running concurrently with a sync mid-upsert could delete edges for cards whose refreshed components haven't been written yet.
+Treat the v1.2 Out-of-Scope decision as binding unless the Pitfall-1 diagnosis proves a server-side cache layer is actually the stale source. The fix budget for this milestone is invalidation calls + client-shell prop reconciliation, not new caching architecture.
 
-**Warning signs:**
-Any `function normalizeFront` definition appearing in new relink code; relink and sync producing different edge counts for the same corpus; a diff that edits `scripts/relink-dependencies.mjs` instead of `lib/`.
+**Warning signs:** `"use cache"` directives, `unstable_cache` imports, `cacheComponents`/`staleTimes` config changes appearing in the diff.
 
-**Phase to address:** bug-fix-2.
+**Phase to address:** freshness (scope guard in the plan).
 
 ---
 
-### Pitfall 7: Cron sync and manual sync overlapping — auto-relink widens an existing race
+## Critical Pitfalls — Playwright E2E
+
+### Pitfall 7: E2E runs pointed at production Turso (real deck, real Claude spend)
 
 **What goes wrong:**
-Nothing prevents the daily cron (`GET /api/cron/sync`) and a manual sync (pull-to-refresh / SyncPanel) from running concurrently — both call `runSync` with no lock. Today the blast radius is contained by constraints: `contentHash @unique` makes the second `lesson.create` throw (its compensating path leaves no orphan), and card upserts collide safely on `normalizedFront`. The known soft spot is `orderIndex`: both requests read the same `_max.orderIndex` after extraction and can assign duplicate order indices (no unique constraint), which wobbles lesson-range filtering. Adding auto-relink widens exposure: a relink reading `Card.components` while the other request is mid-upsert sees a half-written lesson — harmless for an **add-only, idempotent** relink (missing edges arrive on the next trigger), but genuinely unsafe if the relink prunes (Pitfall 6) or if a `relinkPending` flag is cleared by one request while the other's writes are in flight. Both requests can also independently satisfy the drain condition and double-fire. Web corroboration (LOW): standard serverless guidance is idempotency-first plus skip-if-running guards, since OS-level locks are unavailable.
+`.env` in this repo contains the **production** `libsql://` `DATABASE_URL`. Next.js and Prisma auto-load it. A Playwright `webServer` that starts the app without overriding env will run E2E card-CRUD and sync flows against the live deck — deleting real cards with real FSRS history (violating the standing "never destroy FSRS state" rule), polluting `StudyDay`/`ReviewLog`, and a sync test would hit the real Google Doc + Claude Opus (cost + 60s-scale latency + nondeterminism).
 
 **Why it happens:**
-Single-tenant apps rarely think about concurrency; the Phase 19 cron made concurrent invocation a *scheduled certainty* (10:00 UTC daily) rather than an unlikely double-tap, and v1.5 is the first feature to hang additional work off sync completion.
+Single-tenant apps have no staging habit; env loading is implicit; the first E2E run "just works" because it found real data — which is exactly the trap.
 
 **How to avoid:**
-- Rely on idempotency, not locking: add-only relink + compound-key upsert means a double-fired or interleaved relink converges to the same edge set. Design for "runs twice concurrently" as the normal case.
-- If using the `relinkPending` flag pattern: clear the flag *before* doing the relink work (a concurrent run at worst re-sets it and the work runs once more later) rather than after (a crash leaves it stuck, or a concurrent clear loses a needed run). With add-only idempotent work, one extra run is free; never running is the failure mode to avoid.
-- Don't build a real mutex (Setting-row lock with TTL, etc.) — on Hobby, a function can be killed at 60 s without cleanup, and a leaked lock silently disables relinking forever. The no-lock failure mode (redundant idempotent work) is strictly better.
-- Note in the plan (out of scope to fix): the `orderIndex` duplicate race predates this milestone; don't let bug-fix-2 take a dependency on `orderIndex` uniqueness.
+- Test env is **explicit and local**: `DATABASE_URL=file:./e2e-test.db`. Note: `prisma db push` **works** against `file:` URLs — the Turso DDL gotcha does not apply to the test DB, so schema setup is one command in global setup.
+- Reuse the project's own Phase-22 pattern: **print the resolved DB host before the suite runs and hard-fail if it starts with `libsql://`**. A 5-line guard in Playwright global setup.
+- Seed deterministic fixture data via a Prisma script (cards + sentences + reviews + dependency edges), not via the UI and never via real sync.
+- Sync E2E never calls the real pipeline: seed `Lesson` rows directly and scope sync coverage to route auth + error surfacing with fixtures.
 
 **Warning signs:**
-Duplicate `orderIndex` values in `Lesson` (a freebie check for the audit); relink logging two executions within the same minute.
+- E2E "passes" with data you recognize from your actual deck
+- `ReviewLog`/`StudyDay` rows in production with timestamps matching test runs
+- Anthropic API usage spikes during test runs
 
-**Phase to address:** bug-fix-2.
+**Phase to address:** e2e-setup — the very first task (guard exists before any test does).
 
 ---
 
-### Pitfall 8: Logging the known-lemmas failure without its cause, or in a way that changes the degradation contract
+### Pitfall 8: Per-test UI login instead of storageState / direct cookie injection
 
 **What goes wrong:**
-Three sub-failures hide in this one-line fix to `lib/study-cards.ts`:
-1. **Logging the symptom, not the cause.** `console.warn('known-lemmas query failed')` without `knownRowsResult.reason` records that degradation happened but leaves the actual transient Turso error — the thing CONCERNS.md wants diagnosed — as unknowable as before.
-2. **Breaking the DB-01 contract while "improving" it.** The graceful-degradation shape (`Promise.allSettled`; pool failure throws, known-lemmas failure → empty Set) is a validated requirement. A refactor that surfaces the failure by throwing, or converts to sequential awaits "so the error is catchable," trades a degraded-but-working study session for a 500 — and `app/study/page.tsx` is an RSC with **no error boundary** (CONCERNS: "RSC pages have no fetch error fallback"), so the user gets the framework error screen.
-3. **Log without a consumer.** `getStudyCards` runs on every `/study` render and every `/api/cards/due` call; a sustained Turso degradation emits a warn per page view into Vercel's log stream, which nobody watches for this app. The fix ships, the box gets checked, and the degradation remains effectively invisible — silence has just been relocated. Also: libSQL error messages can embed the database URL/hostname; log `reason.message` / `String(reason)`, not the full serialized error object.
+Every test navigating to `/login`, typing the password, and submitting adds seconds per test, and makes *every* test fail when the login page has any issue (one bug = 100% red suite, zero signal). Conversely, naive storageState handling commits the state file — which contains the auth cookie, a real secret with **no expiry** in this app's stateless HMAC scheme.
+
+**Why it happens:**
+The login flow is the first thing that works, so it becomes the implicit setup for everything.
 
 **How to avoid:**
-- Minimal, contract-preserving shape: in the existing rejected branch, `console.error('[study-cards] known-lemmas query failed; degrading to empty set:', knownRowsResult.reason instanceof Error ? knownRowsResult.reason.message : String(knownRowsResult.reason))`. No control-flow change, no new throw paths.
-- Prefix the message (`[study-cards]`) so Vercel log search can find it — that's the realistic "consumer" at this app's scale. If the milestone wants one step further, a counter in the `Setting` table is the app-native pattern, but it adds a write to a read path; weigh it, don't default to it.
-- Add/extend a unit test asserting degradation still returns cards (with `unknownCount` computed against an empty set) when the second query rejects — locking the contract against risk (2).
+This app's auth makes this unusually easy — exploit it. `lib/auth.ts` computes a **deterministic HMAC token from `AUTH_SECRET`** (no session table, no expiry). Two good options:
+1. **Setup project** (Playwright's documented pattern): one `auth.setup.ts` logs in via `/login` once, saves `storageState` to `playwright/.auth/user.json` (gitignored / under `outputDir`); all test projects declare the dependency and set `storageState`. This also makes the login flow itself covered by exactly one test.
+2. **Direct injection** for speed: compute the token with the same `computeAuthToken()` code and `context.addCookies([{ name: 'ks_auth', ... }])` — zero UI dependency.
+Either way `APP_PASSWORD`/`AUTH_SECRET` must be set in `webServer.env`, and remember `middleware.ts` guards **API routes too** — any test using Playwright's `request.*` for seeding/assertions needs the cookie on the request context, not just the page.
 
 **Warning signs:**
-The diff touching more than a few lines of `study-cards.ts`; removal of `Promise.allSettled`; a log statement that stringifies the whole rejection object.
+- Suite runtime dominated by `/login` navigations
+- `playwright/.auth/*.json` showing up in `git status`
+- API-level calls returning 401 or `/login` redirects
 
-**Phase to address:** bug-fix-1.
+**Phase to address:** e2e-setup.
 
 ---
 
-### Pitfall 9: Heuristic audit checks that re-implement runtime logic — false positives at report-killing scale
+### Pitfall 9: Testing against `next dev` — flaky AND invalid for this milestone
 
 **What goes wrong:**
-At 511 cards, an audit rule with even a 10% false-positive rate emits ~50 bogus findings; mixed into real findings, the whole report gets skimmed and shelved — the audit phase produces a document instead of fixes. Two systematic FP sources in this codebase:
-1. **Re-implementation drift** (the same disease as Pitfall 6): an audit checker that re-implements blank-safety, front-normalization, or particle-splitting instead of importing `sentenceMatch`, `normalizeFront`, and `splitParticle` will disagree with the runtime — flagging cards that actually work, or passing cards that don't. Precedent exists: the relink script's drifted regex; the TESTING.md doc that claimed zero coverage after tests existed.
-2. **Judgment calls dressed as rules.** Korean-specific checks are heuristic by nature: `splitParticle` mis-splits are a *documented accepted ambiguity* (기다리는); vocabulary-vs-phrase categorization is genuinely fuzzy at the boundary; "sentence sounds unnatural" is not decidable deterministically. Running these as pass/fail rules floods the report. Conversely, an LLM-judge audit pass hallucinates its own findings and can't be re-verified cheaply.
+Two distinct failures. (a) Generic flakiness: dev-mode on-demand compilation makes the *first* navigation to each route take 5–30s (timeout storms), and HMR/overlays interfere with selectors. (b) **Milestone-specific invalidity:** the exact behavior under test — Router Cache, `loading.tsx`, RSC payload reuse — differs between dev and production builds. The repo's own CLAUDE.md already warns: "Test RSC first-paint behavior with `npm run build && npm start`, not `next dev`." An E2E suite that green-lights the freshness fix in dev proves nothing about the production behavior the user actually experiences.
+
+**Why it happens:**
+`next dev` is the muscle-memory command, and most Playwright examples show `command: 'npm run dev'`.
 
 **How to avoid:**
-- **Every deterministic check imports the runtime helper it audits.** Blank-safety = `sentenceMatch(s.korean, s.targetForm)` + the 2-char/exactly-once rules exactly as `extract-cards.ts` applies them; components resolution = `filterComponents` + the deck set; dedup = `normalizeFront` + `find-duplicates.mjs`'s fuzzy key. An audit finding is then by construction a runtime-visible defect.
-- **Tier the report.** Tier 1 = deterministic, mechanically verifiable, candidate for scripted fix: first sentence not blank-safe, targetForm not a verbatim substring, stored components that don't resolve, `distractors` count ≠ 3, empty `translation`, near-dupe fuzzy-key groups, cards with zero sentences. Tier 2 = heuristic, human-eyeball only: categorization, sentence naturalness, gloss quality — sample-review, cap the list, never auto-fix.
-- **Calibrate before running corpus-wide:** run each rule on a hand-checked sample of ~20 cards; if precision isn't near-perfect, the rule is actually Tier 2. One hour that saves the report's credibility.
-- Report *counts per rule* first, findings second — a rule flagging 200/511 cards is telling you about the rule, not the deck.
-- Audit is **read-only**; fixes are a separate, dry-run-by-default script step (matches the milestone's "findings-first" framing and the `retro-filter-cleanup.mts` precedent). Never mutate while measuring.
-- Each finding carries `card.id` + rule name + concrete evidence (the sentence text, the unresolvable component string) so any single finding is spot-checkable in seconds.
+`webServer: { command: 'npm run build && npm start -- -p 3100', port: 3100, reuseExistingServer: !process.env.CI, timeout: 180_000, env: { DATABASE_URL: 'file:./e2e-test.db', APP_PASSWORD: ..., AUTH_SECRET: ... } }`. Use a **dedicated port** (3100, not 3000) so `reuseExistingServer` can never silently attach to your dev server running with production env. The ~1–2 min build is a fixed per-suite cost; `reuseExistingServer` on the dedicated port amortizes it during local iteration.
 
 **Warning signs:**
-Any audit-script function that reimplements matching/normalization; a rule flagging >20% of the deck; findings without card ids; a plan step that both detects and fixes in one pass.
+- First-navigation timeouts that vanish on retry (dev compile-on-demand signature)
+- Freshness tests passing locally while the user still sees stale data in production
+- E2E hitting `localhost:3000` while a dev server is also on 3000
 
-**Phase to address:** audit.
+**Phase to address:** e2e-setup (webServer config); all freshness E2E tests inherit it.
 
 ---
 
-### Pitfall 10: Prompt review breaking the truncation-salvage / validation parsing contract
+### Pitfall 10: Parallel workers sharing one SQLite file — cross-test data races
 
 **What goes wrong:**
-`parseExtractionResponse` is load-bearing and battle-tested (WR-01 depth-aware salvage, GRAPH-02 structural validation, CR-01 same-batch sibling union). A prompt change that alters the output envelope — a wrapping object instead of a bare array, new per-card fields, markdown fences, or significantly longer outputs — interacts with all of it: the greedy `/\[[\s\S]*\]/` regex, the depth-1 top-level-card-boundary assumption, and `isValidExtractedCard`'s field checks. Longer outputs also raise truncation frequency at `max_tokens: 32000` (exhaustive Opus extraction already runs 30–90 s), meaning *more* salvage-path executions in production, not fewer. CONCERNS.md states the standing rule: "Any prompt-schema change must update the salvage tests in `tests/extract-cards.test.ts` in the same commit."
+Playwright's per-test browser-context isolation covers cookies/localStorage — **not the database**. Playwright defaults to N parallel workers; all hit the same `file:./e2e-test.db`. Card-CRUD tests race study tests (a card deleted mid-session), due-count assertions see other tests' reviews, and SQLite file-level write locking adds spurious busy/locked failures. Tests pass alone, fail in the suite, in random combinations.
+
+**Why it happens:**
+Parallelism is the default; DB sharing is invisible until two tests touch the same rows.
 
 **How to avoid:**
-- Keep the output contract frozen unless an audit finding requires changing it: bare JSON array, same field names. Prompt-review should change *instructions* (categorization guidance, sentence quality, components phrasing), not *shape*.
-- If shape must change: update `parseExtractionResponse`, `isValidExtractedCard`, and the salvage tests in the same commit, including a truncated-fixture test for the new shape.
-- Watch the output-length budget: if the new prompt asks for more per-card content, verify the longest existing lesson still completes under `max_tokens` and the 60 s window — otherwise every sync of a dense lesson silently loses trailing cards to salvage.
+For this app's scale, **start with `workers: 1` and `fullyParallel: false`** — the suite will be small (single-user app, a handful of flows) and serial execution eliminates the whole class. If parallelism is ever needed, per-worker DB files + server instances via `testInfo.workerIndex` is the documented pattern — but that's over-engineering at v1.6. Also make seeding idempotent and order-independent (reset + reseed in global setup or per test file), so test order never matters.
 
 **Warning signs:**
-`'Full JSON parse failed, attempting salvage'` warn frequency rising after deploy; card counts per lesson dropping for dense lessons; salvage tests untouched in a commit that edits the prompt.
+- Tests green in isolation (`--grep`), red in full runs
+- Count assertions (due cards, streaks) off by small amounts
+- Intermittent database-locked errors
 
-**Phase to address:** prompt-review.
+**Phase to address:** e2e-setup (config default); revisit only if suite runtime becomes a problem.
+
+---
+
+### Pitfall 11: Timing assumptions vs this app's animations and fire-and-forget writes
+
+**What goes wrong:**
+Three app-specific flake sources: (a) **animations** — 3D card flip with measured dynamic height, Sheet spring slide-up, confetti, inter-card fades — mid-animation clicks miss or hit the wrong element; (b) **optimistic grading** — the UI advances to the next card *before* `POST /api/review` completes (fire-and-forget with bounded background retries), so any test that grades a card and then asserts server-derived state (due counts after refresh, ReviewLog rows) races a write that may be ~2s behind — or lost; (c) **TTS/audio** — `/api/tts` 503s without a Blob token and `AudioButton` falls back to `speechSynthesis`, so audio behavior is environment-dependent.
+
+**Why it happens:**
+Web-first assertions auto-wait for *rendering*, but nothing waits for a fire-and-forget background POST by default.
+
+**How to avoid:**
+- Set `reducedMotion: 'reduce'` globally (context option / `use` block) — the app already gates every animation on `prefers-reduced-motion` (a v1.1 invariant), so this simultaneously stabilizes tests and exercises the reduced-motion path. A rare freebie: the app was built for this.
+- For grade→server assertions, wait on the network: `page.waitForResponse(r => r.url().includes('/api/review') && r.ok())` before asserting DB-derived UI, or `expect.poll()` an API read. Never `waitForTimeout`.
+- Ban `waitForTimeout` in review; rely on web-first `expect(locator)` auto-waiting everywhere else.
+- Don't assert audio playback; at most assert the button's state transitions.
+
+**Warning signs:**
+- Flakes clustered on tests that grade cards then check counts
+- Failures only on slower machines
+- Failure screenshots showing mid-flip/mid-slide states
+
+**Phase to address:** e2e-setup establishes the conventions (reducedMotion default, no-waitForTimeout rule); e2e-coverage applies them.
+
+---
+
+### Pitfall 12: Browser-timing "performance regression tests" that flake instead of gate
+
+**What goes wrong:**
+Naive perf tests assert absolute wall-clock numbers (`expect(loadTime).toBeLessThan(500)`) measured in a browser on shared hardware. Run-to-run variance (±30–50% with cold starts and CPU contention) makes them either flaky (tight threshold) or useless (loose threshold). The milestone then can't distinguish "the freshness fix regressed navigation" from "the laptop was busy" — and a flaky gate erodes trust in the entire new suite.
+
+**Why it happens:**
+The obvious way to test "pages are fast" is to time them once and assert.
+
+**How to avoid:**
+Layer measurements by stability:
+1. **Most stable — behavioral proxies, not clocks:** assert the *mechanism*, e.g. "the first server-rendered HTML already contains real card text" (no empty-state flash; content visible without any client fetch) and "tab navigation shows the `loading.tsx` skeleton then content." These encode the v1.2 win as boolean facts, immune to hardware variance.
+2. **Medium — server-side query timing** in Vitest (not Playwright): time `getStudyCards()`/`getStats()` against the seeded test DB with a generous bound; query cost is far less noisy than browser paint metrics.
+3. **Least stable — browser timings** (TTFB/FCP via the Performance API): if kept, use median-of-N, generous thresholds (+50% headroom), and treat as recorded trend data rather than a hard gate initially.
+
+**Warning signs:**
+- Perf pass/fail flipping with no code change
+- Threshold bumps appearing in commits to "fix CI"
+
+**Phase to address:** perf phase (after e2e-setup). Define which layer each perf requirement uses before writing tests.
+
+---
 
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| Fix cards by hand in Turso shell instead of a dry-run script | Fast for 1–2 cards | No record of changes; no idempotency; a typo'd `normalizedFront` breaks dedup silently | 1–2 cards max, with `find-duplicates.mjs` run after |
-| Trigger relink on bare `remaining === 0` | Simplest condition | Full-corpus relink on every no-op sync (daily cron + every pull-to-refresh) | Never — require `failed === 0 && newLessons > 0` too |
-| Keep `relink-dependencies.mjs` alongside the automated path | No deletion risk | Two divergent relink implementations; the drifted `normalizeFront` copy stays runnable | Only if reduced to a wrapper over `lib/link-dependencies.ts` |
-| Unprefixed `console.warn` for the known-lemmas log | One line | Unfindable in Vercel's log stream; the fix is cosmetic | Never — a `[study-cards]` prefix costs nothing |
-| Auto-fix Tier-2 (heuristic) audit findings | Bigger "fixed N cards" number | Wrong fixes on false positives mutate learner-visible content unreviewed | Never — Tier 2 is human-review only |
-| Widen the sync UPDATE branch to refresh sentences/type so re-sync "applies" the new prompt | Retroactive fixes look free | Every re-sync overwrites manual CardEditor edits; destructive by default | Never in the request path; script-only behind an explicit flag |
+| `force-dynamic` / disable caching globally | Staleness "fixed" everywhere at once | Every navigation pays serverless+Turso round-trip; the exact prior regression | Never for this app — this is the incident being repaired |
+| `useEffect` prop→state sync without guards | Refreshed props flow into shells | Clobbers in-flight local edits (CardsClient); fights `set-state-in-effect` lint | Only with explicit per-shell reconciliation logic |
+| `workers: 1` for all E2E | Zero DB-race class | Suite runtime grows linearly with coverage | Fine at v1.6 scale; revisit past ~5 min runtime |
+| Seeding test data through the UI | No seed script to write | Slow, brittle, couples every test to the CRUD UI | Only for the one test *covering* the CRUD UI |
+| `reuseExistingServer: true` on port 3000 | Fast local iteration | Silently tests against the dev server + prod env | Only with a dedicated E2E port |
+| Hard-gating browser perf timings from day one | Feels rigorous | Flaky gate erodes trust in the whole suite | Start as recorded trend; promote to gate once variance is known |
+| `retries: 2` to mask flakes | Suite goes green | Real races (Pitfalls 10–11) hide until they bite in prod | Never as the *fix*; acceptable as CI belt-and-braces after root-causing |
 
 ## Integration Gotchas
 
-Internal seams (this milestone touches no new external services):
-
-| Seam | Common Mistake | Correct Approach |
-|------|----------------|------------------|
-| Prompt ↔ `normalizeFront` | Assuming DB `@unique` handles semantic dedup | The prompt's existing-fronts list + formatting conventions ARE the semantic dedup layer; the constraint catches only exact matches |
-| Prompt ↔ `filterComponents` | Tuning components instructions without re-checking filter survival | Before/after metric: components surviving the filter per card on the same lesson text |
-| `filterComponents` ↔ `resolveDependencyEdges` | Assuming everything the filter retains becomes an edge | Stem-fallback retention creates NO edge (direct-lookup resolver); decide the asymmetry explicitly, change both or neither |
-| Relink ↔ `lib/` helpers | Porting `relink-dependencies.mjs` logic | Import `normalizeFront` + `resolveDependencyEdges`; the script's copy has already drifted (narrower Hangul regex) |
-| Cron sync ↔ manual sync | Assuming serialized execution | Add-only + idempotent relink; treat concurrent double-fire as normal; no Setting-row mutex (leaked-lock risk on 60 s kills) |
-| Audit checks ↔ runtime helpers | Re-implementing blank-safety/matching in the audit script | Import `sentenceMatch`, `normalizeFront`, `splitParticle`, `filterComponents` — the audit must see exactly what runtime sees |
-| Fix scripts ↔ FSRS/ReviewLog | delete+create for content fixes | `update` by `id` only; recompute `normalizedFront` on front edits; scripted merge (re-point logs/edges before delete) for true dupes |
+| Integration | Common Mistake | Correct Approach |
+|-------------|----------------|------------------|
+| Freshness fix × E2E | Landing the fix with no automated regression test (the prior incident), or writing staleness tests before infra exists | e2e-setup (or at least the nav/staleness + first-paint tests) lands first; the fix's UAT is "navigate back after study/sync shows fresh counts" in a **production build** |
+| `router.refresh()` × E2E | Asserting fresh UI immediately after the refresh call | Wait for the RSC re-fetch (response/content-based `expect`) — refresh is async |
+| Optimistic review POST × freshness refresh | Session-complete refresh racing the last fire-and-forget review write | Await/observe the final `/api/review` response before refreshing, or accept and document one-card eventual consistency |
+| middleware auth × Playwright request context | Cookie set on the page context only; `request.*` API calls get 401/redirects | Share `storageState` with the request context, or add the `ks_auth` cookie there too |
+| Prisma × test DB | Assuming the Turso DDL gotcha applies to tests | `prisma db push` works against `file:` URLs — one-command schema setup in global setup |
+| Cron route (`/api/cron/sync`) × E2E | Letting a test trigger real sync (Google Docs + Opus) | Test auth behavior only (401 without bearer); never the real pipeline |
+| Vercel deploy × E2E | Assuming local E2E covers Vercel-specific behavior (cold starts, 60s limit) | E2E covers app logic; keep the existing manual prod smoke habits for platform behavior |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Full-corpus relink appended to the drain-completing sync request | Final backlog sync killed at 60 s; SyncPanel shows failure for a sync that succeeded | Diff-in-memory + insert-missing-only; or defer via `relinkPending` to the next (fast) sync | Immediately on Hobby when extraction took >45 s |
-| Per-edge sequential upserts from Vercel → Turso | Relink adds seconds of WAN round-trips per run | Batch: 2 reads + set-diff + `createMany` of missing edges only | ~100+ edges over WAN latency |
-| Audit script querying card-by-card | Slow, hammers Turso | One `findMany` with `include: { sentences, review }` — 511 cards fits trivially in memory | Never at this scale, but the per-row habit invites it |
-| Prompt output growth past `max_tokens` / 60 s | Rising salvage warnings; dense lessons lose trailing cards | Check output length on the longest existing lesson before shipping the prompt | Dense lessons first |
+| Per-navigation dynamic render against Turso | Every tab tap waits on serverless + DB RTT; "tabs take forever" | Invalidate at mutation boundaries only; keep prefetch + Router Cache for untouched routes | Immediately — Turso RTT from a Vercel function is per-request |
+| `router.refresh()` on every grade | 20+ extra `getStudyCards` runs per session; grade jitter returns (undoing UX-01) | Session-boundary refresh only | First session |
+| E2E doing a full `next build` per local iteration | 2+ min fixed overhead each run | `reuseExistingServer` on the dedicated port | Developer patience, day one |
+| Seeding a large deck per test | Suite runtime balloons | One global seed + targeted per-test rows | ~20 tests |
 
 ## Security Mistakes
 
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Logging the full known-lemmas rejection object | libSQL errors can embed the database URL/hostname in Vercel logs | Log `reason.message` / `String(reason)` only |
-| Audit fix scripts reading prod credentials but mutating by default | One accidental run mutates 511 live cards | Dry-run by default, `--apply` required — the `retro-filter-cleanup.mts` convention |
-| Surfacing raw relink/audit errors in the sync JSON response | Internal schema/error leakage to the client (T-13-02 precedent) | Detail stays in `console.error`; client gets counts only |
+| Committing `playwright/.auth/*.json` storageState | Leaks the deterministic `ks_auth` HMAC cookie — a **permanent** auth bypass (stateless HMAC, no expiry, no revocation short of rotating `AUTH_SECRET`) | Write under `outputDir` or gitignore `playwright/.auth/`; never commit |
+| Real `AUTH_SECRET`/`APP_PASSWORD` in `playwright.config.ts` | Secrets in source | Test-only values via `webServer.env` from a gitignored `.env.test` |
+| E2E env falling through to production `DATABASE_URL` | Test writes destroy real FSRS/ReviewLog history | Fail-fast host guard in global setup (reuse the Phase-22 print-before-write pattern) |
+| Loosening `middleware.ts` allowlist "for testability" | Auth bypass shipped to production | Tests authenticate properly (storageState/cookie injection); zero middleware changes for tests |
+
+## UX Pitfalls
+
+| Pitfall | User Impact | Better Approach |
+|---------|-------------|-----------------|
+| Freshness via slow navigation | The instant app becomes sluggish everywhere — the reported incident | Mutation-boundary invalidation; skeleton floor for any unavoidably-dynamic path |
+| Refresh mid-session | Queue resets, cards repeat, undo breaks | Session-boundary refresh only |
+| Refresh visual jank | Content flashes/reflows while the user is looking at the page | `router.refresh()` preserves client state per docs; verify no layout jump on Home after session-complete |
+| Stale-but-fresh race | Home shows one more due card than reality right after a session | Await the last review write before refresh, or accept + document |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **Prompt updated:** Often missing the dry-run dedup diff — verify new-prompt extraction of 2–3 known lessons produces zero fuzzy-key near-dupes against the deck
-- [ ] **Prompt updated:** Often missing salvage-test updates — verify `tests/extract-cards.test.ts` touched in the same commit if any output-shape change
-- [ ] **Prompt updated:** Often missing the components-survival metric — verify filter-survival rate did not drop vs the old prompt
-- [ ] **Auto-relink shipped:** Often missing the failed-lesson case — verify the trigger requires `failed === 0 && newLessons > 0`, not bare `remaining === 0`
-- [ ] **Auto-relink shipped:** Often missing timeout headroom — verify the drain-completing request stays under 60 s with relink included (or relink is deferred)
-- [ ] **Auto-relink shipped:** Often missing script retirement — verify `relink-dependencies.mjs` is deleted or delegates to `lib/link-dependencies.ts`
-- [ ] **Known-lemmas logging:** Often missing the cause — verify the log includes `knownRowsResult.reason`, and a test locks the empty-Set degradation behavior
-- [ ] **Audit report:** Often missing calibration — verify each Tier-1 rule was precision-checked on ~20 hand-verified cards before the corpus run
-- [ ] **Audit fixes applied:** Often missing identity preservation — verify zero `Card.id` churn (`CardReview`/`ReviewLog` row counts unchanged; no deletes outside scripted dupe-merges)
-- [ ] **Audit fixes applied:** Often missing `normalizedFront` recompute — verify every front edit also updated `normalizedFront` and handled the P2002 collision path
+- [ ] **Freshness fix:** verified in `npm run build && npm start`, not just dev — dev doesn't reproduce production Router Cache behavior
+- [ ] **Freshness fix:** browser **back/forward** specifically tested (not just tab taps) — back/forward ignores `staleTimes`
+- [ ] **Freshness fix:** first-load HTML still contains real data (RSC-01..04 intact) — view-source or E2E content assertion; no empty-state flash
+- [ ] **Freshness fix:** every `*Client.tsx` receiving refreshed props actually *uses* them (Pitfall-2 audit per shell)
+- [ ] **E2E:** suite fails fast on a `libsql://` `DATABASE_URL` — prove it once by deliberately running with prod env
+- [ ] **E2E:** storageState file gitignored and regenerated per run
+- [ ] **E2E:** full suite green **twice consecutively** — catches order/race flakes before they're baked in
+- [ ] **E2E:** zero `waitForTimeout`; `reducedMotion: 'reduce'` set globally
+- [ ] **Perf tests:** thresholds validated against ≥5 runs' variance before becoming a gate
+- [ ] **Sync coverage:** no test path reaches the real Google Doc or Claude API (check Anthropic usage after a suite run)
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Cards deleted+recreated (FSRS/ReviewLog lost) | HIGH | Only recoverable from a pre-run Turso dump; otherwise state is gone — this is why the snapshot-before-`--apply` rule exists |
-| Near-dupes created by prompt drift | MEDIUM | `find-duplicates.mjs` to enumerate; scripted merge (re-point ReviewLog + edges to survivor, then delete loser); tighten prompt hint sections |
-| Graph thinned by over-filtering components | LOW–MEDIUM | Fix prompt phrasing, re-run `retro-filter-cleanup.mts`/relink — but `components` values already shrunk under WR-02 are only recoverable by re-extraction |
-| Relink double-fired or killed mid-run | LOW | Add-only + compound-key upsert: just run again (or wait for next trigger) |
-| Known-lemmas log spams during sustained outage | LOW | Prefixed message; at single-user scale, tolerate or add a per-request-once guard |
-| Audit report flooded with FPs | LOW | Re-tier the offending rule, recalibrate on a sample, regenerate — provided the audit was read-only |
+| Freshness fix regresses navigation speed again | LOW if caught by the E2E baseline pre-merge; MEDIUM post-deploy | Revert the caching-mode changes (config-level); re-diagnose per Pitfall 1; the E2E baseline is the tripwire this milestone must install |
+| E2E ran against production Turso | HIGH | Turso point-in-time restore / snapshot if available; audit `ReviewLog`/`StudyDay`/`Card` rows by test-run timestamp window; this is why the host guard is task #1 |
+| Flaky suite erodes trust | MEDIUM | Quarantine (`test.fixme`), root-cause timing/DB races, then restore; never retry-mask as the fix |
+| `useState(initialProps)` desync shipped | LOW | Per-shell fix (derive or reconcile); add the back-nav E2E assertion that would have caught it |
 
 ## Pitfall-to-Phase Mapping
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| 1. Delete-and-recreate wipes FSRS/history | audit | `CardReview`/`ReviewLog` row counts unchanged after fix runs; no `card.delete` in fix scripts |
-| 2. Expecting re-sync to repair existing cards | prompt-review (scoping) | Plan explicitly separates prospective prompt changes from retroactive fix scripts |
-| 3. Prompt drift → near-dupe cards | prompt-review | Dry-run extraction diff vs deck; `find-duplicates.mjs` clean after first post-change syncs |
-| 4. Components over-filtered by phrasing change | prompt-review | Filter-survival metric non-decreasing on same-lesson before/after |
-| 5. Wrong relink trigger / timeout stacking | bug-fix-2 | Trigger tested for failed-lesson and no-op-sync cases; drain request under 60 s |
-| 6. Ported script drift; stem-fallback asymmetry | bug-fix-2 | Relink imports `lib/` helpers; asymmetry decision documented; script retired |
-| 7. Cron/manual overlap | bug-fix-2 | Relink is add-only + idempotent; double-fire converges; no mutex introduced |
-| 8. Logging without cause / contract break | bug-fix-1 | Log includes `reason`; degradation unit test green; `Promise.allSettled` shape intact |
-| 9. Audit FP flood / re-implemented checks | audit | Checks import runtime helpers; per-rule precision calibrated on a 20-card sample; tiered report |
-| 10. Parsing contract broken by prompt change | prompt-review | Salvage tests updated in same commit; salvage-warning rate flat post-deploy |
+| 1. Wrong cache layer / blanket force-dynamic | freshness (diagnosis-first plan) | Written diagnosis artifact; diff contains no `force-dynamic`/`no-store`; build-output rendering modes unchanged |
+| 2. `useState(initialProps)` ignores refresh | freshness | Per-shell reconciliation decision in PLAN; E2E: back-nav shows post-mutation data |
+| 3. Refresh at wrong moment | freshness | Grep: no `router.refresh` in grade handlers; manual UAT of mid-session stability |
+| 4. First-paint regression | freshness (invariant) + e2e-setup (test lands **first**) | E2E asserts server-rendered content on first load + skeleton on tab nav |
+| 5. DTO/pipeline boundary breaks | freshness | Code review: no `Date` in changed prop interfaces; new paths call existing `lib/` functions |
+| 6. New cache layers as "fix" | freshness (scope guard) | Diff contains no `use cache`/`unstable_cache`/`staleTimes` |
+| 7. E2E against production Turso | e2e-setup, first task | Host guard exists and demonstrably fails on `libsql://` |
+| 8. Per-test login | e2e-setup | Setup project + storageState in config; suite runtime sane |
+| 9. Testing against `next dev` | e2e-setup | `webServer.command` is build+start on a dedicated port |
+| 10. Parallel DB races | e2e-setup | `workers: 1` in config; suite green twice consecutively |
+| 11. Timing flakes (animations, fire-and-forget writes) | e2e-setup (conventions) + e2e-coverage | `reducedMotion` set; zero `waitForTimeout`; grade tests wait on `/api/review` responses |
+| 12. Flaky perf gates | perf phase | Behavioral proxies preferred; browser timings median-of-N with recorded variance |
 
 ## Sources
 
-- Direct source reads (HIGH confidence): `lib/sync.ts`, `lib/extract-cards.ts`, `lib/card-key.ts`, `lib/filter-components.ts`, `lib/link-dependencies.ts`, `lib/study-cards.ts`, `scripts/relink-dependencies.mjs`, `app/api/cron/sync/route.ts`, `prisma/schema.prisma`
-- Project docs (HIGH confidence): `.planning/codebase/CONCERNS.md` (2026-07-06), `.planning/PROJECT.md`, `CLAUDE.md`
-- Web corroboration (LOW confidence, general patterns only): [Zep — LLM extraction at scale, entity reuse hints + post-hoc dedup](https://blog.getzep.com/llm-rag-knowledge-graphs-faster-and-more-dynamic/), [Cronitor — preventing duplicate cron executions](https://cronitor.io/guides/how-to-prevent-duplicate-cron-executions), [CronBeacon — idempotency as the primary cron property](https://cronbeacon.dev/guides/cron-job-best-practices), [OneUptime — CronJob concurrency policies](https://oneuptime.com/blog/post/2026-02-09-cronjob-concurrency-policy-allow-forbid/view)
-- Observed drift evidence: `scripts/relink-dependencies.mjs:61` Hangul regex `[가-힣ᄀ-ᇿ]` vs `lib/card-key.ts:33` `[가-힣ᄀ-ᇿ㄰-㆏ꥠ-꥿ힰ-퟿]`
+- [Next.js docs — useRouter / router.refresh](https://nextjs.org/docs/app/api-reference/functions/use-router) — refresh semantics, client-state preservation (MEDIUM, official)
+- [Next.js docs — Caching guide](https://nextjs.org/docs/app/guides/caching) — four cache layers, force-dynamic ≡ no-store on every fetch (MEDIUM, official)
+- [vercel/next.js #69979 — Stale data after navigation with SSR (App Router)](https://github.com/vercel/next.js/issues/69979) (MEDIUM)
+- [vercel/next.js discussion #54075 — Deep Dive: Caching and Revalidating](https://github.com/vercel/next.js/discussions/54075) — back/forward restores from Router Cache regardless of staleTimes (MEDIUM)
+- [vercel/next.js #43650](https://github.com/vercel/next.js/issues/43650) / [discussion #44056](https://github.com/vercel/next.js/discussions/44056) — router.refresh state-loss edge cases (MEDIUM)
+- [joulev.dev — Yes, the Next.js Router Cache is Actually Good](https://joulev.dev/blogs/yes-nextjs-router-cache-is-actually-good) (LOW, community)
+- [Playwright docs — Authentication (setup project + storageState)](https://playwright.dev/docs/auth) (MEDIUM, official)
+- [Playwright docs — Parallelism / worker isolation](https://playwright.dev/docs/test-parallel) (MEDIUM, official)
+- [microsoft/playwright #33699 — isolated tests against a real database](https://github.com/microsoft/playwright/issues/33699) (MEDIUM)
+- [Checkly — Measuring page performance with Playwright](https://www.checklyhq.com/docs/learn/playwright/performance/) — noise, medians, threshold margins (MEDIUM)
+- Community guides on Next.js+Prisma E2E (dev-vs-build flakiness, DB isolation): Makerkit, dev.to, TestDino (LOW individually, cross-consistent)
+- **This repo (HIGH, primary):** `.planning/PROJECT.md` (v1.2 RSC/DTO decisions; Out-of-Scope `unstable_cache` ruling; UX-01 optimistic grading), `CLAUDE.md` (dev-vs-build RSC testing gotcha; fire-and-forget review saves; Turso DDL constraint; middleware/`ks_auth` auth shape; Phase-22 dry-run/host-print pattern), and the user-reported prior staleness-fix regression ("all tabs take forever to load even on the first try")
 
 ---
-*Pitfalls research for: v1.5 Extraction Quality & Reliability (Korean Study app)*
-*Researched: 2026-07-06*
+*Pitfalls research for: v1.6 Freshness, Performance & E2E Testing (Korean Study app)*
+*Researched: 2026-07-10*

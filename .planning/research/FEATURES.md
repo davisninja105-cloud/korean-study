@@ -1,135 +1,159 @@
 # Feature Research
 
-**Domain:** LLM-based structured extraction quality auditing (Korean lesson notes → flashcards) — v1.5 "Extraction Quality & Reliability"
-**Researched:** 2026-07-05
-**Confidence:** MEDIUM overall — codebase-dependency claims are HIGH (verified directly against `lib/extract-cards.ts`, `lib/filter-components.ts`, `lib/card-key.ts`, `lib/sentence-match.ts`); external ecosystem claims are LOW–MEDIUM (single-pass web search, cross-checked against multiple independent sources where noted)
+**Domain:** RSC freshness-after-navigation + Playwright E2E infrastructure for a solo-maintained Next.js 16 App Router app (v1.6 milestone)
+**Researched:** 2026-07-10
+**Confidence:** MEDIUM (Next.js behavior cross-verified against official v16.2.10 docs + community issue threads; Playwright patterns cross-verified against official Playwright/Next.js docs + practitioner guides; per the classify-confidence seam, cross-verified web findings = MEDIUM)
 
 ## Scope Note
 
-This is a **subsequent-milestone** research file; it replaces the prior milestone's (v1.4, review-history) FEATURES.md content, which is now superseded. The extraction pipeline itself (exhaustive extraction, `normalizedFront` dedup, `components[]` → `CardDependency` with `filterComponents`, emphasis capture, blank-safety prompt rules) already exists and is NOT re-researched here. This file maps only: (1) the error taxonomy worth auditing, (2) self-audit techniques for new extractions, (3) post-hoc audit patterns for the existing ~500+-card DB.
+This is a **subsequent-milestone** research file; it replaces the v1.5 (extraction-quality) FEATURES.md, now superseded. Existing features (RSC hydration pattern, Vitest unit tests, optimistic grading, pull-to-refresh sync) are NOT re-researched — this file maps only the two new feature categories: **(A) freshness after navigation** and **(B) Playwright E2E test infrastructure**, and their dependencies on the existing RSC/DTO architecture.
 
-## Error Taxonomy — What Can Actually Be Wrong
+## How This Actually Works in Real Products (Context for Both Categories)
 
-Grounded in both the external literature on LLM structured extraction (errors concentrate in **semantically-sensitive categorical and free-text fields**, while structural/format fields are mostly fine — which matches this pipeline: JSON shape is already guarded, semantics are not) and a direct read of the current pipeline code.
+**Freshness.** In Next.js 15+/16, the client Router Cache default `staleTime` for dynamic pages is already **0 seconds** (changed from 30s in v15) — a fresh `<Link>` navigation to a fully dynamic page re-fetches the RSC payload. Staleness survives on two things:
 
-| # | Error category | Detectable how | Currently guarded? |
-|---|----------------|----------------|--------------------|
-| E1 | **Type miscategorization** (grammar pattern typed `phrase`, collocation typed `vocabulary`, etc.) | Heuristic (front contains `~` or `(으)` → probably grammar) + LLM judge for borderline cases | Only enum membership is validated (`isValidExtractedCard`); semantic correctness is not |
-| E2 | **Non-base-form / wrong-lemma fronts** (inflected front like 가요; over- or under-lemmatization; romanization leakage) | Deterministic partial: Hangul-only regex on front, common-ending heuristics (vocab fronts ending 요/어요/았다); LLM judge for true lemma correctness | Prompt-only. `normalizeFront` normalizes formatting; it does not check lemma-ness or Hangul-ness |
-| E3 | **Near-duplicates past exact dedup** (notation variants: `~아/어야 하다` vs `~야 되다`; internal spacing `~고 싶다` vs `~고싶다`; same stem, different pattern notation) | Fuzzy key scan — `scripts/find-duplicates.mjs` already does exactly this (strips `~`, all parens) | Exact-match only (`normalizedFront @unique`). Fuzzy scan exists but is manual/ad-hoc |
-| E4 | **First sentence not blank-safe** — **verified real gap**: `parseExtractionResponse` filters sentences on `sentenceMatch().found` only; `safeToBlank` is computed by `sentenceMatch` but never consulted at parse time. Worse, dropping a non-verbatim sentence can silently *promote* an unsafe sentence to first position | Fully deterministic: `sentenceMatch(korean, targetForm).safeToBlank` on `orderIndex 0` of every card | **No.** Prompt-guaranteed only. Violation silently degrades Recall + fill-blank modes |
-| E5 | **Zero-sentence cards** — the verbatim filter can drop *all* of a card's sentences, persisting a card no study mode can present well | Deterministic: `Sentence` count per card | No count check after filtering |
-| E6 | **targetForm verbatim but semantically wrong** (homograph substring; grammar sentence containing the string without exercising the pattern) | LLM judge only — no deterministic signal | No |
-| E7 | **Translation quality/register mismatch** (back too broad/narrow; formal gloss on casual phrase; sentence translation not matching the sentence) | LLM judge only | No |
-| E8 | **Distractor defects** (< 3 distractors — parse slices to ≤ 3 but never backfills or flags short arrays; distractor synonymous with `back`, breaking multiple-choice) | Deterministic: count + exact-dup check; LLM judge for semantic overlap | Parse tolerates any count 0–3 silently |
-| E9 | **components[] real-but-wrong relationships** — `filterComponents` guarantees resolution to *some* deck card, explicitly NOT relationship correctness (documented in `lib/filter-components.ts` header). Also: the `splitParticle` stem fallback can mis-resolve (multi-syllable verb stem + modifier-ending ambiguity), creating a plausible-looking but wrong edge | LLM judge on sampled `CardDependency` edges; deterministic only for self-loops/cycles | Post-v1.4, only edge *existence* is guaranteed, not correctness |
-| E10 | **components[] false negatives** (legitimate forward-reference prerequisites dropped because the target card didn't exist yet) | Deterministic: re-run resolution over the full deck — exactly what `relink-dependencies.mjs` / the planned auto-relink does | Partially — v1.5 already commits auto-relink at `remaining=0` |
-| E11 | **Coverage misses** (emphasized tutor terms that never got a card; admin/meta text extracted as cards) | Emphasized coverage requires re-deriving doc emphasis — `emphasized[]` is **not persisted** (`Lesson` stores clean body text only). Over-extraction is judge/eyeball territory | No |
+1. **Back/forward navigation always reuses the Router Cache**, regardless of `staleTimes` — by design (scroll/layout preservation), not configurable away. `router.refresh()` is the only escape hatch.
+2. **Client shells that copy props into `useState`** — `router.refresh()` re-renders the RSC tree and streams new props **without remounting** client components, so `useState(initialCards)`-style initialization silently ignores the fresh data. This app uses exactly that pattern (`CardsClient`, `HomeClient`, `HabitsClient`, `StudyClient` per RSC-01..04).
+
+A third structural fact: **`revalidatePath`/`revalidateTag` called in a Route Handler never purges the in-memory client Router Cache** — it only marks server cache stale for the *next* visit. Only Server Actions push client-cache invalidation automatically. This app mutates exclusively through Route Handlers (`POST /api/review`, `/api/sync`, `/api/cards`), so server-side revalidate calls are not a lever here. Real-world Route-Handler-based apps converge on: **`router.refresh()` after mutation settles, plus refresh-on-focus/navigation listeners** (SWR-style revalidation applied to RSC). And since this app's pages are fully dynamic (direct Prisma, no fetch cache, `unstable_cache` explicitly rejected in v1.2), there is **no server-side cache staleness at all** — the entire fix is client-side.
+
+**E2E.** The canonical small-app shape: `@playwright/test` + `webServer` config (Playwright boots the app itself, `reuseExistingServer: !CI`), a `setup` project that authenticates once and saves `storageState`, one smoke spec (every route renders), and a handful of critical-flow specs. Vercel's official guidance is to run against the **production build** (`next build && next start`) because `next dev` never caches pages — which matters specifically for testing this milestone's freshness behavior. "AI agent can drive the dev site" means two complementary things in practice: (a) the **Playwright MCP server** (`@playwright/mcp`) giving Claude Code accessibility-tree-based browser tools for exploratory QA, and (b) a deterministic, headless spec suite the agent runs via `npx playwright test --reporter=line` and debugs via traces. The persisted suite provides regression safety; MCP is for interactive verification.
 
 ## Feature Landscape
 
-### Table Stakes (an "extraction quality" milestone is incomplete without these)
+### Table Stakes (Users Expect These)
 
-| Feature | Why Expected | Complexity | Notes / Dependencies |
-|---------|--------------|------------|----------------------|
-| **Deterministic DB invariant sweep script** (findings-first, dry-run by default) | Universal first layer in extraction QA: cheap deterministic checks before any model-based scoring. The codebase already has the exact idiom — `scripts/retro-filter-cleanup.mts` (dry-run default, `--apply` to mutate) | LOW–MEDIUM | New `scripts/audit-cards.mts`. Reuses `sentenceMatch` (E4/E5 + verbatim re-check), `normalizeFront` (self-consistency: stored `normalizedFront === normalizeFront(front)`), Hangul/ASCII regex per `lib/card-key.ts` (E2 romanization), distractor checks (E8), type-heuristic flags (E1). Reads Turso via `@libsql/client` per established script pattern |
-| **Blank-safety enforcement in the parse pipeline** (E4 fix) | Blank-safety is load-bearing for 2 of 3 study modes and currently prompt-only — verified gap. An audit that finds violations must be paired with the write-path fix or violations recur on every sync | LOW | One change in `parseExtractionResponse` (`lib/extract-cards.ts`): consult `sentenceMatch().safeToBlank`, reorder so a blank-safe sentence is first (or flag the card). Parser is already pure and unit-tested |
-| **Zero/short-sentence guard** (E5) | A card with no sentences after filtering is silently broken; trivially checkable at the same touch-point as E4 | LOW | Same touch-point as above |
-| **Near-duplicate report over the full deck** (E3) | Duplicate headwords are the most-reported problem in automated flashcard generation; exact-match dedup demonstrably misses notation variants | LOW | Extend/reuse `scripts/find-duplicates.mjs` — already implements the fuzzy key. Promote from ad-hoc to a section of the audit report |
-| **Findings report as a reviewable artifact** (grouped by error category, with card ids + fronts) | "Findings-first, then fix" is both the milestone's stated approach and the standard external pattern (audit → human review → apply); auto-mutation without review is the documented anti-pattern | LOW | Markdown/JSON output from the audit script; direct input to the prompt-review step |
-| **Prompt review against audit findings** | The point of the audit: each error category with real hits maps to a specific prompt section in `lib/extract-cards.ts` (E1→type definitions, E2→base-form rules, E4→sentence rules, E9→components rules). Findings make prompt edits evidence-based instead of speculative | LOW (review) / MEDIUM (safe rollout) | Depends on the audit report existing first. Prompt changes affect only *future* extractions — existing rows need the post-hoc path |
+#### Category A — Freshness
 
-### Differentiators (valuable, not required for a credible audit)
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| Diagnosis spike: identify *which* layer is stale per route | Pages are dynamic + staleTime already 0, so plain `<Link>` nav *should* refetch — the bug is almost certainly back/forward Router Cache reuse and/or `useState(initialProps)` non-resync; the fix differs per cause | LOW | Must test with `npm run build && npm start` (CLAUDE.md gotcha: dev mode never caches). Verify each of the 4 routes separately |
+| Prop→state re-sync in client shells | Any `router.refresh()`-based fix is a **no-op** for `CardsClient`/`HomeClient`/`HabitsClient` while they `useState(initialProps)` — refresh delivers new props to a component that ignores them | MEDIUM | Options: render from props where no local mutation exists; `useEffect` sync on prop identity change; `key` the shell on a data version. Touches the core RSC-01..05 pattern — highest-risk part of the milestone |
+| Fresh data after navigating back post-study/sync | The milestone's headline user story: grade cards → return Home → hero/due-count/streak reflect it immediately | MEDIUM | Standard pattern: `router.refresh()` fired on session end / on navigation events. Back/forward cache reuse **cannot** be fixed via `staleTimes` config — only `refresh()` |
+| Refresh-on-focus/visibility (SWR-style revalidation for RSC) | Covers PWA resume-from-background — the daily cron sync means data changes while the app is backgrounded on the user's phone | LOW | Tiny client component in `app/layout.tsx` listening to `visibilitychange`/`focus` → `router.refresh()`. Well-established community pattern for Route-Handler-mutating apps |
+| No first-load speed regression | v1.2's entire point was no blank flash / instant first paint; the fix must not reintroduce loading states | LOW (constraint, not work) | `router.refresh()` re-renders in place with existing UI visible — no flash by design. But it re-runs *all* server queries for the route incl. `layout.tsx` color fetches — fine for single-user, just don't fire it in a loop |
 
-| Feature | Value Proposition | Complexity | Notes / Dependencies |
-|---------|-------------------|------------|----------------------|
-| **Batch LLM re-grading of sampled/flagged cards** (LLM-as-judge with a rubric) | Only way to reach the semantic error classes (E1 borderline, E6, E7, E9 relationship-correctness) no deterministic check covers. Standard layered pattern: judge runs *after* deterministic filters, as a precision layer, over a sample — not the whole deck | MEDIUM | Runs locally (`npx tsx`, same as `local-resync.mts`) — never in a request path (Vercel 60 s limit). Haiku (`claude-haiku-4-5`) suffices for E7/E8 register/overlap checks; E9 relationship judgment may want the stronger model. Structured JSON verdicts appended to the findings report |
-| **Source-traceability check: sentences vs lesson snapshot** | `Lesson` rows store raw doc text — a deterministic containment check classifies each stored sentence as "copied from lesson" vs "LLM-composed", surfacing likely-hallucinated example sentences at zero LLM cost. The prompt mandates copying lesson sentences when they exist, so composed-when-lesson-had-one is itself a finding | MEDIUM | Depends on `Lesson.rawText` fidelity + `Card.lessonId` (first-introduced lesson). Needs fuzzy containment (whitespace/punct-tolerant); exact substring will under-match |
-| **Golden-lesson regression fixture for prompt changes** | Before/after safety net: assert `parseExtractionResponse`-level properties (counts, blank-safety, no romanization) against frozen fixtures whenever the prompt changes. Matches both external revalidation practice and the project's own Phase 17 lesson (persist regression tests) | MEDIUM | Fixture lesson + property assertions in Vitest. Full LLM-in-the-loop runs stay manual/local (cost, nondeterminism) |
-| **Audit metrics snapshot per run (drift detection)** | Persisting per-run counts per error category turns one-off audits into a regression signal across prompt/model versions | LOW | Trivial once the audit script exists; value compounds over time |
-| **Emphasized-term coverage audit** (E11) | Directly checks the tutor's own "this is important" signal against the deck | MEDIUM–HIGH | Blocked on data: `emphasized[]` is not persisted. Requires re-fetching the Google Doc through `lib/google-docs.ts` at audit time (script-doable) or persisting `emphasized` on `Lesson` (schema change → manual Turso DDL) |
+#### Category B — E2E Infrastructure
 
-### Anti-Features (plausible-sounding, wrong for this project)
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| `@playwright/test` + `playwright.config.ts` with `webServer` | Standard entry point; Playwright boots/waits for the app itself (`reuseExistingServer: !process.env.CI`), `baseURL: http://localhost:3000` | LOW | First new dev dependency in several milestones. Official Next.js docs bless this shape verbatim |
+| Auth setup project → `storageState` | Every page/API is behind the `ks_auth` HMAC cookie gate; without this no test can load any route | LOW | Best case for this app: POST `/api/login` via `APIRequestContext` with `APP_PASSWORD` (or compute the HMAC cookie directly reusing `lib/auth.ts`) → save storageState → all projects depend on `setup`. No per-test login UI. Never commit the storageState file |
+| Isolated test database | Tests that grade/create cards mutate FSRS state — running against production Turso would corrupt the user's real learning record | MEDIUM | The libSQL adapter already supports `file:` URLs (dev mode). Inject `DATABASE_URL=file:./e2e.db` via `webServer.env`, apply schema (the `prisma migrate diff --from-empty` DDL path — or plain `db push`, which works fine against `file:` even though it fails on `libsql://`), seed known cards/reviews. Serial workers (`workers: 1`) since one server + one DB |
+| Smoke spec: every route renders | The universal first spec — catches auth regressions, RSC crashes, hydration errors across `/`, `/study`, `/cards`, `/habits`, `/history`, `/settings`, `/wrapped` | LOW | Assert on a content-bearing element per route (not just HTTP 200) so RSC data hydration is actually exercised |
+| Critical-flow specs: study grade flow, cards CRUD | The two flows where regressions hurt most: flashcard reveal→grade→queue-advance→completion, and add/edit/delete card | MEDIUM | Study flow requires seeded due cards. Optimistic grading means asserting on UI state first, then separately on persisted `ReviewLog`/`CardReview` rows |
+| Freshness regression spec | The milestone's acceptance test: grade a card → navigate Home → assert updated stats *without* manual reload | MEDIUM | Where Category A and B meet — the E2E suite exists partly to prove the freshness fix and keep it proven. Must run against production build |
+| Agent-runnable execution mode | The stated goal: Claude Code verifies behavior itself | LOW | Headless default, deterministic seeds, `--reporter=line` (parseable), no watch mode, bounded runtimes. Falls out of doing the above correctly rather than being separate work |
+
+### Differentiators (Competitive Advantage)
+
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| Playwright MCP server registered for Claude Code | `claude mcp add playwright npx @playwright/mcp@latest` — agent drives a real browser via accessibility-tree snapshots (semantic locators, no vision model), enabling exploratory QA and "verify this UAT item yourself" workflows | LOW | Complements, never replaces, the persisted suite: MCP = interactive verification; specs = repeatable regression. Document the workflow (dev server port, login step) in CLAUDE.md so any agent session can use it |
+| Performance budget assertions | Catches query-time/render-cost regressions (e.g., a future change re-serializing the whole deck per request) before they're felt on the phone | MEDIUM | Practitioner consensus: Navigation Timing API via `page.evaluate` (TTFB, `domContentLoaded`), **generous** budgets (e.g., < 2–3s), median-of-N runs, Chromium-only. Also assert API route timing directly via `request.get('/api/cards/due')` elapsed time — less noisy than browser metrics for "query timing" |
+| Trace-on-failure + HTML report | `trace: 'on-first-retry'` gives a post-mortem timeline (DOM snapshots, network, console) — the biggest debugging lever for both human and agent | LOW | Effectively free config. An agent can be pointed at the trace zip; humans use `npx playwright show-trace` |
+| Dual-target config: dev server for iteration, prod build for cache-sensitive specs | `next dev` never caches, so freshness specs against dev prove nothing; but dev-server iteration is faster for everything else | MEDIUM | Two Playwright projects or an env switch on `webServer.command`. CLAUDE.md already documents this exact gotcha for manual testing — the suite codifies it |
+| Codegen bootstrap (`npx playwright codegen`) | Fast way to draft selectors for the first specs | LOW | One-time authoring aid, not infrastructure. Recorded output should be rewritten to role/text locators |
+
+### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
 |---------|---------------|-----------------|-------------|
-| **Self-consistency double-extraction** (extract every lesson twice, diff results) | Classic consistency check from the literature | 2× Opus cost per lesson, 2× latency against the 60 s sync budget, and diffs of exhaustive extractions are noisy (ordering, phrasing) — poor signal per dollar for a single-user deck | One-time batch judge pass on existing cards; golden-lesson fixture for prompt changes |
-| **In-request (sync-path) LLM judge** | "Validate at write time" instinct | Vercel Hobby 60 s limit already constrains sync to 1 lesson/request; a second model call risks timeouts on dense lessons | Deterministic checks in-request (cheap, e.g. blank-safety); LLM judging offline via local script |
-| **Auto-fix: LLM rewrites applied directly to prod cards** | Closes the loop automatically | Destructive writes from unverified judge output; contradicts the milestone's findings-first framing and the project's `--apply`-gated script convention; a wrong "fix" can corrupt FSRS-scheduled cards the learner already knows | Findings report → human review → targeted `--apply` script (or manual CardEditor edits) |
-| **Human-review workflow UI** (in-app review queue, approve/reject screens) | Standard in team extraction products | Single-user app; a script-generated report the developer reads *is* the workflow. UI would be the most expensive artifact of the milestone with near-zero marginal value | Markdown findings report + existing `/cards` editor for fixes |
-| **Embedding-based semantic dedup service** | Catches paraphrase duplicates fuzzy keys miss | New infra (embedding storage/API) for a ~500-card personal deck; the fuzzy-key scan plus a judge pass over flagged clusters covers the realistic duplicate space | Extend `find-duplicates.mjs`; judge borderline clusters in the batch re-grade |
-| **Full wipe + re-extract to "reset" quality after a prompt improvement** | Tempting clean slate | Destroys FSRS review state and `ReviewLog` linkage (recreated cards get new ids — the classic recreate-instead-of-update identity-loss failure); learner loses months of scheduling history | Post-hoc audit + targeted per-card fixes; prompt improvements apply to future lessons only |
+| Migrate mutations to Server Actions (to get automatic client-cache invalidation) | It's the "official" way — Server Actions purge the client Router Cache on `revalidatePath` | Rewrites every mutation path; conflicts directly with the shipped optimistic fire-and-forget grading (UX-01) — Server Actions are awaited POSTs integrated with transitions, reintroducing grade-button latency | `router.refresh()` + focus/navigation listeners achieve the same freshness with zero mutation-path changes |
+| Adopt Cache Components (`cacheComponents: true`, `use cache`, `cacheTag`/`updateTag`) | Next 16's headline caching model; tag-based invalidation sounds like the "right" fix | Adds a *server* caching layer to an app that deliberately has none, just to then invalidate it; `updateTag` only works from Server Actions anyway; v1.2 already rejected cross-request caching (staleness risk, single-user app) | Stay fully dynamic; fix the client-side Router Cache + state-sync problem, which is the actual bug |
+| SWR / React Query layer for page data | Battle-tested revalidate-on-focus, mutate-and-invalidate ergonomics | Duplicates the data layer the RSC+DTO pattern just consolidated (`lib/study-cards`, `lib/dashboard`); reintroduces client-fetch waterfalls and loading states v1.2 eliminated | `router.refresh()` *is* the RSC-native equivalent of SWR revalidation for this architecture |
+| Tuning `experimental.staleTimes` | Looks like the purpose-built knob for exactly this problem | Dynamic default is already 0; the flag is experimental ("not recommended for production"); and it explicitly does **not** affect back/forward caching — the case that's actually broken | No config change; behavioral fix via refresh |
+| Cross-browser matrix (Chromium + Firefox + WebKit) | Playwright makes it one config line; the user's real device is iOS Safari | 3× CI time and 3× flake surface for a single-user app; WebKit-on-macOS still isn't iOS Safari | Chromium-only now; a WebKit project is a cheap later add if an iOS-specific bug ever appears |
+| Visual screenshot regression | "Catch any UI change" appeal | Notorious flake source (fonts, antialiasing, animation timing); two themes × user-configurable accent colors multiply baselines; solo maintainer pays the re-baseline tax on every intentional polish pass | Semantic assertions (roles, text, counts). Reduced-motion is already a project invariant, which helps determinism anyway |
+| Strict millisecond perf assertions in CI | "Fail the build if Home takes >800ms" | Runner variance makes tight thresholds fail randomly; erodes trust in the whole suite | Generous budgets (2–3× baseline) as hard assertions + logged timings for trend eyeballing; median-of-N for anything tighter |
+| E2E against production URL / real Turso DB | "Test what's really deployed" | Mutating tests would corrupt real FSRS state, `ReviewLog` history, and streaks; sync tests would burn Opus tokens | Local server + seeded `file:` SQLite; production keeps the existing manual UAT + `vercel crons run`-style checks |
+| Exercising real Claude extraction in E2E (`POST /api/sync` end-to-end) | Sync is a critical flow | Nondeterministic output, slow, costs real Opus tokens per run; agent-run suites would multiply that cost | Seed lessons/cards directly in the test DB; if sync-shape coverage is wanted, assert route auth/validation behavior only, or stub the extraction boundary |
 
 ## Feature Dependencies
 
 ```
-Deterministic invariant sweep (audit script)
-    └──requires──> existing pure helpers: sentenceMatch / normalizeFront / filterComponents
-    └──requires──> Turso script access pattern (retro-filter-cleanup.mts idiom)
+[Freshness regression E2E spec]
+    ├──requires──> [Freshness fix (refresh-on-nav/focus)]
+    └──requires──> [E2E infra: config + auth + test DB]
+                       ├──requires──> [Auth storageState setup] ──requires──> APP_PASSWORD/AUTH_SECRET env
+                       └──requires──> [Isolated test DB + seed] ──requires──> libSQL file: adapter (already used in dev)
 
-Findings report ──requires──> invariant sweep (+ optional: near-dup scan, judge pass)
+[Freshness fix (refresh-on-nav/focus)]
+    ├──requires──> [Prop→state re-sync in client shells]   ← the useState(initialProps) landmine
+    └──requires──> [Diagnosis spike]                        ← determines which routes need which fix
 
-Prompt review / prompt fixes ──requires──> findings report (evidence-based edits)
+[Perf budget assertions] ──requires──> [E2E infra] + [prod-build test target]
+[Playwright MCP workflow] ──enhances──> [E2E suite] (exploratory QA feeding new specs)
+[Prod-build test target] ──required-by──> any spec asserting caching behavior (dev never caches)
 
-Blank-safety parse enforcement (E4/E5 fix)
-    └──independent of the audit; pairs with it (audit finds existing rows, fix stops recurrence)
-
-Batch LLM re-grade ──requires──> invariant sweep first (judge only what determinism can't decide)
-Source-traceability check ──requires──> Lesson.rawText + Card.lessonId (already in DB)
-Emphasized-coverage audit ──requires──> re-fetch doc emphasis OR persist emphasized[] (schema change)
-Golden-lesson fixture ──enhances──> prompt review (regression safety on every future edit)
-Drift metrics ──requires──> audit script (persists its counters)
+[Server Actions migration] ──conflicts──> [Optimistic grading (UX-01, shipped)]
+[Cache Components adoption] ──conflicts──> [fully-dynamic architecture + v1.2 no-cross-request-cache decision]
 ```
 
 ### Dependency Notes
 
-- **Audit before prompt edits:** the milestone's own framing (findings-first) matches external best practice — prompt changes made without error-frequency data routinely fix rare problems while ignoring common ones.
-- **Write-path fix + post-hoc sweep are complements, not substitutes:** fixing `parseExtractionResponse` (E4/E5) protects future syncs; only the DB sweep finds existing violations among the ~500+ persisted cards.
-- **`filterComponents` boundary is load-bearing:** its header explicitly scopes it to *existence*, not correctness — E9 auditing belongs to the judge layer (the GRAPH-01 concern), never to widening the deterministic filter (which would reintroduce the false positives v1.4 just removed).
+- **Freshness fix requires prop→state re-sync:** `router.refresh()` streams new props without remounting; `CardsClient`/`HomeClient`/`HabitsClient` initialize state from props once (documented pattern, RSC-01..04). Without re-sync, refresh "works" at the framework level and changes nothing on screen. This is the single most likely way the milestone silently fails.
+- **Freshness spec requires prod build:** `next dev` renders every page on demand — the stale behavior being fixed is not reproducible there (already a CLAUDE.md gotcha for manual testing).
+- **Auth setup is unusually cheap here:** single shared password + stateless HMAC cookie means one `APIRequestContext` POST (or direct cookie computation reusing `lib/auth.ts`) — no per-test login UI, no token refresh.
+- **Test DB leans on existing architecture:** the same `lib/prisma.ts` libSQL adapter already runs against `file:` in dev; the only genuinely new work is schema-apply + seed for a throwaway DB and `webServer.env` injection.
+- **`StudySession`'s active session is intentionally exempt:** the in-session queue is client-owned by design (optimistic grading); freshness applies to *route-level* data on navigation, not mid-session state. Refresh triggers should fire on session end / navigation, never mid-grade.
+- **Vitest + Playwright coexistence:** keep the Playwright specs in a separate `e2e/` dir excluded from Vitest's include glob (and vice versa) — the standard split; no runner conflict when directories don't overlap.
 
 ## MVP Definition
 
-### Launch With (this milestone)
+### Launch With (v1.6)
 
-- [ ] `scripts/audit-cards.mts` — deterministic sweep (E2 romanization/Hangul, E3 near-dup section, E4 first-sentence blank-safety, E5 zero-sentence, E8 distractor count/dups, normalizedFront self-consistency, E1 heuristic flags) → grouped findings report — *cheap; catches every mechanically-detectable class*
-- [ ] Blank-safety + zero-sentence enforcement in `parseExtractionResponse` — *closes the one verified structural gap at the source*
-- [ ] Prompt review of `lib/extract-cards.ts` against the findings; apply high-confidence edits — *the milestone's stated deliverable*
-- [ ] Apply high-confidence data fixes found (via `--apply`-gated script or CardEditor) — *matches existing convention*
+- [ ] Diagnosis spike across all 4 routes (prod build) — everything else is guesswork without it
+- [ ] Prop→state re-sync in the client shells that need it — prerequisite for any refresh to be visible
+- [ ] `router.refresh()` on study-session end + refresh-on-focus/visibility listener — covers post-study navigation, back/forward, and PWA resume after cron sync
+- [ ] Playwright infra: config + `webServer` + auth storageState + isolated seeded test DB
+- [ ] Smoke spec (all routes) + study grade flow + freshness regression spec — minimum set proving the milestone
+- [ ] Trace-on-retry + line reporter — agent- and human-debuggable by default
 
-### Add After Validation (if findings warrant)
+### Add After Validation (v1.6.x)
 
-- [ ] Batch LLM re-grade (local script, sampled) — *trigger: the deterministic sweep leaves significant "can't tell without semantics" flag volume (E1 borderline, E6, E7, E9)*
-- [ ] Source-traceability sentence check — *trigger: evidence of composed-sentence quality problems*
-- [ ] Golden-lesson regression fixture — *trigger: the prompt actually gets edited this milestone (likely)*
+- [ ] Cards CRUD flow spec — once infra is stable; exercises SwipeRow/Sheet interactions
+- [ ] Perf budgets (Navigation Timing + API route timing, generous thresholds) — after a few suite runs establish baseline variance
+- [ ] Playwright MCP registration + CLAUDE.md workflow docs — as soon as the suite exists to complement it
 
-### Future Consideration
+### Future Consideration (v2+)
 
-- [ ] Emphasized-coverage audit — *blocked on persisting/re-deriving `emphasized[]`; schema change requires manual Turso DDL*
-- [ ] Drift-metrics history across audit runs — *value accrues only after ≥ 2 prompt/model versions*
+- [ ] WebKit project — only if an iOS-Safari-specific bug appears
+- [ ] Sync-route E2E coverage beyond auth/validation — only with a stubbed extraction boundary
+- [ ] Visual regression — likely never for this app; semantic assertions suffice
 
 ## Feature Prioritization Matrix
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Deterministic invariant sweep + findings report | HIGH | LOW–MEDIUM | P1 |
-| Blank-safety/zero-sentence parse enforcement | HIGH (2 of 3 study modes) | LOW | P1 |
-| Prompt review vs findings + high-confidence fixes | HIGH | LOW–MEDIUM | P1 |
-| Near-duplicate report (extend find-duplicates.mjs) | MEDIUM | LOW | P1 (folds into sweep) |
-| Batch LLM re-grade (sampled, local) | MEDIUM–HIGH | MEDIUM | P2 |
-| Golden-lesson regression fixture | MEDIUM | MEDIUM | P2 |
-| Source-traceability sentence check | MEDIUM | MEDIUM | P2 |
-| Audit drift metrics | LOW–MEDIUM | LOW | P3 |
-| Emphasized-coverage audit | MEDIUM | MEDIUM–HIGH | P3 |
+| Diagnosis spike | HIGH (de-risks everything) | LOW | P1 |
+| Prop→state re-sync | HIGH | MEDIUM | P1 |
+| refresh() on session end + focus listener | HIGH | LOW | P1 |
+| Playwright infra (config/auth/test DB) | HIGH | MEDIUM | P1 |
+| Smoke + study flow + freshness specs | HIGH | MEDIUM | P1 |
+| Trace/report config | MEDIUM | LOW | P1 (free) |
+| Cards CRUD spec | MEDIUM | MEDIUM | P2 |
+| Perf budgets | MEDIUM | MEDIUM | P2 |
+| Playwright MCP workflow | MEDIUM | LOW | P2 |
+| WebKit project | LOW | LOW | P3 |
+| Visual regression | LOW | HIGH | P3 (avoid) |
 
 ## Sources
 
-- Codebase (HIGH confidence, directly verified): `lib/extract-cards.ts` (parse-time validation scope; `safeToBlank` never consulted), `lib/sentence-match.ts` (`safeToBlank` contract), `lib/filter-components.ts` (existence-not-correctness contract, documented in header), `lib/card-key.ts` (`normalizeFront` scope), `scripts/find-duplicates.mjs` + `scripts/retro-filter-cleanup.mts` (existing audit-script idioms), `.planning/PROJECT.md` (v1.4 GRAPH-01..05 history)
-- Web (LOW–MEDIUM confidence; cross-checked across ≥ 2 independent sources per claim):
-  - LLM extraction error patterns concentrate in categorical/free-text fields; hallucinated values inside well-formed JSON; no intrinsic confidence signal — [Who Fails Where? LLM and Human Error Patterns (arXiv)](https://arxiv.org/pdf/2601.09053), [Classification of LLM Errors in Data Extraction (Medium)](https://farhadinfo.medium.com/classification-of-llm-errors-in-data-extraction-for-systematic-reviews-and-factors-affecting-the-4549f5c68467), [Real-Time Error Detection for LLM Structured Outputs (Cleanlab)](https://cleanlab.ai/blog/tlm-structured-outputs-benchmark/)
-  - Layered validation: deterministic checks first, LLM-as-judge as a sampled precision layer, human oversight on disagreement — [What is an LLM-as-a-judge? (Braintrust)](https://www.braintrust.dev/articles/what-is-llm-as-a-judge), [Multi-LLM Verification Pipeline (Emergent Mind)](https://www.emergentmind.com/topics/multi-llm-verification-pipeline)
-  - Post-hoc DB auditing: rule-based invariant sweeps + batch LLM revalidation + replication vs source + drift detection — [VALID framework for LLM-extracted EHR data (JCO CCI)](https://ascopubs.org/doi/10.1200/CCI-25-00215), [Evaluating Extracted Invoice Data with LLM-as-a-Judge (Towards AI)](https://towardsai.net/p/machine-learning/from-extraction-to-accuracy-evaluating-extracted-invoice-data-with-llm-as-a-judge), [LLM Data Auditor Framework (Emergent Mind)](https://www.emergentmind.com/topics/llm-data-auditor-framework)
-  - Flashcard-generation-specific problems (duplicate headwords, cloze density, base-form issues) — [When AI Flashcards Pollute Your Anki Deck (Substack)](https://evakeiffenheim.substack.com/p/when-ai-flashcards-pollute-your-anki), [Automatically generating Anki flashcards (Medium)](https://medium.com/@andrea.berlingieri42/automatically-generating-anki-flashcards-for-language-learning-using-the-lexicala-api-and-deepl-412846986186)
+Official docs (cross-verified, current for Next.js 16.2.10 / 2026):
+- [Next.js staleTimes reference](https://nextjs.org/docs/app/api-reference/config/next-config-js/staleTimes) — dynamic=0 default since v15; explicitly does not affect back/forward caching
+- [Next.js revalidatePath reference](https://nextjs.org/docs/app/api-reference/functions/revalidatePath) — Server Function vs Route Handler client-cache behavior
+- [Next.js caching guide (previous model)](https://nextjs.org/docs/app/guides/caching-without-cache-components)
+- [Next.js Playwright guide](https://nextjs.org/docs/app/guides/testing/playwright) — webServer config, prod-build recommendation
+- Vercel `next-cache-components` + `nextjs` skills (Cache Components / `updateTag` semantics, data patterns)
+
+Community/practitioner (MEDIUM confidence, cross-checked):
+- [vercel/next.js issue #69979 — stale data after navigation with internal API + SSR](https://github.com/vercel/next.js/issues/69979) and [discussion #52370](https://github.com/vercel/next.js/discussions/52370) — the canonical statement of this app's exact bug
+- [Playwright: Authentication](https://playwright.dev/docs/auth), [setup-project pattern](https://dev.to/playwright/a-better-global-setup-in-playwright-reusing-login-with-project-dependencies-14)
+- [Playwright MCP](https://playwright.dev/docs/getting-started-mcp), [microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp), [Builder.io: Playwright MCP with Claude Code](https://www.builder.io/blog/playwright-mcp-server-claude-code), [Simon Willison TIL](https://til.simonwillison.net/claude-code/playwright-mcp-claude-code)
+- [Checkly: measuring page performance with Playwright](https://www.checklyhq.com/docs/learn/playwright/performance/), [TestingBot Playwright performance](https://testingbot.com/support/web-automate/playwright/performance)
+- [Prisma E2E testing guide](https://www.prisma.io/blog/testing-series-4-OVXtDis201), [testdouble/nextjs-e2e-test-example](https://github.com/testdouble/nextjs-e2e-test-example)
 
 ---
-*Feature research for: LLM extraction quality auditing (Korean Study v1.5)*
-*Researched: 2026-07-05*
+*Feature research for: v1.6 Freshness, Performance & E2E Testing (Korean Study app)*
+*Researched: 2026-07-10*
