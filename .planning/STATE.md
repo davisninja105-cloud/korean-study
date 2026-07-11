@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Freshness, Performance & E2E Testing
 current_phase: 25
-current_phase_name: E2E Test Infrastructure & Baselines
+current_phase_name: e2e-test-infrastructure-baselines
 status: executing
 stopped_at: Phase 25 planning complete — 3 plans ready
-last_updated: "2026-07-11T17:25:30.373Z"
+last_updated: "2026-07-11T22:04:34.014Z"
 last_activity: 2026-07-11
-last_activity_desc: Phase 25 planning complete — 3 plans ready
+last_activity_desc: Phase 25 execution started
 progress:
   total_phases: 4
   completed_phases: 1
-  total_plans: 2
+  total_plans: 5
   completed_plans: 2
   percent: 25
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 25 — E2E Test Infrastructure & Baselines
+**Current focus:** Phase 25 — e2e-test-infrastructure-baselines
 
 ## Current Position
 
-Phase: 25 — E2E Test Infrastructure & Baselines
-Plan: 3 plans ready (Wave 1: 25-01, Wave 2: 25-02, Wave 3: 25-03)
-Status: Ready to execute
-Last activity: 2026-07-11 — Phase 25 planning complete — 3 plans ready
+Phase: 25 (e2e-test-infrastructure-baselines) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 25
+Last activity: 2026-07-11 — Phase 25 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
