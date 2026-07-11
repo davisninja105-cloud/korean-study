@@ -96,53 +96,70 @@ See `.planning/milestones/v1.5-ROADMAP.md` for full phase details.
 - [ ] **Phase 27: E2E Coverage & Performance Validation** - Study grade-flow spec, generous page/API timing budgets, and a documented Playwright MCP workflow
 
 #### Phase 24: Freshness Diagnosis Spike
+
 **Goal**: Produce an empirical, per-route diagnosis of exactly which navigation paths serve stale data on a production build (`next build && next start`), attributing each stale path to its cache layer and capturing it as a reproducible failing scenario the later regression spec can encode.
 **Depends on**: Nothing (first phase of milestone)
 **Requirements**: FRESH-01
 **Success Criteria** (what must be TRUE):
+
   1. A written diagnosis names, for each of `/`, `/cards`, `/study`, `/habits`, which navigation paths (back/forward restore, tab/PWA resume, post-mutation same-route return, plain `<Link>`) do and do not serve stale data, tested on a production build — never `next dev`.
   2. Every stale path is attributed to a root cause — back/forward Router Cache reuse vs. client-shell `useState(initialProps)` non-resync — not left ambiguous.
   3. The diagnosis is captured as a concrete, reproducible scenario (steps + expected-vs-actual) that Phase 25's freshness-regression spec can encode directly.
   4. Paths already fresh (e.g. plain `<Link>` under `staleTimes.dynamic = 0`) are explicitly confirmed non-stale, so the fix stays surgical and leaves them untouched.
+
 **Plans**: 2 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 24-01-PLAN.md — Playwright install (blocking [SUS] legitimacy checkpoint) + diagnosis-script plumbing: libsql:// hard-fail guard, isolated file: DB seed, prod-server orchestration, ks_auth cookie injection, end-to-end smoke check
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 24-02-PLAN.md — Empirical RSC-signature confirmation, 16-cell route×path matrix run with binary root-cause classification, and 24-DIAGNOSIS.md authoring
 
 #### Phase 25: E2E Test Infrastructure & Baselines
+
 **Goal**: Stand up an isolated, authenticated Playwright harness that boots a production build, with a smoke/first-load baseline as a performance guard rail and a red freshness-regression spec encoding the Phase 24 diagnosis — the guard rails that must exist before any fix lands.
 **Depends on**: Phase 24
 **Requirements**: E2E-01, E2E-02, E2E-03, E2E-04, E2E-06, E2E-07
 **Success Criteria** (what must be TRUE):
+
   1. `npx playwright test` boots a production build via `webServer`, runs Chromium specs discovered separately from the existing Vitest suite (neither runner picks up the other's tests), and a setup project logs in once via `/api/login` to produce a reusable `storageState` so no spec performs login UI steps. (E2E-01, E2E-02)
   2. E2E runs execute against an isolated, seeded `file:` SQLite database, with a host guard that fails the run fast if `DATABASE_URL` points at a `libsql://` (Turso) URL. (E2E-03)
   3. A smoke spec asserts every main route (`/`, `/cards`, `/study`, `/habits`) renders real content on first paint (not merely HTTP 200), establishing the first-load performance guard rail. (E2E-04)
   4. A freshness-regression spec encodes the Phase 24 diagnosis (FRESH-03/04/05) against the production build and is currently red — failing because the staleness bug is still present. (E2E-06)
   5. A failed run emits a Playwright trace (`trace: 'on-first-retry'`) plus a parseable line-reporter output usable by both a human and an AI agent. (E2E-07)
+
 **Plans**: TBD
 
 #### Phase 26: Freshness Fix
+
 **Goal**: Client shells re-sync to fresh server props at real resume/mutation boundaries (via `router.refresh()` + gated render-phase prop-sync + a `FreshnessWatcher`), turning Phase 25's red freshness-regression spec green while keeping first-load speed and the no-flash guarantee intact.
 **Depends on**: Phase 25
 **Requirements**: FRESH-02, FRESH-03, FRESH-04, FRESH-05, FRESH-06
 **Success Criteria** (what must be TRUE):
+
   1. Returning to the Home/Habits/Cards pages after completing a study session shows updated stats, due-count, and cards immediately — no manual reload. (FRESH-03)
   2. Browser back/forward navigation to a previously-visited route shows fresh data, not a stale cached RSC payload. (FRESH-04)
   3. Resuming the app after it was backgrounded (tab/PWA focus) refreshes stale data, including the case where the daily cron sync ran while the app was backgrounded. (FRESH-05)
   4. Prop re-sync never clobbers an in-flight interaction — an active study session or an open editor sheet is preserved mid-interaction. (FRESH-02)
   5. First-load render speed is unchanged and no loading-state flash reappears on any of the four main routes; Phase 25's freshness-regression spec is now green and its first-load baseline spec stays green. (FRESH-06)
+
 **Plans**: TBD
 
 #### Phase 27: E2E Coverage & Performance Validation
+
 **Goal**: With infrastructure and the fix both proven, broaden coverage to the full study grade-flow, assert generous page/API timing budgets as behavioral guard rails, and document the Playwright MCP workflow for agent-driven exploratory QA.
 **Depends on**: Phase 26
 **Requirements**: E2E-05, PERF-04, PERF-05, TOOL-01
 **Success Criteria** (what must be TRUE):
+
   1. A study grade-flow spec covers reveal → grade → queue advance → session completion end-to-end against the seeded DB. (E2E-05)
   2. The suite asserts generous page-load timing budgets on key routes via the Navigation Timing API, using median-of-N runs to reduce flakiness. (PERF-04)
   3. The suite asserts generous API route timing budgets (e.g. `/api/cards/due`) via direct request timing. (PERF-05)
   4. A documented workflow in CLAUDE.md lets Claude Code drive the running dev server interactively via Playwright MCP for exploratory verification. (TOOL-01)
+
 **Plans**: TBD
 
 ## Progress
