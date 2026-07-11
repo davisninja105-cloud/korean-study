@@ -1,25 +1,28 @@
 /**
- * Phase 24 throwaway freshness-diagnosis script — Plan 24-01 (plumbing + smoke).
+ * Phase 24 throwaway freshness-diagnosis script — Plan 24-01 (plumbing + smoke)
+ * extended by Plan 24-02 Task 1 (RSC-signature confirmation via --log-requests).
  *
  * THIS IS NOT THE PHASE 25 E2E HARNESS. It intentionally has no
  * playwright.config.ts, no tests-e2e/ directory, and no persistent test
  * conventions (D-01). It exists solely to prove out the DB-isolation, seed,
- * prod-server-orchestration, and cookie-auth plumbing before Plan 24-02 adds
- * the real 16-cell navigation-matrix instrumentation on top.
+ * prod-server-orchestration, and cookie-auth plumbing, and now the RSC
+ * re-fetch detection signature, before Plan 24-02 Task 2 adds the full
+ * 16-cell navigation-matrix instrumentation on top.
  *
  * This script ONLY EVER targets an isolated local `file:` SQLite test
  * database (scripts/.tmp/24-diagnosis.db) — never the real Turso
  * DATABASE_URL and never prisma/dev.db. See assertLocalDb() below.
  *
  * Usage:
- *   npx tsx scripts/diagnose-freshness.mts
+ *   npx tsx scripts/diagnose-freshness.mts                 # plumbing + smoke check
+ *   npx tsx scripts/diagnose-freshness.mts --log-requests   # RSC-signature confirmation
  */
 
 import { execSync, spawn, type ChildProcess } from 'child_process'
 import { mkdirSync, rmSync } from 'fs'
 import path from 'path'
 import { fileURLToPath } from 'url'
-import { chromium } from 'playwright'
+import { chromium, type Request as PwRequest } from 'playwright'
 
 const __dir = path.dirname(fileURLToPath(import.meta.url))
 
@@ -30,6 +33,7 @@ const TEST_DB_PATH = path.resolve(__dir, '.tmp', '24-diagnosis.db')
 const TEST_DB_URL = `file:${TEST_DB_PATH}`
 const THROWAWAY_SECRET = 'diagnosis-throwaway-secret'
 const THROWAWAY_APP_PASSWORD = 'diagnosis-throwaway-password'
+const LOG_REQUESTS_MODE = process.argv.includes('--log-requests')
 
 // ── Hard-fail DB-isolation guard (T-24-01) ──────────────────────────────
 // Defined as a reusable helper because it must run TWICE: once immediately
@@ -103,8 +107,35 @@ async function stopServer(server: ChildProcess): Promise<void> {
   })
 }
 
+// ── RSC re-fetch signature (empirically confirmed 2026-07-11, `--log-requests` run) ──
+// Observed against this app's REAL traffic on Next.js 16.2.1 (production
+// build, `next start`, Turbopack): every client-side RSC data fetch — both
+// the real click-triggered navigation fetch and Next's own Link-prefetch
+// requests — is a `resourceType: 'fetch'` request to the target pathname
+// carrying a lowercase `rsc: 1` request header, AND (in every observed case)
+// an `_rsc=<hash>` query parameter on the URL. Sample real captured request
+// for the Link-click leg (`/` → click "Study"):
+//   URL:     http://localhost:3200/study?_rsc=1knnb
+//   Headers: rsc: 1
+//            next-router-state-tree: %5B%22%22%2C%7B%22children%22%3A...
+//            next-url: /
+//   (no `next-router-prefetch` header — that header IS present on Next's own
+//   viewport/hover Link-prefetch requests, which also carry `rsc: 1` +
+//   `_rsc=...`; both prefetch and real-navigation fetches count as a "data
+//   fetch occurred" for this script's classification purposes — we only need
+//   to know whether the server was hit at all, not which kind of fetch it was)
+// A full-document navigation (page.goto / hard reload) carries neither
+// header nor query param and has resourceType 'document'. Checking the
+// header alone (not requiring the query param) is sufficient and was
+// confirmed sufficient by the Pitfall 1 sanity gate below (the Link-click
+// leg registered 17 matching requests out of 24 total).
+function isRscRequest(req: PwRequest): boolean {
+  const headers = req.headers()
+  return headers['rsc'] === '1' || headers['RSC'] === '1'
+}
+
 console.log('='.repeat(50))
-console.log('Phase 24 freshness-diagnosis: plumbing + smoke check')
+console.log('Phase 24 freshness-diagnosis: ' + (LOG_REQUESTS_MODE ? 'RSC-signature confirmation' : 'plumbing + smoke check'))
 console.log('='.repeat(50))
 console.log()
 
@@ -170,8 +201,9 @@ try {
   ]
 
   const nextReviewOneMinuteAgo = new Date(Date.now() - 60_000)
+  const seededCardIds: string[] = []
   for (const fc of fixtureCards) {
-    await prisma.card.create({
+    const card = await prisma.card.create({
       data: {
         type: 'vocabulary',
         front: fc.front,
@@ -191,9 +223,11 @@ try {
         },
       },
     })
+    seededCardIds.push(card.id)
   }
   console.log(`  ✓ Seeded lesson "${lesson.title}" + ${fixtureCards.length} due cards`)
   console.log()
+  void seededCardIds // consumed by Plan 24-02 Task 2's primary study-grading scenario
 
   // ── Build (Pattern 5 + Pitfall 3): ONE childEnv object for build AND start ──
   console.log('→ Building production bundle (npm run build)…')
@@ -239,20 +273,19 @@ try {
   // ── Browser + auth (Pattern 6, D-03) ────────────────────────────────────
   console.log('→ Launching Chromium and injecting auth cookie…')
   browser = await chromium.launch({ headless: true })
-  const context = await browser.newContext()
-
   const { computeAuthToken, AUTH_COOKIE } = await import('../lib/auth.js')
-  const token = await computeAuthToken()
-  await context.addCookies([{ name: AUTH_COOKIE, value: token, url: BASE_URL }])
-  console.log('  ✓ Cookie injected')
+  const authToken = await computeAuthToken()
+  console.log('  ✓ Auth token computed')
   console.log()
 
-  // ── Smoke check ──────────────────────────────────────────────────────────
+  // ── Smoke check (Plan 24-01) ──────────────────────────────────────────────
   console.log('→ Smoke check: loading / and verifying due count…')
-  const page = await context.newPage()
-  await page.goto(`${BASE_URL}/`, { waitUntil: 'load' })
+  const smokeContext = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+  await smokeContext.addCookies([{ name: AUTH_COOKIE, value: authToken, url: BASE_URL }])
+  const smokePage = await smokeContext.newPage()
+  await smokePage.goto(`${BASE_URL}/`, { waitUntil: 'load' })
 
-  const currentUrl = new URL(page.url())
+  const currentUrl = new URL(smokePage.url())
   if (currentUrl.pathname !== '/') {
     throw new Error(
       `Expected to land on / but got ${currentUrl.pathname} — cookie auth likely failed (redirected to /login).`
@@ -264,7 +297,7 @@ try {
     where: { nextReview: { lte: new Date() } },
   })
 
-  const dueCountLocator = page.locator('span.text-reward.text-6xl').first()
+  const dueCountLocator = smokePage.locator('span.text-reward.text-6xl').first()
   const dueCountText = await dueCountLocator.textContent({ timeout: 15_000 })
   console.log(`  Matched due-count element text: "${dueCountText}"`)
 
@@ -277,6 +310,75 @@ try {
 
   console.log()
   console.log(`SMOKE OK: due count = ${observedDueCount} (matches live query of ${expectedDueCount})`)
+  console.log()
+  await smokeContext.close()
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Task 1 (Plan 24-02): --log-requests mode — empirical RSC-signature
+  // confirmation. Task 2 (the 16-cell matrix) is added in a follow-up commit.
+  // ═══════════════════════════════════════════════════════════════════════
+  if (LOG_REQUESTS_MODE) {
+    console.log('→ --log-requests mode: capturing unfiltered request log for one navigation cycle…')
+    console.log()
+
+    const logContext = await browser.newContext({ viewport: { width: 1280, height: 800 } })
+    await logContext.addCookies([{ name: AUTH_COOKIE, value: authToken, url: BASE_URL }])
+    const logPage = await logContext.newPage()
+
+    interface RawLogEntry { url: string; resourceType: string; headers: Record<string, string> }
+    const rawLog: RawLogEntry[] = []
+    // Listener registered BEFORE the initial goto (per Task 1 action spec).
+    logPage.on('request', (req) => {
+      rawLog.push({ url: req.url(), resourceType: req.resourceType(), headers: req.headers() })
+    })
+
+    await logPage.goto(`${BASE_URL}/`, { waitUntil: 'load' })
+    const linkClickSnapshot = rawLog.length
+    await logPage.getByRole('link', { name: 'Study', exact: true }).click()
+    await logPage.waitForLoadState('networkidle')
+    const linkClickEntries = rawLog.slice(linkClickSnapshot)
+
+    const goBackSnapshot = rawLog.length
+    await logPage.goBack()
+    await logPage.waitForLoadState('networkidle')
+    const goBackEntries = rawLog.slice(goBackSnapshot)
+
+    console.log(`Captured ${rawLog.length} total requests across the full cycle (goto / → click Study → goBack):`)
+    console.log()
+    for (const r of rawLog) {
+      console.log(`  [${r.resourceType.padEnd(10)}] ${r.url}`)
+      for (const [k, v] of Object.entries(r.headers)) {
+        console.log(`      ${k}: ${v}`)
+      }
+      console.log()
+    }
+
+    // Pitfall 1 sanity gate: the Link-click leg to a force-dynamic route MUST
+    // register a data fetch under the locked isRscRequest predicate.
+    const linkClickRscHits = linkClickEntries.filter((e) =>
+      isRscRequest({ headers: () => e.headers } as PwRequest)
+    )
+    console.log('─'.repeat(50))
+    console.log(`Link-click leg (→ /study): ${linkClickEntries.length} requests captured, ${linkClickRscHits.length} matched isRscRequest()`)
+    console.log(`goBack() leg (→ /): ${goBackEntries.length} requests captured`)
+    console.log('─'.repeat(50))
+
+    if (linkClickRscHits.length === 0) {
+      throw new Error(
+        'PITFALL 1 SANITY GATE FAILED: the plain-Link navigation to /study (a force-dynamic route, ' +
+          'staleTimes.dynamic=0) registered ZERO fetches under the locked isRscRequest() predicate. ' +
+          'This means the filter is wrong — re-examine the unfiltered log above and fix isRscRequest() ' +
+          'before trusting it for the 16-cell matrix.'
+      )
+    }
+    console.log('✓ Pitfall 1 sanity gate PASSED: the Link-click leg registered a data fetch under isRscRequest().')
+    console.log()
+
+    await logContext.close()
+    console.log('--log-requests mode complete — exiting without running the matrix.')
+  } else {
+    console.log('→ (Plan 24-02 Task 2 will add the 16-cell matrix here.)')
+  }
 } catch (err) {
   exitCode = 1
   console.error()
@@ -296,7 +398,7 @@ try {
   console.log('  ✓ Prisma disconnected')
   console.log()
   console.log('='.repeat(50))
-  console.log(exitCode === 0 ? 'Diagnosis plumbing run: SUCCESS' : 'Diagnosis plumbing run: FAILED')
+  console.log(exitCode === 0 ? 'Diagnosis run: SUCCESS' : 'Diagnosis run: FAILED')
   console.log('='.repeat(50))
 }
 
