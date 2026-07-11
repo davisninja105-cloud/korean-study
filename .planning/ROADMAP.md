@@ -107,12 +107,12 @@ See `.planning/milestones/v1.5-ROADMAP.md` for full phase details.
   3. The diagnosis is captured as a concrete, reproducible scenario (steps + expected-vs-actual) that Phase 25's freshness-regression spec can encode directly.
   4. Paths already fresh (e.g. plain `<Link>` under `staleTimes.dynamic = 0`) are explicitly confirmed non-stale, so the fix stays surgical and leaves them untouched.
 
-**Plans**: 2 plans
+**Plans**: 1/2 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 24-01-PLAN.md — Playwright install (blocking [SUS] legitimacy checkpoint) + diagnosis-script plumbing: libsql:// hard-fail guard, isolated file: DB seed, prod-server orchestration, ks_auth cookie injection, end-to-end smoke check
+- [x] 24-01-PLAN.md — Playwright install (blocking [SUS] legitimacy checkpoint) + diagnosis-script plumbing: libsql:// hard-fail guard, isolated file: DB seed, prod-server orchestration, ks_auth cookie injection, end-to-end smoke check
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -193,7 +193,7 @@ Phases execute in numeric order: 1 → 2 → ... → 23 (all complete) → 24 �
 | 21. Card Database Quality Audit | v1.5 | 2/2 | Complete | 2026-07-07 |
 | 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 3/3 | Complete | 2026-07-10 |
 | 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete | 2026-07-10 |
-| 24. Freshness Diagnosis Spike | v1.6 | 0/TBD | Not started | - |
+| 24. Freshness Diagnosis Spike | v1.6 | 1/2 | In Progress|  |
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 0/TBD | Not started | - |
 | 26. Freshness Fix | v1.6 | 0/TBD | Not started | - |
 | 27. E2E Coverage & Performance Validation | v1.6 | 0/TBD | Not started | - |
