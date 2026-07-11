@@ -131,7 +131,7 @@ Plans:
   4. A freshness-regression spec encodes the Phase 24 diagnosis (FRESH-03/04/05) against the production build and is currently red — failing because the staleness bug is still present. (E2E-06)
   5. A failed run emits a Playwright trace (`trace: 'on-first-retry'`) plus a parseable line-reporter output usable by both a human and an AI agent. (E2E-07)
 
-**Plans**: 1/3 plans executed
+**Plans**: 2/3 plans executed
 
 Plans:
 **Wave 1**
@@ -140,7 +140,7 @@ Plans:
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 25-02-PLAN.md — Ported per-route DOM readers + `e2e/smoke.spec.ts` (E2E-04): 4 specific per-route content assertions plus informational Navigation Timing capture
+- [x] 25-02-PLAN.md — Ported per-route DOM readers + `e2e/smoke.spec.ts` (E2E-04): 4 specific per-route content assertions plus informational Navigation Timing capture
 
 **Wave 3** *(blocked on Wave 1 + Wave 2 completion)*
 
@@ -207,7 +207,7 @@ Phases execute in numeric order: 1 → 2 → ... → 23 (all complete) → 24 �
 | 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 3/3 | Complete | 2026-07-10 |
 | 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete | 2026-07-10 |
 | 24. Freshness Diagnosis Spike | v1.6 | 2/2 | Complete    | 2026-07-11 |
-| 25. E2E Test Infrastructure & Baselines | v1.6 | 1/3 | In Progress|  |
+| 25. E2E Test Infrastructure & Baselines | v1.6 | 2/3 | In Progress|  |
 | 26. Freshness Fix | v1.6 | 0/TBD | Not started | - |
 | 27. E2E Coverage & Performance Validation | v1.6 | 0/TBD | Not started | - |
 
