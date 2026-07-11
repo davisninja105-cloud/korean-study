@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Freshness, Performance & E2E Testing
 status: planning
-last_updated: "2026-07-10T22:27:25.529Z"
+last_updated: "2026-07-10T22:40:00.000Z"
 last_activity: 2026-07-10
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,43 +20,39 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-10)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** v1.5 archived — planning next milestone via `/gsd-new-milestone`
+**Current focus:** Phase 24 — Freshness Diagnosis Spike
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-07-10 — Milestone v1.6 started
+Phase: 24 of 27 (Freshness Diagnosis Spike)
+Plan: — (not yet planned)
+Status: Ready to plan
+Last activity: 2026-07-10 — v1.6 roadmap created (Phases 24–27, 16/16 requirements mapped)
+
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
 **Velocity:**
 
-- Total plans completed (v1.4): 15 plans across 4 phases (16–19)
-- Prior milestone (v1.3): 6 plans across 3 phases
+- Prior milestone (v1.5): 9 plans across 4 phases (20–23)
+- Prior milestone (v1.4): 15 plans across 4 phases (16–19)
 
-**By Phase (v1.5):**
+**By Phase (v1.6):**
 
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
-| 20 | 0/TBD | - | - |
-| 21 | 2/2 | - | - |
-| 22 | 3 | - | - |
-| 23 | 2 | - | - |
+| 24 | 0/TBD | - | - |
+| 25 | 0/TBD | - | - |
+| 26 | 0/TBD | - | - |
+| 27 | 0/TBD | - | - |
 
 **Recent Trend:**
 
-- Last milestone: v1.4 Knowledge Graph Quality & History shipped 2026-07-05 (4 phases, 15 plans)
+- Last milestone: v1.5 Extraction Quality & Reliability shipped 2026-07-10 (4 phases, 9 plans, 5 days)
 - Trend: —
 
 *Updated after each plan completion*
-| Phase 21 P01 | 16 min | 3 tasks | 2 files |
-| Phase 21 P02 | 4 min | 2 tasks | 2 files |
-| Phase 22 P01 | 3 min | 2 tasks | 2 files |
-| Phase 22 P03 | 25min | 1 tasks | 4 files |
-| Phase 23 P01 | 3 min | 1 tasks | 2 files |
-| Phase 23 P02 | 58 min | 3 tasks | 8 files |
 
 ## Accumulated Context
 
@@ -64,33 +60,12 @@ Last activity: 2026-07-10 — Milestone v1.6 started
 
 Full decision log lives in PROJECT.md Key Decisions table and .planning/RETROSPECTIVE.md.
 
-v1.5 roadmap shaping decisions (2026-07-06):
+v1.6 roadmap shaping decisions (2026-07-10):
 
-- Coarse granularity: research's 9-phase suggestion compressed to 4 delivery-coherent phases (20–23).
-- Extraction hardening (Phase 20) and reliability bugs (Phase 23) are independent tracks; the audit→prompt/fix track (21 → 22) is strictly serial and findings-first.
-- Prompt review + validation + corpus fixes combined into Phase 22 (one "act on the findings" workflow); validation must show audit-check counts drop before fixes are applied.
-- Hard rule for the milestone (research pitfall): all corpus fixes mutate cards in place by `id` — never delete+recreate (cascades wipe FSRS state + ReviewLog history).
-- [Phase 21]: Phase 21-01: audit-checks module delegates to production helpers (sentenceMatch/normalizeFront/filterComponents) — audit truth is production truth by structural construction
-- [Phase 21]: Phase 21-01: superNormalize lifted verbatim from find-duplicates.mjs into lib/audit-checks.ts; slash-removal decision preserved
-- [Phase 21]: Phase 21-01: zero-sentence cards routed to own section with hasLegacyCloze flag, not blankSafety — Phase 22 fix strategy differs
-- [Phase 21]: Phase 21-02: audit-cards.mts is a thin I/O adapter — zero classification logic; all checks in lib/audit-checks.ts (runAuditChecks). Script: load → runAuditChecks → render markdown → write file → console → exit(0).
-- [Phase 21]: Phase 21-02: env-first dynamic-import preamble (dotenv → await import('../lib/*.js')) — 1039-card live count confirms the real Turso deck was read, not the empty local fallback (Pitfall 4 avoided).
-- [Phase 21]: Phase 21-02: dated report interpolates only findings fields + date (never env/credentials); every finding carries the card id for Phase 22 fix-in-place (STATE.md v1.5 hard rule).
-- [Phase 22]: Phase 22-01: sentenceMatch single-char branch rewritten to word-boundary-aware (D-01/D-02) — isolated single-char tokens (string-edge/whitespace/punctuation both sides) are now blank-safe; embedded ones (Hangul-adjacent either side) stay unsafe; multi-occurrence rule still wins for isolated-but-repeated. Signature unchanged → all 3 consumers (HighlightedSentence/StudySession/CardEditor) inherit with zero call-site edits.
-- [Phase 22]: Phase 22-01: FIX-01 resolved by rule change, not DB mutation — card 다 (cmqlm1w0u014k0gsa6eydclfd) is blank-safe under both existing sentences with zero DB writes (milestone hard rule honored trivially).
-- [Phase 22]: Phase 22-01: reused the exact Hangul character class from normalizeFront (lib/card-key.ts) for the new HANGUL_CHAR regex — single source of truth for "what counts as Hangul" across dedup-key normalizer and blank-safety predicate.
-- [Phase 22]: Phase 22-01: first-occurrence semantics preserved — predicate evaluates the FIRST indexOf hit; an embedded first occurrence is unsafe even if a later one is isolated (matches how blankSentence actually blanks). Locked by an explicit test case.
-- [Phase 22]: Applied the dry-run corpus fix report exactly as approved by the user (Approved as-is) - 9 front rewrites + 3 철 sentences, no adjustments
-- [Phase 22]: Documented 2 cron-sync-drifted cards (거/게) discovered in the post-fix audit as out-of-scope post-audit arrivals rather than folding them into the phase fix count
-- [Phase 23]: Phase 23-01: log placed after pool-rejection throw and before empty-pool early return — visibility-before-degradation
-- [Phase 23]: test
-- [Phase 23]: Phase 23-01: additive logging only for RELIABILITY-01 — no new throw/retry/fallback; knownLemmas empty-Set ternary byte-for-byte untouched (observability, not behavior change)
-- [Phase 23]: Phase 23-01: log content limited to fixed [study-cards] prefix + knownRowsResult.reason — never card fronts, lesson-range params, or env (T-23-01 mitigation by construction)
-- [Phase 23]: Phase 23-01: tests mock prisma singleton via vi.mock('@/lib/prisma') — no DATABASE_URL needed; explicit sessionSize avoids getSessionSize; pool vs known-lemmas call distinguished by select vs include
-- [Phase 23]: Phase 23-02: single-source-of-truth consolidation — one resolution implementation remains (relinkAllDependencies → computeMissingEdges → resolveDependencyEdges); old .mjs deleted (its normalizeFront copy + components-only keyToId were the CR-02 leaf-prerequisite bug shape); local-resync final pass consolidated onto the shared helper (IN-02)
-- [Phase 23]: Phase 23-02: auto-relink hook lives inside runSync in lib/sync.ts, gated on failures.length === 0 && newLessons > 0 — both /api/sync and /api/cron/sync inherit with zero route changes (cron auto-relinks for free)
-- [Phase 23]: Phase 23-02: relink failure is non-fatal — try/catch leaves failures/newLessons/newCards untouched; cron stamps lastAutoSyncedAt only when failed === 0, so polluting failed would falsely mark the sync stale; next qualifying sync retries the relink naturally
-- [Phase 23]: Phase 23-02: two-layer idempotency — pure computeMissingEdges subtracts existingEdges (second call returns []), and @@unique([cardId, prerequisiteId]) backstops the DB layer against read/write races (conflicting createMany throws → caught non-fatal → retried next sync)
+- Coarse granularity: research's suggested 5-phase structure compressed to 4 delivery-coherent phases (24–27); the diagnosis spike stays its own phase because it's the milestone's central risk gate (the prior fix regressed precisely because nobody diagnosed first).
+- Hard build-order invariant (research): diagnosis (24) + E2E harness with a red freshness-regression spec and first-load baseline (25) must both exist BEFORE the fix (26) — the fix is proven by red→green, never by feel. Coverage/perf (27) is a non-blocking follow-on.
+- Freshness is a client-side Router Cache problem, not a server caching issue — every main page already declares `dynamic = 'force-dynamic'`. Fix is surgical: `router.refresh()` + gated per-shell prop-sync + a `FreshnessWatcher`, not `force-dynamic`/Route-Handler `revalidatePath` (Pitfall 1).
+- E2E must never touch production Turso: isolated `file:` SQLite + a fail-fast host guard on any `libsql://` URL (Pitfall 5). Only new deps are dev-only (`@playwright/test`, optional `@playwright/mcp`); zero new production dependencies.
 
 ### Pending Todos
 
@@ -98,13 +73,15 @@ None open.
 
 ### Blockers/Concerns
 
-- [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch (same shape as the Phase 13-hardened routes) — out of scope; deferred candidate for a future milestone.
-- [Phase 22] 2 new romanization-flagged card fronts (거/게, ids `cmrbwv4h1000504l9tbdf39w0`/`cmrbwv4we000904l99ya3oa8d`) arrived via cron auto-sync between the Phase 21 audit snapshot and Phase 22's post-fix audit — explicitly out of Phase 22's bounded fix scope; a future audit/fix pass should pick these up.
+- [Phase 26 flag from research] `StudyClient`'s existing lesson-range-filter re-fetch could double-fetch against a route-level `router.refresh()` — must be checked explicitly in the Phase 26 plan.
+- [Phase 26 flag from research] Per-shell prop-sync gating strategy (which of the four shells needs what condition) is the highest-risk implementation detail — finalize it in the Phase 26 plan before coding.
+- [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch (same shape as the Phase 13-hardened routes) — out of scope; deferred candidate.
+- [carried from v1.5] 거/게 romanization-flagged card fronts (post-audit cron arrivals) — out of scope; open for a future audit/fix pass.
 
 ### Roadmap Evolution
 
-- v1.4 roadmap: 4 phases (16–19), 15/15 requirements mapped, coarse. Archived to `.planning/milestones/v1.4-ROADMAP.md`.
-- v1.5 roadmap: 4 phases (20–23), 12/12 requirements mapped, coarse granularity — created 2026-07-06.
+- v1.5 roadmap: 4 phases (20–23), 12/12 requirements mapped, coarse. Archived to `.planning/milestones/v1.5-ROADMAP.md`.
+- v1.6 roadmap: 4 phases (24–27), 16/16 requirements mapped, coarse granularity — created 2026-07-10.
 
 ## Deferred Items
 
@@ -114,25 +91,16 @@ Carried forward, informational only:
 |----------|------|--------|
 | hardening | `app/api/review/undo/route.ts` missing try/catch (deferred in Phase 13) | Open |
 | feature | Card retirement/mastery flag (MASTERY-01) | Deferred to v2 |
-| gap | Near-duplicate card *merging* (FSRS history absorption) | Out of scripted scope for Phase 22; becomes its own decision if the audit finds a large cluster |
-| gap | 거/게 romanization-flagged fronts (post-audit cron arrivals) | Out of Phase 22's bounded scope; open for a future audit/fix pass |
-
-Items acknowledged and deferred at v1.5 milestone close on 2026-07-10 (closeout_type: override_closeout):
-
-| Category | Item | Status |
-|----------|------|--------|
-| uat_gap | Phase 21: 21-UAT.md — 2 pending scenarios (report readability + plausible counts; live smoke test against Turso) | acknowledged |
-| verification_gap | Phase 21: 21-VERIFICATION.md — human_needed (6/6 truths verified on structural/artifact evidence; 2 manual-only items deferred to end-of-phase human review) | acknowledged |
-| verification_gap | Phase 20: no VERIFICATION.md — verify step never ran (plans + requirements complete per SUMMARY evidence) | acknowledged |
-
-Known verification overrides: 3 (see STATE.md Deferred Items)
+| quality | 거/게 romanization-flagged fronts (post-audit cron arrivals) | Open for future audit/fix pass |
+| e2e-v2 | Cards CRUD spec (E2E-08), stubbed sync-route coverage (E2E-09), WebKit project (E2E-10) | Deferred to v2 |
 
 ## Session Continuity
 
 Last session: 2026-07-10
-Stopped at: Phase 23 complete + verified + security reviewed, v1.5 milestone ready for archival
+Stopped at: v1.6 roadmap created (ROADMAP.md + STATE.md + REQUIREMENTS.md traceability written)
 Resume file: None
 
 ## Operator Next Steps
 
-- Start the next milestone with /gsd-new-milestone
+- Review the v1.6 roadmap draft (Phases 24–27) below / in `.planning/ROADMAP.md`.
+- On approval, plan Phase 24 with `/gsd-plan-phase 24`.

@@ -67,19 +67,19 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| FRESH-01 | TBD | Pending |
-| FRESH-02 | TBD | Pending |
-| FRESH-03 | TBD | Pending |
-| FRESH-04 | TBD | Pending |
-| FRESH-05 | TBD | Pending |
-| FRESH-06 | TBD | Pending |
-| E2E-01 | TBD | Pending |
-| E2E-02 | TBD | Pending |
-| E2E-03 | TBD | Pending |
-| E2E-04 | TBD | Pending |
-| E2E-05 | TBD | Pending |
-| E2E-06 | TBD | Pending |
-| E2E-07 | TBD | Pending |
-| PERF-04 | TBD | Pending |
-| PERF-05 | TBD | Pending |
-| TOOL-01 | TBD | Pending |
+| FRESH-01 | Phase 24 | Pending |
+| FRESH-02 | Phase 26 | Pending |
+| FRESH-03 | Phase 26 | Pending |
+| FRESH-04 | Phase 26 | Pending |
+| FRESH-05 | Phase 26 | Pending |
+| FRESH-06 | Phase 26 | Pending |
+| E2E-01 | Phase 25 | Pending |
+| E2E-02 | Phase 25 | Pending |
+| E2E-03 | Phase 25 | Pending |
+| E2E-04 | Phase 25 | Pending |
+| E2E-05 | Phase 27 | Pending |
+| E2E-06 | Phase 25 | Pending |
+| E2E-07 | Phase 25 | Pending |
+| PERF-04 | Phase 27 | Pending |
+| PERF-05 | Phase 27 | Pending |
+| TOOL-01 | Phase 27 | Pending |
