@@ -4,11 +4,11 @@ milestone: v1.6
 milestone_name: Freshness, Performance & E2E Testing
 current_phase: 25
 current_phase_name: E2E Test Infrastructure & Baselines
-status: ready_to_plan
-stopped_at: Phase 25 context gathered
+status: executing
+stopped_at: Phase 25 planning complete — 3 plans ready
 last_updated: "2026-07-11T17:25:30.373Z"
 last_activity: 2026-07-11
-last_activity_desc: Phase 24 complete, transitioned to Phase 25
+last_activity_desc: Phase 25 planning complete — 3 plans ready
 progress:
   total_phases: 4
   completed_phases: 1
@@ -29,9 +29,9 @@ See: .planning/PROJECT.md (updated 2026-07-11)
 ## Current Position
 
 Phase: 25 — E2E Test Infrastructure & Baselines
-Plan: Not started
-Status: Ready to plan Phase 25
-Last activity: 2026-07-11 — Phase 24 complete, transitioned to Phase 25
+Plan: 3 plans ready (Wave 1: 25-01, Wave 2: 25-02, Wave 3: 25-03)
+Status: Ready to execute
+Last activity: 2026-07-11 — Phase 25 planning complete — 3 plans ready
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -109,10 +109,9 @@ Carried forward, informational only:
 ## Session Continuity
 
 Last session: 2026-07-11T17:25:30.358Z
-Stopped at: Phase 25 context gathered
-Resume file: .planning/phases/25-e2e-test-infrastructure-baselines/25-CONTEXT.md
+Stopped at: Phase 25 planning complete — 3 plans ready
+Resume file: .planning/phases/25-e2e-test-infrastructure-baselines/25-01-PLAN.md
 
 ## Operator Next Steps
 
-- `/gsd-discuss-phase 25` — gather context and clarify approach for the E2E Test Infrastructure & Baselines phase (no 25-CONTEXT.md yet).
-- Or `/gsd-plan-phase 25` — skip discussion, plan directly.
+- `/gsd-execute-phase 25` — execute all 3 plans (Wave 1: 25-01 has a blocking package-legitimacy checkpoint; Wave 3: 25-03 has a blocking trace/CR-01/deletion checkpoint).
