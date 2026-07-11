@@ -5,8 +5,8 @@ milestone_name: Freshness, Performance & E2E Testing
 current_phase: 25
 current_phase_name: E2E Test Infrastructure & Baselines
 status: ready_to_plan
-stopped_at: Phase 24 complete, ready to plan Phase 25
-last_updated: "2026-07-11T17:08:23.352Z"
+stopped_at: Phase 25 context gathered
+last_updated: "2026-07-11T17:25:30.373Z"
 last_activity: 2026-07-11
 last_activity_desc: Phase 24 complete, transitioned to Phase 25
 progress:
@@ -108,9 +108,9 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-11
-Stopped at: Phase 24 complete, ready to plan Phase 25
-Resume file: None
+Last session: 2026-07-11T17:25:30.358Z
+Stopped at: Phase 25 context gathered
+Resume file: .planning/phases/25-e2e-test-infrastructure-baselines/25-CONTEXT.md
 
 ## Operator Next Steps
 
