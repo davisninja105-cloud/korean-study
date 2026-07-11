@@ -131,7 +131,20 @@ Plans:
   4. A freshness-regression spec encodes the Phase 24 diagnosis (FRESH-03/04/05) against the production build and is currently red — failing because the staleness bug is still present. (E2E-06)
   5. A failed run emits a Playwright trace (`trace: 'on-first-retry'`) plus a parseable line-reporter output usable by both a human and an AI agent. (E2E-07)
 
-**Plans**: TBD
+**Plans**: 0/3 plans complete
+
+Plans:
+**Wave 1**
+
+- [ ] 25-01-PLAN.md — Playwright harness foundation: `@playwright/test` install (blocking legitimacy checkpoint), `playwright.config.ts` (prod-build `webServer`, port 3100), DB-isolation allow-list guard, shared seed fixture + global setup, setup-project auth via `/api/login`
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 25-02-PLAN.md — Ported per-route DOM readers + `e2e/smoke.spec.ts` (E2E-04): 4 specific per-route content assertions plus informational Navigation Timing capture
+
+**Wave 3** *(blocked on Wave 1 + Wave 2 completion)*
+
+- [ ] 25-03-PLAN.md — Ported RSC/resume/mutate helpers + the full 16-cell freshness-regression matrix as 3 spec files (E2E-06: 9 deliberately red cells, 7 green regression-net cells), trace/reporter proof (E2E-07), and retirement of `scripts/diagnose-freshness.mts`
 
 #### Phase 26: Freshness Fix
 
@@ -194,9 +207,9 @@ Phases execute in numeric order: 1 → 2 → ... → 23 (all complete) → 24 �
 | 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 3/3 | Complete | 2026-07-10 |
 | 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete | 2026-07-10 |
 | 24. Freshness Diagnosis Spike | v1.6 | 2/2 | Complete    | 2026-07-11 |
-| 25. E2E Test Infrastructure & Baselines | v1.6 | 0/TBD | Not started | - |
+| 25. E2E Test Infrastructure & Baselines | v1.6 | 0/3 | Planned | - |
 | 26. Freshness Fix | v1.6 | 0/TBD | Not started | - |
 | 27. E2E Coverage & Performance Validation | v1.6 | 0/TBD | Not started | - |
 
 ---
-*Last updated: 2026-07-10 — v1.6 roadmap created (Phases 24–27, 16/16 requirements mapped, coarse granularity). Ready to plan Phase 24.*
+*Last updated: 2026-07-11 — Phase 25 planned: 3 plans across 3 waves (harness foundation → smoke spec → freshness-regression matrix), 6/6 requirements + 14/14 CONTEXT.md decisions mapped. Ready to execute Phase 25.*
