@@ -115,3 +115,12 @@ None — this plan produces a throwaway diagnostic script, not application UI; t
 ## Threat Flags
 
 None beyond what the plan's `<threat_model>` already covers (T-24-SC, T-24-01, T-24-02, T-24-03) — no new network endpoints, auth paths, or schema changes were introduced. `assertLocalDb()` and the throwaway-secret env overrides implement T-24-01/T-24-02 exactly as specified; the seeded `scripts/.tmp/24-diagnosis.db` file is confirmed gitignored via the existing blanket `*.db` rule (T-24-03).
+
+## Self-Check: PASSED
+
+- FOUND: `scripts/diagnose-freshness.mts`
+- FOUND: `.planning/phases/24-freshness-diagnosis-spike/24-01-SUMMARY.md`
+- FOUND: `.planning/phases/24-freshness-diagnosis-spike/deferred-items.md`
+- FOUND: commit `2a8550d` (playwright install)
+- FOUND: commit `ff806d3` (diagnose-freshness.mts plumbing)
+- FOUND: commit `4eb913c` (this summary)
