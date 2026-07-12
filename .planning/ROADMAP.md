@@ -159,12 +159,12 @@ Plans:
   4. Prop re-sync never clobbers an in-flight interaction — an active study session or an open editor sheet is preserved mid-interaction. (FRESH-02)
   5. First-load render speed is unchanged and no loading-state flash reappears on any of the four main routes; Phase 25's freshness-regression spec is now green and its first-load baseline spec stays green. (FRESH-06)
 
-**Plans**: 0/3 plans complete
+**Plans**: 1/3 plans executed
 
 Plans:
 **Wave 1**
 
-- [ ] 26-01-PLAN.md — Pristine-baseline re-run of the 16-cell matrix (resolves mechanism-attribution + /habits post-mutation-return open questions) and flip the two red spec files to assert the fixed-behavior contract
+- [x] 26-01-PLAN.md — Pristine-baseline re-run of the 16-cell matrix (resolves mechanism-attribution + /habits post-mutation-return open questions) and flip the two red spec files to assert the fixed-behavior contract
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -221,7 +221,7 @@ Phases execute in numeric order: 1 → 2 → ... → 23 (all complete) → 24 �
 | 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete | 2026-07-10 |
 | 24. Freshness Diagnosis Spike | v1.6 | 2/2 | Complete    | 2026-07-11 |
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 3/3 | Complete    | 2026-07-12 |
-| 26. Freshness Fix | v1.6 | 0/3 | Not started | - |
+| 26. Freshness Fix | v1.6 | 1/3 | In Progress|  |
 | 27. E2E Coverage & Performance Validation | v1.6 | 0/TBD | Not started | - |
 
 ---

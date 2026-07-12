@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Freshness, Performance & E2E Testing
 current_phase: 26
-current_phase_name: Freshness Fix
+current_phase_name: freshness-fix
 status: executing
 stopped_at: Phase 25 planning complete — 3 plans ready
-last_updated: "2026-07-12T17:31:22.080Z"
+last_updated: "2026-07-12T17:34:34.380Z"
 last_activity: 2026-07-12
-last_activity_desc: Phase 25 complete, transitioned to Phase 26
+last_activity_desc: Phase 26 execution started
 progress:
   total_phases: 4
   completed_phases: 2
-  total_plans: 5
+  total_plans: 8
   completed_plans: 5
   percent: 50
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 25 — e2e-test-infrastructure-baselines
+**Current focus:** Phase 26 — freshness-fix
 
 ## Current Position
 
-Phase: 26 — Freshness Fix
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-12 — Phase 25 complete, transitioned to Phase 26
+Phase: 26 (freshness-fix) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 26
+Last activity: 2026-07-12 — Phase 26 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
