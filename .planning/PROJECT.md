@@ -103,10 +103,16 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 - ✓ A sync completing with `failed === 0 && newLessons > 0` automatically relinks forward-reference `CardDependency` edges via an idempotent hook inside `runSync`, replacing the manual `relink-dependencies.mjs` invocation (RELIABILITY-02) — Phase 23
 - ✓ The auto-relink pass is idempotent at both the pure layer (computeMissingEdges subtracts existing edges) and the DB layer (`@@unique` backstop); no duplicate or incorrect edges (RELIABILITY-03) — Phase 23
 - ✓ A throwaway diagnostic script (`scripts/diagnose-freshness.mts`) empirically classifies all 16 route × navigation-path cells on a production build (`next build && next start`), attributing every stale cell to Router Cache reuse or client-shell `useState(initialProps)` non-resync — never left ambiguous (FRESH-01) — Phase 24
+- ✓ Playwright (`@playwright/test`) configured with a production-build `webServer`, isolated from Vitest test discovery (E2E-01) — Phase 25
+- ✓ Authenticated test runs via a setup-project `storageState` — no per-test login UI interaction (E2E-02) — Phase 25
+- ✓ E2E tests run against an isolated, seeded `file:` SQLite test DB, structurally prevented from reaching production Turso (`assertLocalDb` allow-list guard, called at config-load and runtime) (E2E-03) — Phase 25
+- ✓ Smoke spec verifies all 4 main routes render real, FIXTURE-traceable content on first paint — never a generic 200/skeleton-absence check (E2E-04) — Phase 25
+- ✓ Freshness regression spec encodes the full Phase 24 16-cell diagnosis as three real Playwright spec files (9 genuinely red, 7 genuinely green, no `test.fail()`/`test.fixme()` masking); the throwaway diagnosis script retired once every reusable piece had a permanent home under `e2e/helpers/` (E2E-06) — Phase 25
+- ✓ Failed test runs produce an inspectable Playwright trace and parseable line-reporter output, verified against a genuine (not synthetic) failure (E2E-07) — Phase 25
 
 ### Active
 
-(All v1.5 requirements validated and shipped — see Validated above. v1.6 in progress: FRESH-01 shipped Phase 24; remaining v1.6 requirements tracked in REQUIREMENTS.md, next up is Phase 25.)
+(All v1.5 requirements validated and shipped — see Validated above. v1.6 in progress: FRESH-01 shipped Phase 24; E2E-01/02/03/04/06/07 shipped Phase 25 — the harness's D-04 CR-01 re-verification found the back-forward cells' root-cause evidence pattern has shifted for 3 of 4 cells since the Phase 24 diagnosis, and `/habits post-mutation-return` is now genuinely fresh — see STATE.md Blockers/Concerns before Phase 26 planning. Remaining v1.6 requirements (E2E-05, PERF-04/05) tracked in REQUIREMENTS.md, next up is Phase 26.)
 
 **Deferred candidates** (raised during v1.2/v1.3/v1.4/v1.5, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
@@ -218,4 +224,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-11 after Phase 24*
+*Last updated: 2026-07-12 after Phase 25*
