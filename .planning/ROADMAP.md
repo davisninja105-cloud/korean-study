@@ -92,7 +92,7 @@ See `.planning/milestones/v1.5-ROADMAP.md` for full phase details.
 
 - [x] **Phase 24: Freshness Diagnosis Spike** - Empirically identify, per route, which navigation paths serve stale data on a production build (completed 2026-07-11)
 - [x] **Phase 25: E2E Test Infrastructure & Baselines** - Playwright harness (isolated DB, auth setup), smoke + first-load baseline, and a red freshness-regression spec (completed 2026-07-12)
-- [ ] **Phase 26: Freshness Fix** - Gated client-shell prop re-sync + resume/mutation-boundary refresh; turn the regression spec green without regressing first-load speed
+- [x] **Phase 26: Freshness Fix** - Gated client-shell prop re-sync + resume/mutation-boundary refresh; turn the regression spec green without regressing first-load speed (completed 2026-07-12)
 - [ ] **Phase 27: E2E Coverage & Performance Validation** - Study grade-flow spec, generous page/API timing budgets, and a documented Playwright MCP workflow
 
 #### Phase 24: Freshness Diagnosis Spike
@@ -159,7 +159,7 @@ Plans:
   4. Prop re-sync never clobbers an in-flight interaction — an active study session or an open editor sheet is preserved mid-interaction. (FRESH-02)
   5. First-load render speed is unchanged and no loading-state flash reappears on any of the four main routes; Phase 25's freshness-regression spec is now green and its first-load baseline spec stays green. (FRESH-06)
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -172,7 +172,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 1 + Wave 2 completion)*
 
-- [ ] 26-03-PLAN.md — Gated adoption in `StudyClient` and `CardsClient` (FRESH-02 clobber protection) and the full 16-cell + smoke non-regression proof
+- [x] 26-03-PLAN.md — Gated adoption in `StudyClient` and `CardsClient` (FRESH-02 clobber protection) and the full 16-cell + smoke non-regression proof
 
 #### Phase 27: E2E Coverage & Performance Validation
 
@@ -221,7 +221,7 @@ Phases execute in numeric order: 1 → 2 → ... → 23 (all complete) → 24 �
 | 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete | 2026-07-10 |
 | 24. Freshness Diagnosis Spike | v1.6 | 2/2 | Complete    | 2026-07-11 |
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 3/3 | Complete    | 2026-07-12 |
-| 26. Freshness Fix | v1.6 | 2/3 | In Progress|  |
+| 26. Freshness Fix | v1.6 | 3/3 | Complete   | 2026-07-12 |
 | 27. E2E Coverage & Performance Validation | v1.6 | 0/TBD | Not started | - |
 
 ---
