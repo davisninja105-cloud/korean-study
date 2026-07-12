@@ -1,9 +1,22 @@
 /**
- * E2E-06: Stale-ClientShell cells (24-DIAGNOSIS.md Summary Matrix cells
- * where the server WAS hit and returned fresh data — an RSC fetch is
- * captured — but the mounted client shell's `useState(initialXxx)` never
- * adopted the new payload). Same discipline as freshness-router-cache.spec.ts:
- * plain expect() calls only, never expected-failure or skip annotations; no
+ * E2E-06 → Phase 26 acceptance bar: this file now carries the fixed-behavior
+ * contract for its 3 back-forward cells (/study, /cards, /habits — the D-04
+ * CR-01-flagged cells from 24-DIAGNOSIS.md's Summary Matrix, originally
+ * classified Stale-ClientShell). These tests were deliberately RED through
+ * Phase 25, asserting today's stale reality. Phase 26 flips them to assert
+ * the FIXED contract: a boundary-triggered RSC refresh fetch lands (network
+ * evidence) AND the DOM value matches live DB truth (content evidence). They
+ * remain red until Plans 26-02/26-03 ship the fix — a true red→green bar,
+ * never re-tuned after the fact.
+ *
+ * The 4th test (`/habits post-mutation-return is genuinely fresh today...`)
+ * is the untouched already-fresh cell: 25-03-SUMMARY.md re-verified it
+ * genuinely FRESH (both the RSC-fetch evidence and the DOM value match live
+ * truth), contradicting 24-DIAGNOSIS.md's original stale finding for that
+ * cell. No fix effort targets it and its body is left byte-identical here.
+ *
+ * Same discipline as freshness-router-cache.spec.ts: plain expect()/
+ * expect.poll() calls only, never expected-failure or skip annotations; no
  * page.goto() recovery on page.goBack() (D-04 CR-01 re-verification — this
  * file's back-forward tests cover 3 of the 4 flagged cells, /study /cards
  * /habits; freshness-router-cache covers the 4th, /).
@@ -14,31 +27,23 @@
  * which branches on `fetches.length === 0` vs `> 0`, never on an exact
  * count) AND a DOM-content assertion via e2e/helpers/readers.ts.
  *
- * IMPORTANT — D-04 CR-01 RE-VERIFICATION FINDING (see 25-03-SUMMARY.md for
- * full detail): under this harness's real navigation path (native
- * `page.goBack()`, `@playwright/test`'s storageState auth, and — per this
- * plan's own Task 2 action text — reaching each route via a `<Link>` click
- * from Home rather than a hard `page.goto()`), the 3 back-forward cells
- * below captured ZERO new fetches, not the one RSC fetch 24-DIAGNOSIS.md
- * recorded — i.e. they now present with the Router-Cache-reuse evidence
- * signature, not the client-shell-non-resync signature the diagnosis
- * classified them under. They are STILL genuinely stale (the DOM assertion
- * below still fails), so this file's "RED today" contract holds for these
- * 3 — only the EVIDENCE PATTERN backing that redness differs from
- * 24-DIAGNOSIS.md. `/habits post-mutation-return` diverges further: it is
- * confirmed GENUINELY FRESH under this re-verification (both the fetch
- * count and the DOM value match live truth), contradicting 24-DIAGNOSIS.md's
- * claim that it is the only currently-reproducing post-mutation-return bug.
- * Per this plan's own Task 2 acceptance-criteria instruction ("do not
- * silently adjust the spec to match — record the mismatch"), these findings
- * are recorded here and in 25-03-SUMMARY.md / STATE.md Blockers rather than
- * papered over with an assertion tuned to force the diagnosis's original
- * numbers.
+ * IMPORTANT — D-04 CR-01 RE-VERIFICATION FINDING (see 25-03-SUMMARY.md and
+ * 26-01-SUMMARY.md for full detail): under this harness's real navigation
+ * path (native `page.goBack()`, `@playwright/test`'s storageState auth, and
+ * reaching each route via a `<Link>` click from Home rather than a hard
+ * `page.goto()`), the 3 back-forward cells below capture ZERO new fetches
+ * pre-fix, not the one RSC fetch 24-DIAGNOSIS.md recorded — i.e. they
+ * present with the Router-Cache-reuse evidence signature, not the
+ * client-shell-non-resync signature the diagnosis classified them under.
+ * They are STILL genuinely stale pre-fix (the DOM assertion below still
+ * fails), so the fixed-behavior contract below is agnostic to which
+ * mechanism produced the staleness — the fix architecture covers both
+ * (26-01-PLAN.md's design_decisions #1).
  */
 
 import { test, expect, type Page, type Request as PwRequest } from '@playwright/test'
 import { resetToBaseline } from './seed'
-import { isRscRequest } from './helpers/rsc'
+import { isRscRequest, waitForRscFetch } from './helpers/rsc'
 import {
   createMutationCard,
   promoteOneReviewToMastered,
@@ -114,9 +119,7 @@ const BACK_FORWARD_ROUTES: RouteConfig[] = [
 
 // ── back-forward cells (3 of 4 flagged CR-01 cells: /study, /cards, /habits) ──
 for (const cfg of BACK_FORWARD_ROUTES) {
-  test(`${cfg.route} back-forward stays stale (re-verified: Router-Cache-reuse evidence, not Stale-ClientShell) - expected RED until Phase 26`, async ({
-    page,
-  }) => {
+  test(`${cfg.route} back-forward serves fresh data after boundary refresh (FRESH-04)`, async ({ page }) => {
     const requestLog = registerRequestLog(page)
 
     // Reach the target route for the first time this session via a real
@@ -131,25 +134,25 @@ for (const cfg of BACK_FORWARD_ROUTES) {
 
     await cfg.mutate()
     const preLen = requestLog.length
+    // Promise created BEFORE the trigger per waitForRscFetch's contract.
+    const rscFetch = waitForRscFetch(page, cfg.route)
     // Native API only — NO goto() recovery (Ambiguity 2 / D-04 CR-01).
     await page.goBack({ waitUntil: 'networkidle' })
+    await rscFetch
     await page.waitForTimeout(300) // justified settle margin, same as every trigger
 
     const newFetches = newRscFetchesForRoute(requestLog, preLen, cfg.route)
-    // RE-VERIFIED FINDING (see file header): this now captures ZERO new
-    // fetches for all 3 routes, not 1 as 24-DIAGNOSIS.md recorded — a
-    // Router-Cache-reuse evidence signature, differing from the diagnosis's
-    // client-shell classification for this cell. Kept in this file per the
-    // plan's structural artifact contract; the divergence is documented
-    // above and in 25-03-SUMMARY.md rather than silently re-tuned to match
-    // the diagnosis's original prediction.
-    expect(newFetches).toHaveLength(0)
+    // FIXED-BEHAVIOR CONTRACT: the boundary refresh must have hit the
+    // server, regardless of which pre-fix mechanism (router-cache reuse or
+    // client-shell non-resync) currently produces the staleness — see file
+    // header D-04 CR-01 finding.
+    expect(newFetches.length).toBeGreaterThan(0)
 
     const expected = await cfg.expected()
-    const observed = await cfg.read(page)
-    // EXPECTED RED today regardless of evidence pattern: the pre-mutation
-    // value is still on screen.
-    expect(observed).toBe(expected)
+    // Polling assertion — the readers only poll for element visibility, not
+    // value, and React's post-refresh commit lands a beat after the
+    // response, so a one-shot read is a flake source.
+    await expect.poll(() => cfg.read(page), { timeout: 5000 }).toBe(expected)
   })
 }
 
@@ -160,7 +163,8 @@ for (const cfg of BACK_FORWARD_ROUTES) {
 // match live truth. This test therefore asserts the TRUE current behavior
 // (fresh) rather than a forced-stale assertion that would misrepresent
 // reality; the divergence from 24-DIAGNOSIS.md is documented in the file
-// header above and in 25-03-SUMMARY.md's D-04 CR-01 section.
+// header above and in 25-03-SUMMARY.md's D-04 CR-01 section. Byte-identical
+// to its Phase 25 form — no fix effort targets this cell.
 test('/habits post-mutation-return is genuinely fresh today (re-verified: diverges from 24-DIAGNOSIS.md, see SUMMARY)', async ({
   page,
 }) => {
