@@ -91,7 +91,7 @@ See `.planning/milestones/v1.5-ROADMAP.md` for full phase details.
 **Build-order invariant (research):** diagnosis (Phase 24) and the E2E harness + red freshness-regression spec (Phase 25) must both exist *before* the fix (Phase 26), so the fix is validated by a red→green spec and guarded by a first-load baseline — never shipped by feel. Coverage + perf (Phase 27) is a non-blocking follow-on.
 
 - [x] **Phase 24: Freshness Diagnosis Spike** - Empirically identify, per route, which navigation paths serve stale data on a production build (completed 2026-07-11)
-- [ ] **Phase 25: E2E Test Infrastructure & Baselines** - Playwright harness (isolated DB, auth setup), smoke + first-load baseline, and a red freshness-regression spec
+- [x] **Phase 25: E2E Test Infrastructure & Baselines** - Playwright harness (isolated DB, auth setup), smoke + first-load baseline, and a red freshness-regression spec (completed 2026-07-12)
 - [ ] **Phase 26: Freshness Fix** - Gated client-shell prop re-sync + resume/mutation-boundary refresh; turn the regression spec green without regressing first-load speed
 - [ ] **Phase 27: E2E Coverage & Performance Validation** - Study grade-flow spec, generous page/API timing budgets, and a documented Playwright MCP workflow
 
@@ -131,7 +131,7 @@ Plans:
   4. A freshness-regression spec encodes the Phase 24 diagnosis (FRESH-03/04/05) against the production build and is currently red — failing because the staleness bug is still present. (E2E-06)
   5. A failed run emits a Playwright trace (`trace: 'on-first-retry'`) plus a parseable line-reporter output usable by both a human and an AI agent. (E2E-07)
 
-**Plans**: 2/3 plans executed
+**Plans**: 3/3 plans complete
 
 Plans:
 **Wave 1**
@@ -144,7 +144,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 1 + Wave 2 completion)*
 
-- [ ] 25-03-PLAN.md — Ported RSC/resume/mutate helpers + the full 16-cell freshness-regression matrix as 3 spec files (E2E-06: 9 deliberately red cells, 7 green regression-net cells), trace/reporter proof (E2E-07), and retirement of `scripts/diagnose-freshness.mts`
+- [x] 25-03-PLAN.md — Ported RSC/resume/mutate helpers + the full 16-cell freshness-regression matrix as 3 spec files (E2E-06: 9 deliberately red cells, 7 green regression-net cells), trace/reporter proof (E2E-07), and retirement of `scripts/diagnose-freshness.mts`
 
 #### Phase 26: Freshness Fix
 
@@ -207,7 +207,7 @@ Phases execute in numeric order: 1 → 2 → ... → 23 (all complete) → 24 �
 | 22. Findings-Driven Prompt Improvement & Corpus Fixes | v1.5 | 3/3 | Complete | 2026-07-10 |
 | 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete | 2026-07-10 |
 | 24. Freshness Diagnosis Spike | v1.6 | 2/2 | Complete    | 2026-07-11 |
-| 25. E2E Test Infrastructure & Baselines | v1.6 | 2/3 | In Progress|  |
+| 25. E2E Test Infrastructure & Baselines | v1.6 | 3/3 | Complete   | 2026-07-12 |
 | 26. Freshness Fix | v1.6 | 0/TBD | Not started | - |
 | 27. E2E Coverage & Performance Validation | v1.6 | 0/TBD | Not started | - |
 
