@@ -159,7 +159,20 @@ Plans:
   4. Prop re-sync never clobbers an in-flight interaction — an active study session or an open editor sheet is preserved mid-interaction. (FRESH-02)
   5. First-load render speed is unchanged and no loading-state flash reappears on any of the four main routes; Phase 25's freshness-regression spec is now green and its first-load baseline spec stays green. (FRESH-06)
 
-**Plans**: TBD
+**Plans**: 0/3 plans complete
+
+Plans:
+**Wave 1**
+
+- [ ] 26-01-PLAN.md — Pristine-baseline re-run of the 16-cell matrix (resolves mechanism-attribution + /habits post-mutation-return open questions) and flip the two red spec files to assert the fixed-behavior contract
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 26-02-PLAN.md — `FreshnessWatcher` (popstate/resume/bfcache → `router.refresh()`) mounted app-wide, plus ungated adoption in `HomeClient` and `HabitsClient`
+
+**Wave 3** *(blocked on Wave 1 + Wave 2 completion)*
+
+- [ ] 26-03-PLAN.md — Gated adoption in `StudyClient` and `CardsClient` (FRESH-02 clobber protection) and the full 16-cell + smoke non-regression proof
 
 #### Phase 27: E2E Coverage & Performance Validation
 
@@ -208,8 +221,8 @@ Phases execute in numeric order: 1 → 2 → ... → 23 (all complete) → 24 �
 | 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete | 2026-07-10 |
 | 24. Freshness Diagnosis Spike | v1.6 | 2/2 | Complete    | 2026-07-11 |
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 3/3 | Complete    | 2026-07-12 |
-| 26. Freshness Fix | v1.6 | 0/TBD | Not started | - |
+| 26. Freshness Fix | v1.6 | 0/3 | Not started | - |
 | 27. E2E Coverage & Performance Validation | v1.6 | 0/TBD | Not started | - |
 
 ---
-*Last updated: 2026-07-11 — Phase 25 planned: 3 plans across 3 waves (harness foundation → smoke spec → freshness-regression matrix), 6/6 requirements + 14/14 CONTEXT.md decisions mapped. Ready to execute Phase 25.*
+*Last updated: 2026-07-12 — Phase 26 planned: 3 plans across 3 waves (spec-contract flip + baseline → FreshnessWatcher + Home/Habits → Study/Cards gated adoption + full proof), 5/5 requirements mapped, no CONTEXT.md/RESEARCH.md for this phase (explicitly skipped, substituted by 24-DIAGNOSIS.md/25-03-SUMMARY.md). Ready to execute Phase 26.*
