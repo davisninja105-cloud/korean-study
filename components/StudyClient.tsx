@@ -113,6 +113,33 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
 
   const maxOrder = lessons.length > 0 ? lessons[lessons.length - 1].orderIndex : 1
 
+  // Gated adoption of fresh initialCards (26-01-PLAN.md design decision 4c).
+  // FreshnessWatcher's router.refresh() re-delivers initialCards with a new
+  // object reference at every boundary refresh, but naive adoption here
+  // would clobber real user state: mid-session (phase === 'studying') the
+  // queue owns the cards, and every path back to select-mode either
+  // re-fetches (startAhead) or crosses a navigation boundary that produces a
+  // fresh payload of its own; under a narrowed lesson-range filter the
+  // server payload is always the UNFILTERED full-span due pool (the RSC
+  // page queries with null lesson bounds), so adopting it would silently
+  // widen the user's chosen range. The incoming reference is ALWAYS
+  // consumed (prevInitialCards updated exactly once per delivered payload)
+  // so a later gate-open refresh isn't blocked by a stale comparison; the
+  // payload itself is adopted only when no in-flight interaction needs
+  // protecting. No new listener/fetch is added here — FreshnessWatcher
+  // remains the single boundary-refresh owner (design decision 3); the
+  // existing loadDue filter re-fetch is untouched and races benignly with
+  // this gate (loadDue's guarded response wins for the filtered view, and a
+  // stale refresh payload is discarded by the full-span check below).
+  const [prevInitialCards, setPrevInitialCards] = useState(initialCards)
+  if (initialCards !== prevInitialCards) {
+    setPrevInitialCards(initialCards)
+    if (phase === 'select-mode' && !isFilterLoading && isFullSpan(lessonFrom, lessonTo, maxOrder)) {
+      setStudyCards(initialCards)
+      setScope('due')
+    }
+  }
+
   const handleRangeChange = (from: number, to: number) => {
     setShowFilterSheet(false)
     setLessonFrom(from)
