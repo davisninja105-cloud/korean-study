@@ -57,10 +57,17 @@ export default function HabitsClient({
   initialMasteredCount,
   initialCardsByState,
 }: Props) {
-  const [days] = useState<DayRecord[]>(initialDays)
+  // Direct prop reads (not useState copies) — read-only useState copies were
+  // the root cause of the non-resync bug (24-DIAGNOSIS.md): a mounted shell
+  // never adopted fresh props delivered by a later router.refresh() because
+  // useState only seeds its initial value from the first render's prop.
+  // Plain consts make every router.refresh() adopt automatically; downstream
+  // JSX and useMemo bodies are unchanged (same identifiers, now tracking the
+  // props instead of a frozen initial snapshot).
+  const days = initialDays
+  const goal = initialGoal
+  const masteredCount = initialMasteredCount
   const [today, setToday] = useState('')
-  const [goal] = useState(initialGoal)
-  const [masteredCount] = useState(initialMasteredCount)
   const countFor = (s: number) => initialCardsByState.find((r) => r.state === s)?._count ?? 0
 
   // Compute client-local today in an effect (habitDateStr calls new Date() internally —

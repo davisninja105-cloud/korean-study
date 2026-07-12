@@ -29,6 +29,26 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
 
   const [stats, setStats] = useState<StatsDTO>(initialStats)
   const [activityData, setActivityData] = useState<ActivityDTO>(initialActivity)
+
+  // Ungated render-phase adoption of fresh props (React's official "adjusting
+  // state when props change" pattern — https://react.dev/reference/react/useState#storing-information-from-previous-renders).
+  // FreshnessWatcher's router.refresh() re-delivers initialStats/initialActivity
+  // with a new object reference on every boundary refresh; this adopts them
+  // immediately during render (no gate) because there is no in-flight
+  // interaction on this shell to protect — pull-to-refresh's own refetches
+  // (loadStats/loadActivity) already deliver equivalent truth, so clobbering
+  // mid-pull is a non-issue.
+  const [prevInitialStats, setPrevInitialStats] = useState(initialStats)
+  if (initialStats !== prevInitialStats) {
+    setPrevInitialStats(initialStats)
+    setStats(initialStats)
+  }
+  const [prevInitialActivity, setPrevInitialActivity] = useState(initialActivity)
+  if (initialActivity !== prevInitialActivity) {
+    setPrevInitialActivity(initialActivity)
+    setActivityData(initialActivity)
+  }
+
   const [heroState, setHeroState] = useState<HeroState>('loading')
   const [greeting, setGreeting] = useState('')
   const [syncMsg, setSyncMsg] = useState<string | null>(null)
