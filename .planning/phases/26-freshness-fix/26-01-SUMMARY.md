@@ -177,3 +177,13 @@ None — no external service configuration required.
 ---
 *Phase: 26-freshness-fix*
 *Completed: 2026-07-12*
+
+## Self-Check: PASSED
+
+- FOUND: e2e/helpers/rsc.ts
+- FOUND: e2e/freshness-router-cache.spec.ts
+- FOUND: e2e/freshness-client-shell.spec.ts
+- FOUND: .planning/phases/26-freshness-fix/26-01-SUMMARY.md
+- FOUND: waitForRscFetch export in e2e/helpers/rsc.ts
+- FOUND: commit 55d4fc0 (test: flip red freshness specs)
+- FOUND: commit 9b96970 (docs: SUMMARY)
