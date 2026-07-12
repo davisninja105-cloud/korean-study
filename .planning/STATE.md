@@ -2,19 +2,19 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Freshness, Performance & E2E Testing
-current_phase: 25
-current_phase_name: e2e-test-infrastructure-baselines
+current_phase: 26
+current_phase_name: Freshness Fix
 status: executing
 stopped_at: Phase 25 planning complete — 3 plans ready
-last_updated: "2026-07-11T22:04:34.014Z"
-last_activity: 2026-07-11
-last_activity_desc: Phase 25 execution started
+last_updated: "2026-07-12T03:28:34.761Z"
+last_activity: 2026-07-12
+last_activity_desc: Phase 25 complete, transitioned to Phase 26
 progress:
   total_phases: 4
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 5
-  completed_plans: 2
-  percent: 25
+  completed_plans: 5
+  percent: 50
 ---
 
 # Project State
@@ -28,10 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-11)
 
 ## Current Position
 
-Phase: 25 (e2e-test-infrastructure-baselines) — EXECUTING
-Plan: 1 of 3
+Phase: 26 — Freshness Fix
+Plan: Not started
 Status: Executing Phase 25
-Last activity: 2026-07-11 — Phase 25 execution started
+Last activity: 2026-07-12 — Phase 25 complete, transitioned to Phase 26
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -47,7 +47,7 @@ Progress: [░░░░░░░░░░] 0%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 24 | 2 | - | - |
-| 25 | 0/TBD | - | - |
+| 25 | 3 | - | - |
 | 26 | 0/TBD | - | - |
 | 27 | 0/TBD | - | - |
 
@@ -77,6 +77,11 @@ Phase 24 diagnosis decisions (2026-07-11):
 - The primary regression scenario (real UI grade session → Home → Study via `<Link>`) is currently Fresh, not stale — Phase 26 must not touch that path; only `/habits`'s post-mutation-return path is a confirmed-reproducing bug via that scenario shape.
 - CR-01 (code review): the `back-forward` cell's `about:blank` recovery `page.goto()` was flagged as a possible evidence-corruption risk for 4 verdicts (`/`, `/study`, `/cards`, `/habits`). Re-verified during UAT via a 4th independent full script run — the recovery's own trigger check never fired for any of the 4 cells; verdicts confirmed accurate, no reclassification needed.
 
+Phase 25 E2E harness decisions (2026-07-12):
+
+- D-04 CR-01 second re-verification (Plan 25-03, via real Playwright runs, not the diagnosis script): all 4 back-forward cells' stale/fresh verdicts still match 24-DIAGNOSIS.md, but the underlying evidence pattern shifted for `/study`, `/cards`, `/habits` — originally 1 new RSC fetch per cell (client-shell non-resync), now 0 new fetches (reads as router-cache reuse). Phase 26 should re-confirm mechanism attribution at fix time rather than assume the original evidence still holds; the fix likely still needs to address both root-cause mechanisms.
+- `/habits post-mutation-return` (outside the 4-cell back-forward scope) re-verified genuinely FRESH today, contradicting 24-DIAGNOSIS.md's stale finding for that cell — `HabitsClient` now correctly adopts fresh data on that navigation path. Phase 26 should confirm this cell no longer needs fixing before spending effort on it.
+
 ### Pending Todos
 
 None open.
@@ -85,6 +90,8 @@ None open.
 
 - [Phase 26 flag from research] `StudyClient`'s existing lesson-range-filter re-fetch could double-fetch against a route-level `router.refresh()` — must be checked explicitly in the Phase 26 plan.
 - [Phase 26 flag from research] Per-shell prop-sync gating strategy (which of the four shells needs what condition) is the highest-risk implementation detail — finalize it in the Phase 26 plan before coding.
+- [Phase 26 flag from Phase 25 Plan 03] D-04 CR-01 re-verification found the 3 non-`/` back-forward cells now present as router-cache reuse (0 new fetches) rather than the originally diagnosed client-shell non-resync (1 new fetch) — re-confirm mechanism attribution before assuming `24-DIAGNOSIS.md`'s original evidence still holds. Also, `/habits post-mutation-return` is now genuinely fresh (not stale) — confirm before spending fix effort on it. Full detail in `25-03-SUMMARY.md`.
+- [carried from Phase 25 Plan 03, non-blocking] Three WARNING-level code-review findings in `25-REVIEW.md`: a non-functional per-subprocess uniqueness counter in `createMutationCard()`, unblanked `DATABASE_AUTH_TOKEN` in two subprocess spawn envs (inconsistent with `playwright.config.ts`'s own blanking), and a silent no-op on `CardDependency` edge-creation lookup miss in the seed fixture (with no sanity-check coverage for edge count). Worth an opportunistic fix pass; not blocking Phase 26.
 - [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch (same shape as the Phase 13-hardened routes) — out of scope; deferred candidate.
 - [carried from v1.5] 거/게 romanization-flagged card fronts (post-audit cron arrivals) — out of scope; open for a future audit/fix pass.
 
