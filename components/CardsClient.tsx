@@ -58,6 +58,29 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
     initialLessons.length > 0 ? initialLessons[initialLessons.length - 1].orderIndex : 1
   )
 
+  // Gated adoption of fresh initialCards (26-01-PLAN.md design decision 4d).
+  // FreshnessWatcher's router.refresh() re-delivers initialCards with a new
+  // object reference at every boundary refresh. Never defer-adopt a payload
+  // that arrived while a sheet was open — that payload was produced before
+  // the user's save/add/delete completed, so adopting it after the sheet
+  // closes would overwrite the optimistic local merge with pre-mutation data
+  // (the exact clobber FRESH-02 exists to prevent). Freshness returns at the
+  // next real boundary event. The incoming reference is ALWAYS consumed
+  // (prevInitialCards updated exactly once per delivered payload) so a later
+  // gate-open refresh isn't blocked by a stale comparison. Client-side view
+  // state (search, type filter, lesson range, collapsed groups, activeView)
+  // is adoption-safe by construction — it's separate state, and
+  // filteredCards/groupedCards/allSentences are derived from `cards` during
+  // render, so no extra gating is needed for them. No new listener/fetch is
+  // added here — FreshnessWatcher remains the single boundary-refresh owner.
+  const [prevInitialCards, setPrevInitialCards] = useState(initialCards)
+  if (initialCards !== prevInitialCards) {
+    setPrevInitialCards(initialCards)
+    if (editingId === null && !showAdd && !adding && deletingIds.size === 0) {
+      setCards(initialCards)
+    }
+  }
+
   const maxOrder = lessons.length > 0 ? lessons[lessons.length - 1].orderIndex : 1
   const fullSpan = isFullSpan(lessonFrom, lessonTo, maxOrder)
 
