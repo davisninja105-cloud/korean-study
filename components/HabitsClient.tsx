@@ -73,9 +73,13 @@ export default function HabitsClient({
   // Compute client-local today in an effect (habitDateStr calls new Date() internally —
   // impure, must not run during render). Promise.resolve().then satisfies
   // react-hooks/set-state-in-effect (microtask deferral, not synchronous setState).
+  // Depends on initialDays/initialMasteredCount (not just initialDayStartHour) so a
+  // FreshnessWatcher-triggered router.refresh() across a habit-day boundary (the tab/PWA
+  // resume scenario this phase targets) recomputes today instead of staying pinned to
+  // the mount-time value — mirrors HomeClient's equivalent effect.
   useEffect(() => {
     Promise.resolve().then(() => setToday(habitDateStr(initialDayStartHour)))
-  }, [initialDayStartHour])
+  }, [initialDayStartHour, initialDays, initialMasteredCount])
 
   const { current, longest, todaySeconds } = useMemo(
     () => computeStreaks(days, today, goal),
