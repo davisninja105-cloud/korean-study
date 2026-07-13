@@ -89,17 +89,24 @@ export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]
   if (cards.length === 0) return []
 
   // Query 2 (sequential — depends on pool IDs resolved above):
-  // Fetch prerequisite edges across the whole pool.
-  // sequenceCards ignores out-of-session edges, so passing the full pool edge
-  // list to both selectSessionCards and sequenceCards is safe.
-  const ids = cards.map((c) => c.id)
-  const edges = await prisma.cardDependency.findMany({
-    where: {
-      cardId:         { in: ids },
-      prerequisiteId: { in: ids },
-    },
+  // Fetch prerequisite edges, then keep only those whose BOTH endpoints are in
+  // the pool. We deliberately do NOT push the pool filter into SQL as
+  // `cardId IN ids AND prerequisiteId IN ids`: two large IN clauses over the
+  // ~1000-card due pool make Prisma chunk each list to respect the SQLite
+  // bound-parameter limit and emit a CARTESIAN PRODUCT of chunk pairs (~55
+  // serial round-trips → ~6s against remote Turso — the historical cause of the
+  // >10s /study load). A single unfiltered select of the two id columns is one
+  // round-trip returning a small (2-column, deck-bounded) payload; the
+  // both-endpoints-in-pool filter runs in memory. sequenceCards/selectSessionCards
+  // already ignore out-of-session edges, so this filter is an optimization, not
+  // a correctness requirement (verified: identical edge set to the old query).
+  const idSet = new Set(cards.map((c) => c.id))
+  const allEdges = await prisma.cardDependency.findMany({
     select: { cardId: true, prerequisiteId: true },
   })
+  const edges = allEdges.filter(
+    (e) => idSet.has(e.cardId) && idSet.has(e.prerequisiteId)
+  )
 
   const chosen  = selectSessionCards(cards, edges, sessionSize, now)
   const ordered = sequenceCards(chosen, edges, now)
