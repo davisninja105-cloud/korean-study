@@ -14,7 +14,7 @@ When you study, what you're meant to learn is always learnable in the moment —
 
 The app is deployed and fully functional. v1.5 audited the extraction pipeline for card-quality issues, hardened the extraction code path with native structured outputs and code-enforced blank-safety, revised the extraction prompt against audit findings and validated it on real lessons, fixed high-confidence existing-card issues in place (9 front rewrites + 3 zero-sentence fixes), and closed two known reliability bugs: silent known-lemmas query degradation in `lib/study-cards.ts` now emits an observable `[study-cards]`-prefixed log before degrading, and forward-reference `CardDependency` edges now auto-relink inside `runSync` after every clean sync with new lessons — retiring the manual `relink-dependencies.mjs` script and consolidating three duplicated relink loops onto one shared, idempotent helper. v1.4 (shipped 2026-07-05) cleaned up the knowledge graph, made review history durable and browsable, and automated daily sync; v1.3 (shipped 2026-07-03) hardened the two authenticated write routes and refactored `StudySession`; v1.2 (shipped 2026-07-01) eliminated the blank/empty-state flash across every main route; v1.1 (shipped 2026-06-29) completed a systematic UI audit and polish pass — all remain in place underneath this milestone's work.
 
-**Next:** v1.6 in progress — Phase 26 (Freshness Fix) complete; Phase 27 (E2E Coverage & Performance Validation) next.
+**Next:** v1.6 all 4 phases complete (Phase 27 — E2E Coverage & Performance Validation — closed 2026-07-13, all requirements satisfied). Ready for `/gsd-complete-milestone`.
 
 ## Current Milestone: v1.6 Freshness, Performance & E2E Testing
 
@@ -232,4 +232,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-12 after Phase 26*
+*Last updated: 2026-07-13 after Phase 27*
