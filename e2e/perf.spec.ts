@@ -24,6 +24,7 @@ test.beforeAll(async () => {
 })
 
 const PAGE_BUDGET_MS = 3000 // D-08 — generous guard rail, not a target
+const API_BUDGET_MS = 1000 // D-09 — generous guard rail, not a target
 const SAMPLES = 5
 
 interface NavSample {
@@ -70,5 +71,37 @@ for (const route of ['/', '/study', '/cards', '/habits']) {
     // alongside above (Open Question 2's recommended resolution of D-08's
     // "TTFB / domContentLoaded" wording).
     expect(median(samples.map((s) => s.dcl))).toBeLessThan(PAGE_BUDGET_MS)
+  })
+}
+
+// D-09's endpoint set is locked: /api/cards/due (named by the ROADMAP
+// requirement) plus the two data-heavy GETs backing Home/Habits via
+// lib/dashboard.ts.
+for (const path of ['/api/cards/due', '/api/stats', '/api/activity']) {
+  test(`API round-trip budget: ${path}`, async ({ page }) => {
+    // One page.goto so the chromium project's storageState ks_auth cookie
+    // context is live — subsequent same-origin fetches inside page.evaluate
+    // are authenticated automatically (D-10 locks page.evaluate(fetch) over
+    // APIRequestContext: it exercises the exact request path a real client takes).
+    await page.goto('/')
+
+    const samples: number[] = []
+    for (let i = 0; i < SAMPLES; i++) {
+      const { ms, ok, bytes } = await page.evaluate(async (p) => {
+        const t0 = performance.now()
+        const res = await fetch(p)
+        const text = await res.text() // body consumption INSIDE the timed window — full round-trip
+        return { ms: performance.now() - t0, ok: res.ok, bytes: text.length }
+      }, path)
+
+      // Per-sample vacuity guards: a fast 401/500 must FAIL the budget test,
+      // never vacuously pass it (Pitfall 3).
+      expect(ok).toBe(true)
+      expect(bytes).toBeGreaterThan(0)
+      samples.push(ms)
+      console.log(`[perf] ${path} sample ${i + 1}: ${ms.toFixed(0)}ms`)
+    }
+
+    expect(median(samples)).toBeLessThan(API_BUDGET_MS)
   })
 }
