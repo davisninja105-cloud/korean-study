@@ -159,7 +159,7 @@ Plans:
   4. Prop re-sync never clobbers an in-flight interaction — an active study session or an open editor sheet is preserved mid-interaction. (FRESH-02)
   5. First-load render speed is unchanged and no loading-state flash reappears on any of the four main routes; Phase 25's freshness-regression spec is now green and its first-load baseline spec stays green. (FRESH-06)
 
-**Plans**: 3/6 plans complete (3 gap-closure plans pending — from 26-VERIFICATION.md)
+**Plans**: 5/6 plans executed
 
 Plans:
 **Wave 1**
@@ -176,8 +176,8 @@ Plans:
 
 **Wave 4 — gap closure** *(from 26-VERIFICATION.md gaps + behavior_unverified)*
 
-- [ ] 26-04-PLAN.md — Automated FRESH-02 gate coverage: mid-session `/study` and open-sheet `/cards` boundary non-clobber cells in a new `e2e/freshness-gate.spec.ts`
-- [ ] 26-05-PLAN.md — JSON re-fetch boundary-delivery backstop (locked user decision): `FreshnessWatcher` provider + `useFreshPayload` context feeding the existing gated-adoption pattern in Study/Cards/Habits shells, closing the FRESH-04/05 `router.refresh()` delivery flake without touching the RSC/Suspense path
+- [x] 26-04-PLAN.md — Automated FRESH-02 gate coverage: mid-session `/study` and open-sheet `/cards` boundary non-clobber cells in a new `e2e/freshness-gate.spec.ts`
+- [x] 26-05-PLAN.md — JSON re-fetch boundary-delivery backstop (locked user decision): `FreshnessWatcher` provider + `useFreshPayload` context feeding the existing gated-adoption pattern in Study/Cards/Habits shells, closing the FRESH-04/05 `router.refresh()` delivery flake without touching the RSC/Suspense path
 
 **Wave 5 — gap closure** *(blocked on Wave 4 completion)*
 
@@ -230,7 +230,7 @@ Phases execute in numeric order: 1 → 2 → ... → 23 (all complete) → 24 �
 | 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete | 2026-07-10 |
 | 24. Freshness Diagnosis Spike | v1.6 | 2/2 | Complete    | 2026-07-11 |
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 3/3 | Complete    | 2026-07-12 |
-| 26. Freshness Fix | v1.6 | 3/3 | Complete   | 2026-07-12 |
+| 26. Freshness Fix | v1.6 | 5/6 | In Progress|  |
 | 27. E2E Coverage & Performance Validation | v1.6 | 0/TBD | Not started | - |
 
 ---
