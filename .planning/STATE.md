@@ -3,16 +3,16 @@ gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Freshness, Performance & E2E Testing
 current_phase: 27
-current_phase_name: E2E Coverage & Performance Validation
+current_phase_name: e2e-coverage-performance-validation
 status: executing
 stopped_at: Phase 27 context gathered
-last_updated: "2026-07-13T16:29:21.842Z"
+last_updated: "2026-07-13T17:42:43.875Z"
 last_activity: 2026-07-13
-last_activity_desc: Phase 26 complete, transitioned to Phase 27
+last_activity_desc: Phase 27 execution started
 progress:
   total_phases: 4
   completed_phases: 3
-  total_plans: 11
+  total_plans: 14
   completed_plans: 11
   percent: 75
 ---
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-07-11)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 26 — freshness-fix
+**Current focus:** Phase 27 — e2e-coverage-performance-validation
 
 ## Current Position
 
-Phase: 27 — E2E Coverage & Performance Validation
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-07-13 — Phase 26 complete, transitioned to Phase 27
+Phase: 27 (e2e-coverage-performance-validation) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 27
+Last activity: 2026-07-13 — Phase 27 execution started
 
 Progress: [░░░░░░░░░░] 0%
 
