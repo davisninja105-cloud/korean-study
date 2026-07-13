@@ -159,7 +159,7 @@ Plans:
   4. Prop re-sync never clobbers an in-flight interaction — an active study session or an open editor sheet is preserved mid-interaction. (FRESH-02)
   5. First-load render speed is unchanged and no loading-state flash reappears on any of the four main routes; Phase 25's freshness-regression spec is now green and its first-load baseline spec stays green. (FRESH-06)
 
-**Plans**: 5/6 plans executed
+**Plans**: 6/6 plans complete
 
 Plans:
 **Wave 1**
@@ -181,7 +181,7 @@ Plans:
 
 **Wave 5 — gap closure** *(blocked on Wave 4 completion)*
 
-- [ ] 26-06-PLAN.md — Formal acceptance re-run: combined 4-file sweep ×2 + isolated `/study resume`, `/study back-forward`, `/habits resume` ×5 each — apples-to-apples with 26-VERIFICATION.md's methodology, honest reporting mandatory
+- [x] 26-06-PLAN.md — Formal acceptance re-run: combined 4-file sweep ×2 + isolated `/study resume`, `/study back-forward`, `/habits resume` ×5 each — apples-to-apples with 26-VERIFICATION.md's methodology, honest reporting mandatory
 
 #### Phase 27: E2E Coverage & Performance Validation
 
@@ -230,7 +230,7 @@ Phases execute in numeric order: 1 → 2 → ... → 23 (all complete) → 24 �
 | 23. Reliability Bug Fixes | v1.5 | 2/2 | Complete | 2026-07-10 |
 | 24. Freshness Diagnosis Spike | v1.6 | 2/2 | Complete    | 2026-07-11 |
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 3/3 | Complete    | 2026-07-12 |
-| 26. Freshness Fix | v1.6 | 5/6 | In Progress|  |
+| 26. Freshness Fix | v1.6 | 6/6 | Complete   | 2026-07-13 |
 | 27. E2E Coverage & Performance Validation | v1.6 | 0/TBD | Not started | - |
 
 ---
