@@ -6,6 +6,17 @@
 // `[study-cards]`-prefixed log AND the pre-existing degradation contract
 // (pool failure still throws 'Database error'; happy path stays silent).
 //
+// getStudyCards() now does a two-phase fetch: Phase A batches sessionSize +
+// a LIGHTWEIGHT pool query (select: id/review.nextReview/lesson.orderIndex)
+// + edges + knownLemmas via Promise.allSettled; Phase B re-fetches only the
+// chosen/ordered card ids with the full include shape. So
+// `prisma.card.findMany` is called up to THREE times per getStudyCards()
+// call in these tests (light pool, knownLemmas, full re-fetch) — the mock
+// implementation below distinguishes them by args shape:
+//   - light pool:   args.select.id === true
+//   - knownLemmas:  args.select.normalizedFront === true
+//   - full re-fetch: args.include is present (no args.select)
+//
 // The prisma singleton is mocked via vi.mock('@/lib/prisma', ...), which
 // also neutralizes the real module body — so no DATABASE_URL is needed and
 // no real DB connection is attempted. getSessionSize() is never invoked
@@ -80,6 +91,27 @@ function makePoolCard() {
   }
 }
 
+// The Phase A lightweight pool shape: only id/review.nextReview/lesson.orderIndex
+// (what selectSessionCards/sequenceCards read). Derived from makePoolCard() so
+// the two fixtures never drift out of sync on id/nextReview.
+function makeLightPoolCard() {
+  const full = makePoolCard()
+  return {
+    id: full.id,
+    review: { nextReview: full.review.nextReview },
+    lesson: null,
+  }
+}
+
+// Distinguishes the three distinct prisma.card.findMany call shapes used by
+// the two-phase getStudyCards() pipeline (see file-header comment above).
+function isLightPoolArgs(args: { select?: { id?: boolean } }): boolean {
+  return !!args?.select?.id
+}
+function isKnownLemmasArgs(args: { select?: { normalizedFront?: boolean } }): boolean {
+  return !!args?.select?.normalizedFront
+}
+
 describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', () => {
   let errorSpy: ReturnType<typeof vi.spyOn>
 
@@ -100,11 +132,13 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
   it('logs a [study-cards]-prefixed reason and still returns cards when the known-lemmas query rejects but the pool fulfills', async () => {
     const rejectionReason = new Error('known-lemmas boom')
     ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockImplementation((args) => {
-      // The known-lemmas call selects only normalizedFront; the pool call
-      // uses `include`. Distinguish on the presence of `select`.
-      if (args && args.select) {
+      if (isKnownLemmasArgs(args)) {
         return Promise.reject(rejectionReason)
       }
+      if (isLightPoolArgs(args)) {
+        return Promise.resolve([makeLightPoolCard()])
+      }
+      // Phase B full re-fetch (args.include, id: { in: [...] })
       return Promise.resolve([makePoolCard()])
     })
 
@@ -138,10 +172,14 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
 
   it('still throws Error("Database error") when the pool query rejects (existing contract unchanged)', async () => {
     ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockImplementation((args) => {
-      if (args && args.select) {
+      if (isKnownLemmasArgs(args)) {
         return Promise.resolve([{ normalizedFront: '공부' }])
       }
-      return Promise.reject(new Error('pool boom'))
+      if (isLightPoolArgs(args)) {
+        return Promise.reject(new Error('pool boom'))
+      }
+      // Phase B should never be reached when the Phase A pool query rejects.
+      return Promise.resolve([makePoolCard()])
     })
 
     await expect(
@@ -151,9 +189,13 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
 
   it('does not emit a [study-cards]-prefixed console.error on the happy path (both queries fulfill)', async () => {
     ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockImplementation((args) => {
-      if (args && args.select) {
+      if (isKnownLemmasArgs(args)) {
         return Promise.resolve([{ normalizedFront: '공부' }])
       }
+      if (isLightPoolArgs(args)) {
+        return Promise.resolve([makeLightPoolCard()])
+      }
+      // Phase B full re-fetch (args.include, id: { in: [...] })
       return Promise.resolve([makePoolCard()])
     })
 
