@@ -31,7 +31,7 @@ See: .planning/PROJECT.md (updated 2026-07-11)
 Phase: 27
 Plan: Not started
 Status: Phase complete — ready for verification
-Last activity: 2026-07-13 — Phase 27 complete
+Last activity: 2026-07-13 - Completed quick task 260713-imz: Performance pass: squeeze /study further and improve page-load times across the app
 
 Progress: [░░░░░░░░░░] 0%
 
@@ -103,6 +103,12 @@ None open.
 - [carried from Phase 25 Plan 03, non-blocking] Three WARNING-level code-review findings in `25-REVIEW.md`: a non-functional per-subprocess uniqueness counter in `createMutationCard()`, unblanked `DATABASE_AUTH_TOKEN` in two subprocess spawn envs (inconsistent with `playwright.config.ts`'s own blanking), and a silent no-op on `CardDependency` edge-creation lookup miss in the seed fixture (with no sanity-check coverage for edge count). Worth an opportunistic fix pass; not blocking Phase 26.
 - [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch (same shape as the Phase 13-hardened routes) — out of scope; deferred candidate.
 - [carried from v1.5] 거/게 romanization-flagged card fronts (post-audit cron arrivals) — out of scope; open for a future audit/fix pass.
+
+### Quick Tasks Completed
+
+| # | Description | Date | Commit | Directory |
+|---|-------------|------|--------|-----------|
+| 260713-imz | Performance pass: squeeze /study further and improve page-load times across the app | 2026-07-13 | 05d4b55 | [260713-imz-performance-pass-squeeze-study-further-a](./quick/260713-imz-performance-pass-squeeze-study-further-a/) |
 
 ### Roadmap Evolution
 
