@@ -302,7 +302,7 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
           <div className="flex flex-col items-center gap-6 py-6">
             {/* Fixed-height slot: card count — no layout shift */}
             <div className="h-16 flex flex-col items-center justify-center">
-              <p className="text-5xl font-bold animate-reveal" style={{ color: 'var(--reward)' }}>
+              <p data-testid="due-count" className="text-5xl font-bold animate-reveal" style={{ color: 'var(--reward)' }}>
                 {studyCards.length}
               </p>
               <p className="text-muted mt-1">
@@ -310,6 +310,7 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
               </p>
             </div>
             <button
+              data-testid="start-studying-btn"
               onClick={() => setShowModeSheet(true)}
               className="w-full max-w-sm min-h-14 bg-button text-button-foreground rounded-2xl text-lg font-semibold hover:bg-button-hover transition-colors"
             >
@@ -428,7 +429,7 @@ function SessionComplete({
     <div className="flex flex-col items-center gap-6 px-4 py-10 max-w-sm mx-auto text-center">
       {/* Heading */}
       <div>
-        <h2 className="text-3xl font-bold text-foreground">{heading}</h2>
+        <h2 data-testid="session-complete-heading" className="text-3xl font-bold text-foreground">{heading}</h2>
         <p className="text-muted mt-1 text-sm">Keep showing up every day.</p>
       </div>
 
@@ -471,6 +472,7 @@ function SessionComplete({
       </div>
 
       <button
+        data-testid="study-more-btn"
         onClick={onStudyMore}
         className="w-full bg-button text-button-foreground px-6 py-3 min-h-11 rounded-xl font-medium hover:bg-button-hover transition-colors"
       >
