@@ -14,7 +14,7 @@
 // regardless of deck size (~hundreds of cards). No per-edge round-trips.
 
 import { prisma } from '@/lib/prisma'
-import { computeMissingEdges, type ResolvedEdge } from '@/lib/link-dependencies'
+import { computeMissingEdges } from '@/lib/link-dependencies'
 
 export interface RelinkResult {
   cardsScanned: number
@@ -43,12 +43,16 @@ export interface RelinkResult {
  * retries the relink naturally.
  */
 export async function relinkAllDependencies(): Promise<RelinkResult> {
-  const cards = await prisma.card.findMany({
-    select: { id: true, normalizedFront: true, components: true },
-  })
-  const existingEdges: ResolvedEdge[] = await prisma.cardDependency.findMany({
-    select: { cardId: true, prerequisiteId: true },
-  })
+  // Both reads are independent of each other — run concurrently instead of
+  // sequentially (was 2 serial round-trips, now 1).
+  const [cards, existingEdges] = await Promise.all([
+    prisma.card.findMany({
+      select: { id: true, normalizedFront: true, components: true },
+    }),
+    prisma.cardDependency.findMany({
+      select: { cardId: true, prerequisiteId: true },
+    }),
+  ])
 
   const missing = computeMissingEdges(cards, existingEdges)
 
