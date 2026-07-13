@@ -67,6 +67,8 @@ model Sentence {
   targetForm  String   // exact surface form to highlight/blank — e.g. "가요"
   translation String   // English — e.g. "I go to school every day"
   orderIndex  Int      @default(0)  // order within this card's sentence list
+
+  @@index([cardId])
 }
 
 model CardReview {
