@@ -8,6 +8,7 @@ import HighlightedSentence from '@/components/HighlightedSentence'
 import Sheet from '@/components/Sheet'
 import SwipeRow from '@/components/SwipeRow'
 import { useWordTap } from '@/components/GlossProvider'
+import { useFreshPayload } from '@/components/FreshnessWatcher'
 import { typeBadgeClass } from '@/lib/card-style'
 import type { CardDTO, LessonRefItem } from '@/lib/dto'
 
@@ -78,6 +79,23 @@ export default function CardsClient({ initialCards, initialLessons }: Props) {
     setPrevInitialCards(initialCards)
     if (editingId === null && !showAdd && !adding && deletingIds.size === 0) {
       setCards(initialCards)
+    }
+  }
+
+  // JSON backstop delivery (26-05-PLAN.md) — Suspense-independent second
+  // delivery path for the same card list GET /api/cards (and the RSC page's
+  // props above) both derive from: FreshnessWatcher's boundary handler also
+  // fetches /api/cards directly and exposes it via context, so this shell
+  // adopts fresh cards even when Next.js drops the RSC payload application
+  // (deferred-items.md). Same 4-part gate as prevInitialCards verbatim, plus
+  // the null check. The prev-holder is mount-seeded to the CURRENT slice
+  // value, so only deliveries arriving AFTER mount are ever adopted.
+  const { cards: freshCards } = useFreshPayload()
+  const [prevFreshCards, setPrevFreshCards] = useState(freshCards)
+  if (freshCards !== prevFreshCards) {
+    setPrevFreshCards(freshCards)
+    if (freshCards !== null && editingId === null && !showAdd && !adding && deletingIds.size === 0) {
+      setCards(freshCards)
     }
   }
 

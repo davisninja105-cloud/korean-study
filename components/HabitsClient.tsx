@@ -6,6 +6,7 @@ import HabitsLoading from '@/app/habits/loading'
 import HabitHeatmap from '@/components/HabitHeatmap'
 import ProgressRing from '@/components/ProgressRing'
 import ProficiencyArc from '@/components/ProficiencyArc'
+import { useFreshPayload, type HabitsFreshPayload } from '@/components/FreshnessWatcher'
 import type { StatsDTO } from '@/lib/dto'
 import {
   computeStreaks,
@@ -64,22 +65,58 @@ export default function HabitsClient({
   // Plain consts make every router.refresh() adopt automatically; downstream
   // JSX and useMemo bodies are unchanged (same identifiers, now tracking the
   // props instead of a frozen initial snapshot).
-  const days = initialDays
-  const goal = initialGoal
-  const masteredCount = initialMasteredCount
+  //
+  // Two-source derivation (26-05-PLAN.md): props are the default source, but
+  // a JSON backstop override (from FreshnessWatcher's /api/activity +
+  // /api/stats fetch — Suspense-independent, see deferred-items.md) can win
+  // until fresher RSC props arrive. This shell has no setters for its
+  // "direct read" values, so adoption is a derived-read override layer
+  // rather than a reverted design: freshOverride, once set, is read instead
+  // of the initial* props; a subsequent real RSC delivery (a new initialDays
+  // reference) clears the override so fresh props always take precedence.
+  const { habits: freshHabits } = useFreshPayload()
+  const [freshOverride, setFreshOverride] = useState<HabitsFreshPayload | null>(null)
+
+  // Backstop consume-and-adopt: freshHabits is mount-seeded via useState's
+  // lazy initializer equivalent (prevFreshHabits), so only deliveries
+  // arriving AFTER mount are ever adopted (a remounted shell always sees a
+  // post-mount slice update because the backstop fetch needs a server
+  // round-trip; a Link-navigated shell with fresh RSC props sees no
+  // post-mount slice change and adopts nothing).
+  const [prevFreshHabits, setPrevFreshHabits] = useState(freshHabits)
+  if (freshHabits !== prevFreshHabits) {
+    setPrevFreshHabits(freshHabits)
+    if (freshHabits !== null) setFreshOverride(freshHabits)
+  }
+
+  // Props-win: a genuinely fresher RSC delivery (a new initialDays
+  // reference) is strictly newer than any backstop override, so it clears
+  // the override and lets the fresh props shine through.
+  const [prevInitialDays, setPrevInitialDays] = useState(initialDays)
+  if (initialDays !== prevInitialDays) {
+    setPrevInitialDays(initialDays)
+    setFreshOverride(null)
+  }
+
+  const days = freshOverride ? freshOverride.days : initialDays
+  const goal = freshOverride ? freshOverride.dailyGoalSeconds : initialGoal
+  const masteredCount = freshOverride ? freshOverride.masteredCount : initialMasteredCount
+  const dayStartHour = freshOverride ? freshOverride.dayStartHour : initialDayStartHour
+  const cardsByState = freshOverride ? freshOverride.cardsByState : initialCardsByState
   const [today, setToday] = useState('')
-  const countFor = (s: number) => initialCardsByState.find((r) => r.state === s)?._count ?? 0
+  const countFor = (s: number) => cardsByState.find((r) => r.state === s)?._count ?? 0
 
   // Compute client-local today in an effect (habitDateStr calls new Date() internally —
   // impure, must not run during render). Promise.resolve().then satisfies
   // react-hooks/set-state-in-effect (microtask deferral, not synchronous setState).
-  // Depends on initialDays/initialMasteredCount (not just initialDayStartHour) so a
-  // FreshnessWatcher-triggered router.refresh() across a habit-day boundary (the tab/PWA
-  // resume scenario this phase targets) recomputes today instead of staying pinned to
-  // the mount-time value — mirrors HomeClient's equivalent effect.
+  // Depends on days/masteredCount (not just dayStartHour) so a
+  // FreshnessWatcher-triggered router.refresh() OR JSON backstop delivery across a
+  // habit-day boundary (the tab/PWA resume scenario this phase targets) recomputes
+  // today instead of staying pinned to the mount-time value — mirrors HomeClient's
+  // equivalent effect (CR-01), now also firing on backstop adoption.
   useEffect(() => {
-    Promise.resolve().then(() => setToday(habitDateStr(initialDayStartHour)))
-  }, [initialDayStartHour, initialDays, initialMasteredCount])
+    Promise.resolve().then(() => setToday(habitDateStr(dayStartHour)))
+  }, [dayStartHour, days, masteredCount])
 
   const { current, longest, todaySeconds } = useMemo(
     () => computeStreaks(days, today, goal),
