@@ -28,12 +28,12 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 ### Performance Validation
 
-- [ ] **PERF-04**: The E2E suite asserts generous page-load timing budgets (Navigation Timing API) on key routes, using median-of-N runs to reduce flakiness
-- [ ] **PERF-05**: The E2E suite asserts generous API route timing budgets (e.g. `/api/cards/due`) via direct request timing
+- [x] **PERF-04**: The E2E suite asserts generous page-load timing budgets (Navigation Timing API) on key routes, using median-of-N runs to reduce flakiness
+- [x] **PERF-05**: The E2E suite asserts generous API route timing budgets (e.g. `/api/cards/due`) via direct request timing
 
 ### Agent Tooling
 
-- [ ] **TOOL-01**: Claude Code can drive the running dev server interactively via Playwright MCP for exploratory verification, registered and documented as a workflow in CLAUDE.md
+- [x] **TOOL-01**: Claude Code can drive the running dev server interactively via Playwright MCP for exploratory verification, registered and documented as a workflow in CLAUDE.md
 
 ## v2 Requirements
 
@@ -80,6 +80,6 @@ Which phases cover which requirements. Updated during roadmap creation.
 | E2E-05 | Phase 27 | Complete |
 | E2E-06 | Phase 25 | Complete |
 | E2E-07 | Phase 25 | Complete |
-| PERF-04 | Phase 27 | Pending |
-| PERF-05 | Phase 27 | Pending |
-| TOOL-01 | Phase 27 | Pending |
+| PERF-04 | Phase 27 | Complete |
+| PERF-05 | Phase 27 | Complete |
+| TOOL-01 | Phase 27 | Complete |
