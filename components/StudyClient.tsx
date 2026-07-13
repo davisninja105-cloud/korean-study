@@ -10,6 +10,7 @@ import Sheet from '@/components/Sheet'
 import { SlidersHorizontal, Loader2 } from 'lucide-react'
 import { haptic } from '@/lib/haptics'
 import { computeStreaks, habitDateStr, DEFAULT_DAY_START_HOUR, DEFAULT_GOAL_SECONDS, type DayRecord } from '@/lib/habit'
+import { useFreshPayload } from '@/components/FreshnessWatcher'
 import type { CardDTO, LessonDTO } from '@/lib/dto'
 
 interface PracticeCard {
@@ -136,6 +137,32 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
     setPrevInitialCards(initialCards)
     if (phase === 'select-mode' && !isFilterLoading && isFullSpan(lessonFrom, lessonTo, maxOrder)) {
       setStudyCards(initialCards)
+      setScope('due')
+    }
+  }
+
+  // JSON backstop delivery (26-05-PLAN.md) — Suspense-independent second
+  // delivery path for the SAME payload getStudyCards() (and the RSC page's
+  // props above) both derive from: FreshnessWatcher's boundary handler also
+  // fetches /api/cards/due directly and exposes it via context, so this
+  // shell adopts fresh due-cards even when Next.js drops the RSC payload
+  // application (deferred-items.md). Same 3-part gate as prevInitialCards
+  // verbatim, plus the null check (freshStudy starts null until a backstop
+  // delivery actually arrives). The prev-holder is mount-seeded to the
+  // CURRENT slice value, so only deliveries arriving AFTER mount are ever
+  // adopted — a plain-Link-navigated shell with fresh RSC props sees no
+  // post-mount slice change at all and adopts nothing.
+  const { study: freshStudy } = useFreshPayload()
+  const [prevFreshStudy, setPrevFreshStudy] = useState(freshStudy)
+  if (freshStudy !== prevFreshStudy) {
+    setPrevFreshStudy(freshStudy)
+    if (
+      freshStudy !== null &&
+      phase === 'select-mode' &&
+      !isFilterLoading &&
+      isFullSpan(lessonFrom, lessonTo, maxOrder)
+    ) {
+      setStudyCards(freshStudy)
       setScope('due')
     }
   }
