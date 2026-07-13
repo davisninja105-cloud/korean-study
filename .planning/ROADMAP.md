@@ -195,7 +195,17 @@ Plans:
   3. The suite asserts generous API route timing budgets (e.g. `/api/cards/due`) via direct request timing. (PERF-05)
   4. A documented workflow in CLAUDE.md lets Claude Code drive the running dev server interactively via Playwright MCP for exploratory verification. (TOOL-01)
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+**Wave 1**
+
+- [ ] 27-01-PLAN.md — data-testid pass across the grade-flow path (closes the Phase 25 fragile-locator gap) + E2E-05 grade-flow spec as a bounded loop-until-complete with a subprocess DB persistence backstop
+- [ ] 27-03-PLAN.md — Playwright MCP registration (blocking [SUS] legitimacy checkpoint) + concise CLAUDE.md workflow doc + human-verified live exploratory smoke (TOOL-01)
+
+**Wave 2** *(blocked on 27-01 — shares the port-3100 harness + test DB at runtime)*
+
+- [ ] 27-02-PLAN.md — e2e/perf.spec.ts: median-of-5 page-load budgets on 4 routes (PERF-04, ~3s) + authenticated API round-trip budgets on 3 routes (PERF-05, ~1s) with per-sample vacuity guards, falsifiability probe, and full-suite run
 
 ## Progress
 
