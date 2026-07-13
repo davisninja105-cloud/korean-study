@@ -45,6 +45,7 @@
 import { getTestPrisma } from '../seed'
 import { TEST_DB_URL } from './test-db'
 import { normalizeFront } from '../../lib/card-key'
+import { FIXTURE } from '../fixture'
 import { execFileSync } from 'node:child_process'
 import path from 'node:path'
 
@@ -145,6 +146,33 @@ export async function ensureAllSeededReviewsDueDirect(): Promise<void> {
   })
 }
 
+/**
+ * E2E-05 DB backstop (27-01-PLAN.md Task 2, Part A). Proves the background,
+ * fire-and-forget `POST /api/review` saves actually persisted — optimistic
+ * grading renders the completion screen regardless of whether the save
+ * landed, so UI state alone cannot prove this (27-RESEARCH.md Pitfall 4).
+ * Queries the 3 seeded due-card fronts (FIXTURE.cards.due) via the `card`
+ * relation filter. Seeded CardReview rows start at reps=0/lastReview=null
+ * (e2e/seed.ts:108) — a real state transition to reps>=1/lastReview!==null
+ * on all 3 rows is non-inferable evidence of a successful persisted review.
+ */
+export async function seededDueReviewsPersistedDirect(): Promise<string> {
+  const prisma = await getTestPrisma()
+  const dueFronts = FIXTURE.cards.due.map((c) => c.front)
+  const rows = await prisma.cardReview.findMany({
+    where: { card: { front: { in: dueFronts } } },
+    include: { card: { select: { front: true } } },
+  })
+  const unpersisted = rows.filter((r) => !(r.reps >= 1 && r.lastReview !== null))
+  if (rows.length === dueFronts.length && unpersisted.length === 0) {
+    return 'all-persisted'
+  }
+  const details = unpersisted
+    .map((r) => `${r.card.front}(reps=${r.reps},lastReview=${r.lastReview === null ? 'null' : r.lastReview.toISOString()})`)
+    .join(', ')
+  return `pending: ${details || `expected ${dueFronts.length} rows, found ${rows.length}`}`
+}
+
 // ── Subprocess-delegating public API (the 7 plan-mandated exports) ─────────
 
 function runMutateOp(op: string): string {
@@ -194,4 +222,8 @@ export async function expectedCardsCount(): Promise<string> {
 
 export async function expectedMasteredCount(): Promise<string> {
   return parseMutateResult(runMutateOp('expectedMasteredCount'))
+}
+
+export async function seededDueReviewsPersisted(): Promise<string> {
+  return parseMutateResult(runMutateOp('seededDueReviewsPersisted'))
 }
