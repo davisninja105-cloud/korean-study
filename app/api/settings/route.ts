@@ -1,27 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
-  getDailyGoalSeconds, setDailyGoalSeconds,
-  getDayStartHour, setDayStartHour,
-  getButtonColor, setButtonColor,
-  getRewardColor, setRewardColor,
-  getSessionSize, setSessionSize,
-  getReadingTextScale, setReadingTextScale,
-  getReadingAid, setReadingAid,
-  getLastAutoSyncedAt,
+  setDailyGoalSeconds, getDailyGoalSeconds,
+  setDayStartHour, getDayStartHour,
+  setButtonColor, getButtonColor,
+  setRewardColor, getRewardColor,
+  setSessionSize, getSessionSize,
+  setReadingTextScale, getReadingTextScale,
+  setReadingAid, getReadingAid,
+  getAllSettings,
 } from '@/lib/settings'
 
 export async function GET() {
-  const [dailyGoalSeconds, dayStartHour, buttonColor, rewardColor, sessionSize, readingTextScale, readingAid, lastAutoSyncedAt] = await Promise.all([
-    getDailyGoalSeconds(),
-    getDayStartHour(),
-    getButtonColor(),
-    getRewardColor(),
-    getSessionSize(),
-    getReadingTextScale(),
-    getReadingAid(),
-    getLastAutoSyncedAt(),
-  ])
-  return NextResponse.json({ dailyGoalSeconds, dayStartHour, buttonColor, rewardColor, sessionSize, readingTextScale, readingAid, lastAutoSyncedAt })
+  const settings = await getAllSettings()
+  return NextResponse.json(settings)
 }
 
 export async function PUT(req: NextRequest) {

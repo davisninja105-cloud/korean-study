@@ -37,15 +37,21 @@ export async function runSync(documentId: string): Promise<SyncResult> {
   // any spans the tutor bolded/underlined/highlighted per lesson.
   const lessonDataList = await fetchGoogleDoc(documentId)
 
-  // 1. Filter to only new lessons by content hash (hash the plain text, same as before)
-  const newLessonData: { text: string; emphasized: string[]; contentHash: string }[] = []
-  for (const lesson of lessonDataList) {
-    const contentHash = createHash('sha256').update(lesson.text).digest('hex')
-    const existing = await prisma.lesson.findUnique({ where: { contentHash } })
-    if (!existing) {
-      newLessonData.push({ text: lesson.text, emphasized: lesson.emphasized, contentHash })
-    }
-  }
+  // 1. Filter to only new lessons by content hash (hash the plain text, same as before).
+  //    Hash every lesson first, then do ONE findMany-in lookup instead of a
+  //    per-lesson findUnique inside the loop (was N serial round-trips for a
+  //    doc with N lessons; now exactly 1 regardless of doc size).
+  const hashedLessons = lessonDataList.map((lesson) => ({
+    text: lesson.text,
+    emphasized: lesson.emphasized,
+    contentHash: createHash('sha256').update(lesson.text).digest('hex'),
+  }))
+  const existingLessons = await prisma.lesson.findMany({
+    where: { contentHash: { in: hashedLessons.map((l) => l.contentHash) } },
+    select: { contentHash: true },
+  })
+  const existingHashes = new Set(existingLessons.map((l) => l.contentHash))
+  const newLessonData = hashedLessons.filter((l) => !existingHashes.has(l.contentHash))
 
   if (newLessonData.length === 0) {
     return { synced: true, newLessons: 0, newCards: 0, remaining: 0, failed: 0, message: 'No new content since last sync' }
@@ -283,19 +289,41 @@ export async function runSync(documentId: string): Promise<SyncResult> {
       //    `keyToId` was built once before the per-lesson loop and augmented above
       //    as each card was upserted — no per-lesson full-deck findMany here.
       //    Resolution itself is shared (IN-02) via lib/link-dependencies.ts.
+      //
+      //    Persistence is batched (was N per-edge upserts; now at most 1 read +
+      //    1 write for this lesson's whole edge set) using the same
+      //    batch-diff-then-createMany pattern lib/relink-dependencies.ts already
+      //    established for the whole-deck relink pass. resolvedEdges is already
+      //    resolved (in-memory keyToId + linkTargets, not a DB re-read) — only
+      //    the "subtract what's already persisted" half of that pattern applies.
       const resolvedEdges = resolveDependencyEdges(keyToId, linkTargets)
-      for (const { cardId, prerequisiteId } of resolvedEdges) {
+      if (resolvedEdges.length > 0) {
         try {
-          await prisma.cardDependency.upsert({
-            where: {
-              cardId_prerequisiteId: { cardId, prerequisiteId },
-            },
-            create: { cardId, prerequisiteId },
-            update: {}, // no-op — just ensure it exists
+          const involvedCardIds = [...new Set(resolvedEdges.map((e) => e.cardId))]
+          const existingEdgeRows = await prisma.cardDependency.findMany({
+            where: { cardId: { in: involvedCardIds } },
+            select: { cardId: true, prerequisiteId: true },
           })
+          const existingKeys = new Set(
+            existingEdgeRows.map((e) => `${e.cardId}::${e.prerequisiteId}`)
+          )
+          const missingEdges = resolvedEdges.filter(
+            (e) => !existingKeys.has(`${e.cardId}::${e.prerequisiteId}`)
+          )
+          if (missingEdges.length > 0) {
+            // No skipDuplicates: SQLite/libSQL doesn't support it (same
+            // constraint lib/relink-dependencies.ts documents). A race against
+            // a concurrent sync inserting the same edge between this read and
+            // this write fails the whole batch non-fatally — the end-of-sync
+            // relinkAllDependencies pass below re-diffs the whole deck and
+            // picks up anything missed here, so no edge is ever lost, only
+            // deferred to the next auto-relink pass.
+            await prisma.cardDependency.createMany({ data: missingEdges })
+          }
         } catch (linkErr) {
-          // Link failures are non-fatal — card still usable, just unlinked.
-          console.warn(`CardDependency link failed (${cardId} → ${prerequisiteId}):`, linkErr)
+          // Link failures are non-fatal — cards still usable, just unlinked;
+          // the auto-relink pass after the per-lesson loop retries.
+          console.warn(`CardDependency batch link failed for lesson ${i}:`, linkErr)
         }
       }
 

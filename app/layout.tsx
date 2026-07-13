@@ -4,7 +4,7 @@ import Nav from '@/components/Nav'
 import ThemeWatcher from '@/components/ThemeWatcher'
 import FreshnessWatcher from '@/components/FreshnessWatcher'
 import { GlossProvider } from '@/components/GlossProvider'
-import { getButtonColor, getRewardColor, getReadingTextScale, getReadingAid } from '@/lib/settings'
+import { getLayoutSettings } from '@/lib/settings'
 import { readableForeground } from '@/lib/color'
 import './globals.css'
 
@@ -48,9 +48,8 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  const [buttonColor, rewardColor, readingScale, readingAid] = await Promise.all([
-    getButtonColor(), getRewardColor(), getReadingTextScale(), getReadingAid(),
-  ])
+  const { buttonColor, rewardColor, readingTextScale: readingScale, readingAid } =
+    await getLayoutSettings()
   const buttonStyle = {
     '--button': buttonColor,
     '--button-foreground': readableForeground(buttonColor),

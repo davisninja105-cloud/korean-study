@@ -6,6 +6,7 @@
 
 import { prisma } from '@/lib/prisma'
 import { getSessionSize } from '@/lib/settings'
+import { DEFAULT_SESSION_SIZE } from '@/lib/habit'
 import { sequenceCards, selectSessionCards } from '@/lib/sequence'
 import { countUnknownWords } from '@/lib/known-words'
 import type { CardDTO } from '@/lib/dto'
@@ -29,31 +30,47 @@ export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]
       ? { lesson: { orderIndex: { gte: lessonFrom, lte: lessonTo } } }
       : {}
 
-  const sessionSize = params.sessionSize ?? (await getSessionSize())
+  const poolWhere = {
+    ...lessonClause,
+    review: scope === 'due'
+      ? { nextReview: { lte: now } }
+      : { nextReview: { gt: now } },
+  }
 
-  // Run the pool fetch and known-lemmas fetch concurrently — they are independent
-  // of each other. The edge fetch depends on pool IDs and stays sequential.
-  // Promise.allSettled gives graceful degradation:
+  // Phase A — one parallel batch of everything that does NOT depend on which
+  // cards end up chosen for the session: sessionSize, a LIGHTWEIGHT pool query
+  // (only the fields selectSessionCards/sequenceCards actually read: id,
+  // review.nextReview, lesson.orderIndex), the prerequisite edges, and the
+  // known-lemmas set. The edge query does not depend on the pool result — it
+  // was previously sequenced after the pool for no reason; batching it here
+  // removes one serial round-trip.
+  //
+  // Promise.allSettled gives graceful degradation per query:
   //   - pool failure → throw (critical; can't build a session without it)
-  //   - knownLemmas failure → empty Set (non-critical; unknownCount degrades to max but no crash)
-  const [poolResult, knownRowsResult] = await Promise.allSettled([
-    // Query 1 (CRITICAL): Whole eligible pool, generous safety cap of 1000.
-    // Selection and sessionSize capping happen in selectSessionCards below;
-    // orderBy: nextReview asc pre-sorts so the most-due cards are available first.
+  //   - sessionSize failure → DEFAULT_SESSION_SIZE fallback
+  //   - edges failure → [] fallback (session still builds, just unsequenced by prereqs)
+  //   - knownLemmas failure → empty Set (non-critical ranking signal)
+  const [sessionSizeResult, poolResult, edgesResult, knownRowsResult] = await Promise.allSettled([
+    params.sessionSize !== undefined ? Promise.resolve(params.sessionSize) : getSessionSize(),
+    // Query 1 (CRITICAL): Whole eligible pool, generous safety cap of 1000, but
+    // only the columns the selection/sequencing algorithms read. The full
+    // review/lesson/sentences payload is fetched in Phase B for the ~sessionSize
+    // cards actually chosen, not for all 1000 pool candidates.
     prisma.card.findMany({
-      where: {
-        ...lessonClause,
-        review: scope === 'due'
-          ? { nextReview: { lte: now } }
-          : { nextReview: { gt: now } },
-      },
-      include: {
-        review:    true,
-        lesson:    { select: { id: true, orderIndex: true, title: true, createdAt: true } },
-        sentences: { orderBy: { orderIndex: 'asc' } },
+      where: poolWhere,
+      select: {
+        id:      true,
+        review:  { select: { nextReview: true } },
+        lesson:  { select: { orderIndex: true } },
       },
       orderBy: { review: { nextReview: 'asc' } },
       take: 1000,
+    }),
+    // Query 2 (formerly sequential): prerequisite edges, unfiltered. Kept as a
+    // single unfiltered select of the two id columns — see the historical note
+    // below on why this must not be pushed into SQL as two large IN clauses.
+    prisma.cardDependency.findMany({
+      select: { cardId: true, prerequisiteId: true },
     }),
     // Query 3 (NON-CRITICAL): Cards the learner has seen at least once (FSRS state ≥ 1).
     // "Seen once" is the threshold for counting a word as known context.
@@ -67,6 +84,9 @@ export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]
   if (poolResult.status === 'rejected') {
     throw new Error('Database error')
   }
+
+  const sessionSize =
+    sessionSizeResult.status === 'fulfilled' ? sessionSizeResult.value : DEFAULT_SESSION_SIZE
 
   // RELIABILITY-01: if the non-critical known-lemmas query rejected, log the
   // reason BEFORE degrading — so the silent ranking-signal degradation
@@ -84,32 +104,46 @@ export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]
     )
   }
 
-  const cards = poolResult.value
+  const lightPool = poolResult.value
 
-  if (cards.length === 0) return []
+  if (lightPool.length === 0) return []
 
-  // Query 2 (sequential — depends on pool IDs resolved above):
-  // Fetch prerequisite edges, then keep only those whose BOTH endpoints are in
-  // the pool. We deliberately do NOT push the pool filter into SQL as
-  // `cardId IN ids AND prerequisiteId IN ids`: two large IN clauses over the
-  // ~1000-card due pool make Prisma chunk each list to respect the SQLite
-  // bound-parameter limit and emit a CARTESIAN PRODUCT of chunk pairs (~55
-  // serial round-trips → ~6s against remote Turso — the historical cause of the
-  // >10s /study load). A single unfiltered select of the two id columns is one
-  // round-trip returning a small (2-column, deck-bounded) payload; the
-  // both-endpoints-in-pool filter runs in memory. sequenceCards/selectSessionCards
-  // already ignore out-of-session edges, so this filter is an optimization, not
-  // a correctness requirement (verified: identical edge set to the old query).
-  const idSet = new Set(cards.map((c) => c.id))
-  const allEdges = await prisma.cardDependency.findMany({
-    select: { cardId: true, prerequisiteId: true },
-  })
+  // Filter edges to those whose BOTH endpoints are in the pool. We deliberately
+  // do NOT push the pool filter into SQL as `cardId IN ids AND prerequisiteId IN
+  // ids`: two large IN clauses over the ~1000-card due pool make Prisma chunk
+  // each list to respect the SQLite bound-parameter limit and emit a CARTESIAN
+  // PRODUCT of chunk pairs (~55 serial round-trips → ~6s against remote Turso —
+  // the historical cause of the >10s /study load). A single unfiltered select
+  // of the two id columns is one round-trip returning a small (2-column,
+  // deck-bounded) payload; the both-endpoints-in-pool filter runs in memory.
+  // sequenceCards/selectSessionCards already ignore out-of-session edges, so
+  // this filter is an optimization, not a correctness requirement.
+  const idSet = new Set(lightPool.map((c) => c.id))
+  const allEdges = edgesResult.status === 'fulfilled' ? edgesResult.value : []
   const edges = allEdges.filter(
     (e) => idSet.has(e.cardId) && idSet.has(e.prerequisiteId)
   )
 
-  const chosen  = selectSessionCards(cards, edges, sessionSize, now)
+  const chosen  = selectSessionCards(lightPool, edges, sessionSize, now)
   const ordered = sequenceCards(chosen, edges, now)
+  const orderedIds = ordered.map((c) => c.id)
+
+  // Phase B — fetch full details (review, lesson, sentences) for ONLY the
+  // chosen/ordered cards (~sessionSize, not the full 1000-row pool).
+  // findMany with `id: { in: ... }` does NOT preserve the input order, so the
+  // result is re-mapped over orderedIds via a Map to restore session order.
+  const fullCards = await prisma.card.findMany({
+    where: { id: { in: orderedIds } },
+    include: {
+      review:    true,
+      lesson:    { select: { id: true, orderIndex: true, title: true, createdAt: true } },
+      sentences: { orderBy: { orderIndex: 'asc' } },
+    },
+  })
+  const fullById = new Map(fullCards.map((c) => [c.id, c]))
+  const cardsInOrder = orderedIds
+    .map((id) => fullById.get(id))
+    .filter((c): c is NonNullable<typeof c> => c !== undefined)
 
   // Build knownLemmas Set from the concurrent result — degrade to empty Set on failure.
   const knownLemmas = new Set(
@@ -120,7 +154,7 @@ export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]
 
   // Annotate each sentence with unknownCount (pure ranking signal for the client).
   // Cost: ≤ sessionSize × 3 sentence scans — well under the Vercel 60s limit.
-  for (const card of ordered) {
+  for (const card of cardsInOrder) {
     for (const s of card.sentences) {
       (s as typeof s & { unknownCount: number }).unknownCount =
         countUnknownWords(s.korean, s.targetForm, knownLemmas)
@@ -129,7 +163,7 @@ export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]
 
   // Serialize: convert all Prisma Date objects to ISO strings before returning.
   // No raw Date may appear in the returned CardDTO[] (RSC-05 contract).
-  return ordered.map((c) => ({
+  return cardsInOrder.map((c) => ({
     ...c,
     createdAt: c.createdAt.toISOString(),
     updatedAt: c.updatedAt.toISOString(),
