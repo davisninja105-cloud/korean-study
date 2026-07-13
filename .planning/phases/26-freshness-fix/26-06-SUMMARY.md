@@ -208,3 +208,8 @@ None - no external service configuration required.
 ---
 *Phase: 26-freshness-fix*
 *Completed: 2026-07-13*
+
+## Self-Check: PASSED
+
+- FOUND: .planning/phases/26-freshness-fix/26-06-SUMMARY.md
+- FOUND: 17843e5 (SUMMARY commit)
