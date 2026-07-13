@@ -22,7 +22,7 @@ Requirements for this milestone. Each maps to roadmap phases.
 - [x] **E2E-02**: An authenticated test run works via a setup project that produces a reusable `storageState`, with no per-test login UI interaction required
 - [x] **E2E-03**: E2E tests run against an isolated, seeded test database (`file:` SQLite) and are structurally prevented from running against the production Turso database
 - [x] **E2E-04**: A smoke spec verifies every main route renders real content on first paint (not just an HTTP 200)
-- [ ] **E2E-05**: A study grade-flow spec covers reveal → grade → queue advance → session completion
+- [x] **E2E-05**: A study grade-flow spec covers reveal → grade → queue advance → session completion
 - [x] **E2E-06**: A freshness regression spec proves FRESH-03/04/05 against a production build, and fails if the staleness bug reappears
 - [x] **E2E-07**: Failed test runs produce a trace (`trace: 'on-first-retry'`) and a parseable line-reporter output usable by both a human and an AI agent
 
@@ -77,7 +77,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | E2E-02 | Phase 25 | Complete |
 | E2E-03 | Phase 25 | Complete |
 | E2E-04 | Phase 25 | Complete |
-| E2E-05 | Phase 27 | Pending |
+| E2E-05 | Phase 27 | Complete |
 | E2E-06 | Phase 25 | Complete |
 | E2E-07 | Phase 25 | Complete |
 | PERF-04 | Phase 27 | Pending |
