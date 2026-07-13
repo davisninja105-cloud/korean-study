@@ -5,7 +5,7 @@
 // call one shared, DRY function per D-05.
 
 import { prisma } from '@/lib/prisma'
-import { getDailyGoalSeconds, getDayStartHour } from '@/lib/settings'
+import { getActivitySettings } from '@/lib/settings'
 import { State } from '@/lib/fsrs'
 import type { StatsDTO, ActivityDTO } from '@/lib/dto'
 
@@ -48,13 +48,12 @@ export async function getStats(): Promise<StatsDTO> {
  * try/catch.
  */
 export async function getActivityData(): Promise<ActivityDTO> {
-  const [days, dailyGoalSeconds, dayStartHour] = await Promise.all([
+  const [days, { dailyGoalSeconds, dayStartHour }] = await Promise.all([
     prisma.studyDay.findMany({
       orderBy: { date: 'desc' },
       select: { date: true, seconds: true, reviews: true },
     }),
-    getDailyGoalSeconds(),
-    getDayStartHour(),
+    getActivitySettings(),
   ])
   return { days, dailyGoalSeconds, dayStartHour }
 }
