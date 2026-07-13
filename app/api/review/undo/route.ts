@@ -26,7 +26,18 @@ export async function POST(req: NextRequest) {
       reps: prevState.reps ?? exists.reps,
       lapses: prevState.lapses ?? exists.lapses,
       nextReview: prevState.nextReview ? new Date(prevState.nextReview) : exists.nextReview,
-      lastReview: prevState.lastReview ? new Date(prevState.lastReview) : exists.lastReview,
+      // WR-01: use presence, not truthiness, to decide whether to fall back.
+      // `prevState.lastReview` is legitimately `null` for a card's first-ever
+      // review; a truthiness check couldn't distinguish that from "absent"
+      // and would wrongly fall through to `exists.lastReview` (the current,
+      // post-grade value), leaving the row stamped with a review timestamp
+      // that was supposedly undone.
+      lastReview:
+        'lastReview' in prevState
+          ? prevState.lastReview
+            ? new Date(prevState.lastReview)
+            : null
+          : exists.lastReview,
     },
   })
 
