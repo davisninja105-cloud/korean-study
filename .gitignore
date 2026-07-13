@@ -64,3 +64,7 @@ next-env.d.ts
 /playwright-report/
 /test-results/
 /e2e/.tmp/
+
+# Phase 27 Plan 03: @playwright/mcp writes console logs and page snapshots
+# here during agent-driven exploratory QA sessions (Playwright MCP server).
+/.playwright-mcp/
