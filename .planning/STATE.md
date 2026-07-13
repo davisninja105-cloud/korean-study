@@ -4,17 +4,17 @@ milestone: v1.6
 milestone_name: Freshness, Performance & E2E Testing
 current_phase: 27
 current_phase_name: e2e-coverage-performance-validation
-status: executing
-stopped_at: Phase 27 context gathered
-last_updated: "2026-07-13T17:42:43.875Z"
+status: verifying
+stopped_at: Completed 27-03-PLAN.md — Phase 27 fully complete
+last_updated: "2026-07-13T18:36:37.592Z"
 last_activity: 2026-07-13
 last_activity_desc: Phase 27 execution started
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 14
-  completed_plans: 11
-  percent: 75
+  completed_plans: 14
+  percent: 100
 ---
 
 # Project State
@@ -28,9 +28,9 @@ See: .planning/PROJECT.md (updated 2026-07-11)
 
 ## Current Position
 
-Phase: 27 (e2e-coverage-performance-validation) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 27
+Phase: 27 (e2e-coverage-performance-validation) — COMPLETE
+Plan: 3 of 3
+Status: Phase complete — ready for verification
 Last activity: 2026-07-13 — Phase 27 execution started
 
 Progress: [░░░░░░░░░░] 0%
@@ -49,7 +49,7 @@ Progress: [░░░░░░░░░░] 0%
 | 24 | 2 | - | - |
 | 25 | 3 | - | - |
 | 26 | 6 | - | - |
-| 27 | 0/TBD | - | - |
+| 27 | 3 | - | - |
 
 **Recent Trend:**
 
@@ -57,6 +57,10 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+
+| Phase | Plan | Duration | Notes |
+|-------|------|----------|-------|
+| Phase 27 P03 | ~15min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -81,6 +85,11 @@ Phase 25 E2E harness decisions (2026-07-12):
 
 - D-04 CR-01 second re-verification (Plan 25-03, via real Playwright runs, not the diagnosis script): all 4 back-forward cells' stale/fresh verdicts still match 24-DIAGNOSIS.md, but the underlying evidence pattern shifted for `/study`, `/cards`, `/habits` — originally 1 new RSC fetch per cell (client-shell non-resync), now 0 new fetches (reads as router-cache reuse). Phase 26 should re-confirm mechanism attribution at fix time rather than assume the original evidence still holds; the fix likely still needs to address both root-cause mechanisms.
 - `/habits post-mutation-return` (outside the 4-cell back-forward scope) re-verified genuinely FRESH today, contradicting 24-DIAGNOSIS.md's stale finding for that cell — `HabitsClient` now correctly adopts fresh data on that navigation path. Phase 26 should confirm this cell no longer needs fixing before spending effort on it.
+
+Phase 27 E2E coverage/perf/MCP decisions (2026-07-13):
+
+- [Phase 27]: Human approved unpinned @playwright/mcp@latest registration (over the offered @0.0.78 pin) after reviewing npm-registry legitimacy evidence — official microsoft/playwright-mcp repo, 6.4M downloads/week, no postinstall scripts
+- [Phase 27]: Live MCP exploratory smoke (fresh Claude Code session, Task 3) confirmed the CLAUDE.md Playwright MCP section matches actual tool behavior exactly — no corrections needed
 
 ### Pending Todos
 
@@ -115,9 +124,9 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-13T07:32:17.436Z
-Stopped at: Phase 27 context gathered
-Resume file: .planning/phases/27-e2e-coverage-performance-validation/27-CONTEXT.md
+Last session: 2026-07-13T18:35:23.367Z
+Stopped at: Completed 27-03-PLAN.md — Phase 27 fully complete
+Resume file: None
 
 ## Operator Next Steps
 
