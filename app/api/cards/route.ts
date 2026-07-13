@@ -1,18 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { normalizeFront } from '@/lib/card-key'
+import { getCardsList } from '@/lib/cards-list'
 
 const sentencesInclude = { orderBy: { orderIndex: 'asc' } } as const
 
 export async function GET() {
-  const cards = await prisma.card.findMany({
-    include: {
-      review: true,
-      lesson: { select: { title: true, createdAt: true, orderIndex: true } },
-      sentences: sentencesInclude,
-    },
-    orderBy: { createdAt: 'desc' },
-  })
+  const cards = await getCardsList()
   return NextResponse.json(cards)
 }
 
