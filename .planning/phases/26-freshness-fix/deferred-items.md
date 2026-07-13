@@ -37,3 +37,25 @@ This is a genuine Next.js 16.2.1 App Router reliability issue (or a very deep, h
 ### Status
 
 Open — informational, not blocking. `StudyClient`/`CardsClient`'s own adoption logic is proven correct (fires and adopts correctly on every occasion the fresh prop is actually delivered). The underlying delivery mechanism's reliability is the open item.
+
+## Out-of-scope discovery: `SwipeRow` pointer capture swallows `click` on nested buttons (mouse input)
+
+**Found during:** Plan 26-04, Task 2 (writing the `/cards open-sheet` FRESH-02 gate cell)
+
+**Not fixed here because:** the root cause lives in `components/SwipeRow.tsx`, which is not in Plan 26-04's file list (`e2e/freshness-gate.spec.ts` only). Per the executor's scope-boundary rule, pre-existing issues outside the current task's files are logged here, not patched inline.
+
+### Summary
+
+`SwipeRow.onPointerDown` unconditionally calls `e.currentTarget.setPointerCapture(e.pointerId)` on every pointerdown targeting the sliding-content wrapper div — including a plain tap/click on a nested interactive child (e.g. the "Edit" button rendered inside each card row on `/cards`). Event-trace instrumentation (`document.addEventListener(..., true)` for pointerdown/pointerup/mousedown/mouseup/click) during this plan's test-writing confirmed: `pointerdown` targets the `<button>Edit</button>` correctly, but the resulting `pointerup`, `mouseup`, and — critically — `click` events are all retargeted to the SwipeRow content `<div>` wrapper instead of the button, because Chromium redirects subsequent mouse-derived events (including `click`) to the pointer-capture target once `setPointerCapture` is called. Net effect: a zero-movement tap/click on the Edit button never fires the button's `onClick` handler at all — `setEditingId(card.id)` is never called, and the CardEditor Sheet never opens.
+
+### Evidence
+
+Reproduced deterministically with a throwaway instrumented spec (not committed): `page.getByRole('button', { name: 'Edit' }).first().click()` on a freshly-loaded `/cards` page produced `dialog count: 0` on every run, with the event trace showing `pointerdown target=BUTTON` immediately followed by `pointerup/mouseup/click target=DIV`. Using `locator.dispatchEvent('click')` instead of `.click()` (which fires a synthetic `click` directly rather than a real down/up gesture sequence, so it bypasses the pointer-capture redirection entirely) reliably opens the dialog. This plan's `e2e/freshness-gate.spec.ts` uses `dispatchEvent('click')` for the Edit button specifically to work around this — a test-file-only workaround, no production code touched.
+
+### Scope note
+
+Whether this reproduces with real touch input (mobile Safari/Chrome, the app's primary usage per the developer-profile note "Korean learner, weekly tutor") is unconfirmed — touch-derived compatibility mouse events may follow different retargeting rules than a synthesized desktop mouse click, and this app has shipped and been used with this exact SwipeRow component since the 2026-06 P2 milestone with no prior bug report. This is a real, reproducible desktop-mouse-input bug regardless, and worth a dedicated fix (e.g. only calling `setPointerCapture` after the 5px direction-lock threshold is crossed in `onPointerMove`, not unconditionally on every `onPointerDown`) in a future phase.
+
+### Status
+
+Open — informational, not blocking this plan. `e2e/freshness-gate.spec.ts`'s open-sheet cell works around it via `dispatchEvent('click')`, scoped entirely to the test file.
