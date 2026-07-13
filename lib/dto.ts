@@ -13,6 +13,9 @@ export interface ReviewDTO {
   difficulty: number
   elapsedDays: number
   scheduledDays: number
+  // ts-fsrs's internal (re)learning-step index — see CardReview.learningSteps
+  // doc comment in prisma/schema.prisma for why this must round-trip.
+  learningSteps: number
   reps: number
   lapses: number
   nextReview: string        // ISO string, was Date

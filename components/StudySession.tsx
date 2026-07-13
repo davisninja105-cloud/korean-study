@@ -37,6 +37,9 @@ export interface Card {
     difficulty?: number | null
     elapsedDays?: number | null
     scheduledDays?: number | null
+    // ts-fsrs's internal (re)learning-step index — see CardReview.learningSteps
+    // doc comment in prisma/schema.prisma for why this must round-trip.
+    learningSteps?: number | null
     lapses?: number | null
     nextReview?: string | null
     lastReview?: string | null
@@ -509,6 +512,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
           difficulty: reviewData.difficulty ?? 0,
           elapsedDays: reviewData.elapsedDays ?? 0,
           scheduledDays: reviewData.scheduledDays ?? 0,
+          learningSteps: reviewData.learningSteps ?? 0,
           reps: reviewData.reps ?? 0,
           lapses: reviewData.lapses ?? 0,
           nextReview: new Date(reviewData.nextReview),
@@ -529,6 +533,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
               difficulty: localResult.difficulty,
               elapsedDays: localResult.elapsedDays,
               scheduledDays: localResult.scheduledDays,
+              learningSteps: localResult.learningSteps,
               reps: localResult.reps,
               lapses: localResult.lapses,
               nextReview: localResult.nextReview.toISOString(),

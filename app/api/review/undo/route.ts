@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
       difficulty: prevState.difficulty ?? exists.difficulty,
       elapsedDays: prevState.elapsedDays ?? exists.elapsedDays,
       scheduledDays: prevState.scheduledDays ?? exists.scheduledDays,
+      learningSteps: prevState.learningSteps ?? exists.learningSteps,
       reps: prevState.reps ?? exists.reps,
       lapses: prevState.lapses ?? exists.lapses,
       nextReview: prevState.nextReview ? new Date(prevState.nextReview) : exists.nextReview,
