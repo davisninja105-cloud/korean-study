@@ -11,10 +11,10 @@ Requirements for this milestone. Each maps to roadmap phases.
 
 - [x] **FRESH-01**: A diagnosis spike identifies, per route (`/`, `/cards`, `/study`, `/habits`), exactly which navigation paths serve stale data on a production build (`next build && next start`), distinguishing back/forward Router Cache reuse from client-shell state non-resync
 - [x] **FRESH-02**: Client shells (`HomeClient`, `CardsClient`, `StudyClient`, `HabitsClient`) re-sync to fresh server props delivered by `router.refresh()`, gated so an active study session or open editor sheet is never clobbered mid-interaction
-- [ ] **FRESH-03**: Returning to the Home/Habits/Cards pages after completing a study session reflects the updated stats/due-count/cards immediately, without a manual reload
+- [x] **FRESH-03**: Returning to the Home/Habits/Cards pages after completing a study session reflects the updated stats/due-count/cards immediately, without a manual reload
 - [x] **FRESH-04**: Browser back/forward navigation to a previously-visited route shows fresh data, not a cached stale RSC payload
 - [x] **FRESH-05**: Resuming the app after it was backgrounded (tab/PWA focus) refreshes stale data, covering the case where the daily cron sync ran while the app was in the background
-- [ ] **FRESH-06**: The freshness fix does not regress first-load render speed or reintroduce a loading-state flash on any of the four main routes
+- [x] **FRESH-06**: The freshness fix does not regress first-load render speed or reintroduce a loading-state flash on any of the four main routes
 
 ### E2E Test Infrastructure
 
@@ -69,10 +69,10 @@ Which phases cover which requirements. Updated during roadmap creation.
 |-------------|-------|--------|
 | FRESH-01 | Phase 24 | Complete |
 | FRESH-02 | Phase 26 | Complete |
-| FRESH-03 | Phase 26 | Pending |
+| FRESH-03 | Phase 26 | Complete |
 | FRESH-04 | Phase 26 | Complete |
 | FRESH-05 | Phase 26 | Complete |
-| FRESH-06 | Phase 26 | Pending |
+| FRESH-06 | Phase 26 | Complete |
 | E2E-01 | Phase 25 | Complete |
 | E2E-02 | Phase 25 | Complete |
 | E2E-03 | Phase 25 | Complete |
