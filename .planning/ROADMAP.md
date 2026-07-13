@@ -195,7 +195,7 @@ Plans:
   3. The suite asserts generous API route timing budgets (e.g. `/api/cards/due`) via direct request timing. (PERF-05)
   4. A documented workflow in CLAUDE.md lets Claude Code drive the running dev server interactively via Playwright MCP for exploratory verification. (TOOL-01)
 
-**Plans**: 1/3 plans executed
+**Plans**: 2/3 plans executed
 
 Plans:
 **Wave 1**
@@ -205,7 +205,7 @@ Plans:
 
 **Wave 2** *(blocked on 27-01 — shares the port-3100 harness + test DB at runtime)*
 
-- [ ] 27-02-PLAN.md — e2e/perf.spec.ts: median-of-5 page-load budgets on 4 routes (PERF-04, ~3s) + authenticated API round-trip budgets on 3 routes (PERF-05, ~1s) with per-sample vacuity guards, falsifiability probe, and full-suite run
+- [x] 27-02-PLAN.md — e2e/perf.spec.ts: median-of-5 page-load budgets on 4 routes (PERF-04, ~3s) + authenticated API round-trip budgets on 3 routes (PERF-05, ~1s) with per-sample vacuity guards, falsifiability probe, and full-suite run
 
 ## Progress
 
@@ -241,7 +241,7 @@ Phases execute in numeric order: 1 → 2 → ... → 23 (all complete) → 24 �
 | 24. Freshness Diagnosis Spike | v1.6 | 2/2 | Complete    | 2026-07-11 |
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 3/3 | Complete    | 2026-07-12 |
 | 26. Freshness Fix | v1.6 | 6/6 | Complete    | 2026-07-13 |
-| 27. E2E Coverage & Performance Validation | v1.6 | 1/3 | In Progress|  |
+| 27. E2E Coverage & Performance Validation | v1.6 | 2/3 | In Progress|  |
 
 ---
 *Last updated: 2026-07-12 — Phase 26 gap closure planned: 3 additional plans across waves 4-5 (FRESH-02 automated gate cells ∥ JSON re-fetch delivery backstop → formal acceptance re-run). Driven by 26-VERIFICATION.md (score 2/5) + deferred-items.md; implements the locked user decision (JSON backstop, no rejected-approach retries, no auto-fallback override). Ready to execute Phase 26 waves 4-5.*
