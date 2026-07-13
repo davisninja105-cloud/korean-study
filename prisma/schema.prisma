@@ -78,6 +78,12 @@ model CardReview {
   difficulty    Float     @default(0)
   elapsedDays   Int       @default(0)
   scheduledDays Int       @default(0)
+  // ts-fsrs's internal (re)learning-step index (Card.learning_steps in ts-fsrs's
+  // own type) — NOT the app's FSRSParameters.learning_steps config array. Must be
+  // round-tripped through every review or a card graded within the Learning/
+  // Relearning phase is silently reconstructed at step 0 on its NEXT review and
+  // never advances past the first learning interval (E2E-05 finding, Phase 27).
+  learningSteps Int       @default(0)
   reps          Int       @default(0)
   lapses        Int       @default(0)
   nextReview    DateTime  @default(now())
@@ -110,6 +116,7 @@ model ReviewLog {
   difficulty     Float
   elapsedDays    Int
   scheduledDays  Int
+  learningSteps  Int      @default(0) // see CardReview.learningSteps doc comment
   reps           Int
   lapses         Int
   nextReview     DateTime

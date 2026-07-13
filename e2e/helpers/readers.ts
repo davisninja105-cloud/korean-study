@@ -62,16 +62,15 @@ export async function readHomeState(page: Page): Promise<string> {
 /**
  * Study select-mode due-count reader.
  *
- * KNOWN-FRAGILE LOCATOR (25-RESEARCH.md Ambiguity 3): `p.text-5xl.font-bold.
- * animate-reveal` is 100% presentational — no semantic-token class
- * (text-reward / bg-surface-*) exists on this element per
- * components/StudyClient.tsx:251, so this locator has no stable-token
- * anchor to fall back to and stays a straight port. Accepted as a known
- * limitation for this phase; a future phase adding `data-testid` attributes
- * would close this gap cleanly.
+ * FORMERLY KNOWN-FRAGILE LOCATOR (25-RESEARCH.md Ambiguity 3): this reader
+ * used to anchor on `p.text-5xl.font-bold.animate-reveal` — 100%
+ * presentational, no semantic-token class (text-reward / bg-surface-*)
+ * available as a stable fallback. Phase 27 closed this gap by adding
+ * `data-testid="due-count"` to the element (components/StudyClient.tsx),
+ * so this reader now anchors on the testid instead.
  */
 export async function readStudySelectModeState(page: Page): Promise<string> {
-  const countLocator = page.locator('p.text-5xl.font-bold.animate-reveal')
+  const countLocator = page.getByTestId('due-count')
   if (await waitVisible(countLocator)) {
     return ((await countLocator.first().textContent({ timeout: 10_000 })) ?? '').trim()
   }

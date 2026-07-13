@@ -29,6 +29,7 @@ export default function ModeSelector({ cardCount, onSelect }: Props) {
         {modes.map((mode) => (
           <div key={mode.value}>
             <button
+              data-testid={`mode-${mode.value}`}
               onClick={() => onSelect(mode.value, includeAI, flashcardSubMode)}
               className="w-full flex flex-col items-center bg-surface-1 border-2 border-border rounded-xl p-5 font-semibold text-foreground hover:border-button hover:bg-button-soft transition-colors text-lg"
             >

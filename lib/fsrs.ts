@@ -11,6 +11,9 @@ type PartialReview = {
   difficulty?: number | null
   elapsedDays?: number | null
   scheduledDays?: number | null
+  // ts-fsrs's internal (re)learning-step index — see CardReview.learningSteps
+  // doc comment in prisma/schema.prisma for why this must round-trip.
+  learningSteps?: number | null
   reps?: number | null
   lapses?: number | null
   nextReview?: Date | string | null
@@ -65,6 +68,7 @@ export function previewIntervalLabels(
       difficulty: review!.difficulty ?? 0,
       elapsed_days: review!.elapsedDays ?? 0,
       scheduled_days: review!.scheduledDays ?? 0,
+      learning_steps: review!.learningSteps ?? 0,
       reps: review!.reps ?? 0,
       lapses: review!.lapses ?? 0,
       due: toDate(review!.nextReview) ?? now,
@@ -93,6 +97,9 @@ interface CardReviewFields {
   difficulty: number
   elapsedDays: number
   scheduledDays: number
+  // ts-fsrs's internal (re)learning-step index — see CardReview.learningSteps
+  // doc comment in prisma/schema.prisma for why this must round-trip.
+  learningSteps: number
   reps: number
   lapses: number
   nextReview: Date
@@ -114,6 +121,7 @@ export function reviewCard(review: CardReviewFields, rating: Grade) {
       difficulty: review.difficulty,
       elapsed_days: review.elapsedDays,
       scheduled_days: review.scheduledDays,
+      learning_steps: review.learningSteps,
       reps: review.reps,
       lapses: review.lapses,
       due: review.nextReview,
@@ -131,6 +139,7 @@ export function reviewCard(review: CardReviewFields, rating: Grade) {
     difficulty: result.card.difficulty,
     elapsedDays: result.card.elapsed_days,
     scheduledDays: result.card.scheduled_days,
+    learningSteps: result.card.learning_steps,
     reps: result.card.reps,
     lapses: result.card.lapses,
     nextReview: result.card.due,
