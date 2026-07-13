@@ -163,6 +163,18 @@ Local dev uses `.env` / `.env.local`. Required keys:
 - `KOREAN_BLOB_READ_WRITE_TOKEN` — Vercel Blob store token for TTS MP3 caching (must be a **public** store; route also checks `BLOB_READ_WRITE_TOKEN` as fallback). Set in `.env.local` and Vercel env. When missing, `/api/tts` returns 503 and `AudioButton` falls back to browser speech.
 - For `TTS_PROVIDER=google`: the Cloud Text-to-Speech API must be enabled on the GCP project that owns `GOOGLE_SERVICE_ACCOUNT_KEY`; the token is minted with `cloud-platform` scope in `lib/tts.ts` (no new credentials needed).
 
+## Playwright MCP (agent-driven exploratory QA)
+
+One-time registration (already done for this project): `claude mcp add playwright npx @playwright/mcp@latest`. Server flags (e.g. `--headless`) require a `--` separator: `claude mcp add playwright -- npx @playwright/mcp@latest --headless`; the flagless form above needs none.
+
+**Target:** start `npm run dev` first — MCP drives whatever is running at `localhost:3000`. This is distinct from the isolated E2E harness's prod-build server on port 3100 (`npx playwright test`), which runs against a throwaway `file:` SQLite DB. MCP sessions hit the developer's real dev DB (`DATABASE_URL` in `.env`), so grades/edits made through MCP are real FSRS writes — an accepted tradeoff for exploratory QA, not a bug. Prefer navigate/snapshot over grading when just poking around.
+
+**Login:** navigate to `http://localhost:3000` (redirects to `/login`), enter the password stored in `APP_PASSWORD` (`.env.local`) — never write the literal value into this file.
+
+**Example tool calls** (verified against @playwright/mcp 0.0.78): `browser_navigate` (go to a URL), `browser_snapshot` (accessibility-tree read — the token-cheap default for inspecting page state), `browser_type` (fill the password field), `browser_click` (submit / interact).
+
+MCP servers load at Claude Code session start — registering or re-registering the server requires a fresh session before the new tools appear.
+
 ## Gotchas / conventions
 
 - **Vercel function timeout is 60 s hard limit on Hobby plan** — `maxDuration = 300` in the route code has no effect on Hobby. Keep each sync request to 1 lesson. Use `local-resync.mts` for bulk operations.
