@@ -188,10 +188,15 @@ test('Active mode + AI practice: practice card degrades to Passive face, never l
       // new real card uses.
       await expect(page.getByTestId('active-prompt')).toHaveCount(0)
       await expect(page.getByTestId('hint-reveal-btn')).toHaveCount(0)
-      // The un-revealed front must never contain the mixed Korean+English
-      // answer text — this is exactly what the pre-fix word-production
-      // branch would have shown as the "translate this" prompt.
-      await expect(page.locator('body')).not.toContainText(mockBack)
+      // The un-revealed FRONT face must never contain the mixed Korean+English
+      // answer text — this is exactly what the pre-fix word-production branch
+      // would have shown as the "translate this" prompt. Scoped to
+      // `.card-flip-front` (not `body`): the 3D flip card keeps the back face
+      // present in the DOM at all times (rotated out of view via CSS, not
+      // unmounted) for the flip animation, so a body-wide text check would
+      // false-positive on the back face's own (expected, unchanged) reveal
+      // content.
+      await expect(page.locator('.card-flip-front')).not.toContainText(mockBack)
     }
 
     await page.getByTestId('reveal-btn').click()
