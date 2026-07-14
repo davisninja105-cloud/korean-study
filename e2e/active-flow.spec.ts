@@ -16,7 +16,7 @@
  *
  * ORDERING SAFEGUARD (matches smoke.spec.ts:9-13 / grade-flow.spec.ts): this
  * file sorts alphabetically FIRST in the e2e suite. It self-resets to the
- * seeded baseline in `beforeAll`, THEN promotes one due card to production —
+ * seeded baseline in `beforeEach`, THEN promotes one due card to production —
  * reset before mutation, in that order — so it is safe regardless of which
  * other spec files ran first or Playwright's file-discovery order.
  *
@@ -25,13 +25,21 @@
  * at wall-clock-dependent points), so this spec uses a bounded
  * loop-until-complete (hard cap `MAX_GRADES`, break on the completion
  * heading) and asserts lower bounds, never exact totals.
+ *
+ * `beforeEach` (not `beforeAll`, CR-01/WR-03 regression test addition): the
+ * first test below grades every seeded due card to completion, which would
+ * leave zero due cards for a second test in this file (StudyClient only
+ * fetches AI practice when `studyCards.length > 0`). Matches the
+ * `beforeEach(resetToBaseline)` pattern already used by
+ * e2e/freshness-gate.spec.ts, which has the same multi-test-per-file /
+ * fresh-due-state need.
  */
 
 import { test, expect } from '@playwright/test'
 import { resetToBaseline } from './seed'
 import { seededDueReviewsPersisted, promoteOneDueCardToProduction } from './helpers/mutate'
 
-test.beforeAll(async () => {
+test.beforeEach(async () => {
   await resetToBaseline()
   // Mutation AFTER reset, in that order (Pitfall N-1) — promotes exactly one
   // seeded due card (state 1 -> 2) so this session has a production-eligible
@@ -119,4 +127,81 @@ test('Active mode: toggle entry, production front, hint flow, pinned reveal, sil
   // POST /api/review save landed — so UI state alone cannot prove
   // persistence.
   await expect.poll(() => seededDueReviewsPersisted(), { timeout: 15_000 }).toBe('all-persisted')
+})
+
+/**
+ * CR-01/WR-03 regression test: Active mode + "Include AI-generated practice
+ * questions" is a reachable combination in the shipped UI (the checkbox is
+ * deliberately independent of the Passive/Active toggle, D-04) that used to
+ * break the production mechanic — `deriveActiveFace` special-cased practice
+ * cards to the word-production face on the assumption that `PracticeCard.back`
+ * is a clean English gloss and `PracticeCard.front` is a bare Korean word,
+ * neither of which holds for `lib/generate-practice.ts`'s actual output
+ * (`front` is a Korean instruction, `back` is mixed Korean+English). The CR-01
+ * fix routes ALL practice cards to `passive-degrade` unconditionally, so this
+ * test asserts the practice card never shows the Active production front/hint
+ * controls and never leaks the mixed-language answer text before reveal.
+ *
+ * Mocks POST /api/generate (page.route) rather than hitting the real Claude
+ * API, both for determinism and to pin the exact PracticeCard shape under
+ * test — `back` deliberately mirrors generate-practice.ts's documented
+ * "Korean + English" shape.
+ */
+test('Active mode + AI practice: practice card degrades to Passive face, never leaks the answer pre-reveal (CR-01)', async ({ page }) => {
+  const mockBack = '저는 학교에 걸어서 갔어요 (I walked to school)'
+  await page.route('**/api/generate', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        practice: [
+          {
+            type: 'fill-blank',
+            front: '다음 문장을 완성하세요: 저는 학교에 ___ 갔어요.',
+            back: mockBack,
+          },
+        ],
+      }),
+    })
+  })
+
+  await page.goto('/study')
+  await page.getByTestId('start-studying-btn').click()
+  await page.getByTestId('mode-active').click()
+  await page.getByLabel('Include AI-generated practice questions').check()
+  await page.getByTestId('begin-session-btn').click()
+
+  const MAX_GRADES = 26 // same real-card headroom as the test above, +1 for the single mocked practice card
+  let grades = 0
+  let practiceCardSeen = false
+
+  while (grades < MAX_GRADES) {
+    const revealOrComplete = page.getByTestId('reveal-btn').or(page.getByTestId('session-complete-heading'))
+    await revealOrComplete.first().waitFor({ state: 'visible' })
+
+    if (await page.getByTestId('session-complete-heading').isVisible()) break
+
+    if (await page.getByText('AI Practice').isVisible()) {
+      practiceCardSeen = true
+      // CR-01: no Active production front, no hint control — the practice
+      // card must render via the exact same silent Passive/exposure face a
+      // new real card uses.
+      await expect(page.getByTestId('active-prompt')).toHaveCount(0)
+      await expect(page.getByTestId('hint-toggle')).toHaveCount(0)
+      // The un-revealed front must never contain the mixed Korean+English
+      // answer text — this is exactly what the pre-fix word-production
+      // branch would have shown as the "translate this" prompt.
+      await expect(page.locator('body')).not.toContainText(mockBack)
+    }
+
+    await page.getByTestId('reveal-btn').click()
+    await expect(page.getByTestId('grade-good')).toBeVisible()
+    await page.getByTestId('grade-good').click()
+    grades++
+  }
+
+  await expect(page.getByTestId('session-complete-heading')).toHaveText('Session complete!')
+
+  // A vacuous pass where the mocked practice card was never reached must fail.
+  expect(practiceCardSeen).toBe(true)
 })
