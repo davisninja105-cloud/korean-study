@@ -4,9 +4,10 @@
  * FlashcardMode
  * =============
  * Presentational sub-component for the flashcard study mode. Renders the 3D
- * flip card (front: Exposure bare-word / Recall blanked / sentence; back:
- * revealed answer + sentence) and its own sticky action bar (Show Answer, or
- * the four FSRS grade buttons Again/Hard/Good/Easy).
+ * flip card (front: bare-word / sentence; back: revealed answer + sentence)
+ * and its own sticky action bar (Show Answer, or the four FSRS grade buttons
+ * Again/Hard/Good/Easy). Shared by both Passive and Active — Active's
+ * production-mode front/back branches land in Plan 28-02.
  *
  * Pure presentation — owns NO session state. The parent StudySession retains
  * queue/stats/undo/saveError and all useMemo/handlers (RESEARCH Pitfall 4).
@@ -22,7 +23,6 @@
 import HighlightedSentence from './HighlightedSentence'
 import AudioButton from './AudioButton'
 import { useWordTap } from './GlossProvider'
-import { type FlashcardSubMode } from './ModeSelector'
 import { type Card, type PracticeCard, type Sentence } from './StudySession'
 
 interface Props {
@@ -34,11 +34,9 @@ interface Props {
   backRef: React.RefObject<HTMLDivElement | null>
   againBtnRef: React.RefObject<HTMLButtonElement | null>
   cursor: number
-  flashcardSubMode: FlashcardSubMode
   showBareFront: boolean
   chosenSentence: Sentence | null
   displayedSentence: Sentence | null
-  recallBlanked: string | null
   hasMultipleSentences: boolean
   hints: { short: string; mastery: string }[] | null
   onReveal: () => void
@@ -55,11 +53,9 @@ export default function FlashcardMode({
   backRef,
   againBtnRef,
   cursor,
-  flashcardSubMode,
   showBareFront,
   chosenSentence,
   displayedSentence,
-  recallBlanked,
   hasMultipleSentences,
   hints,
   onReveal,
@@ -87,33 +83,24 @@ export default function FlashcardMode({
                   <AudioButton text={card.front} aria-label={`Play: ${card.front}`} size="sm" />
                 </div>
               ) : chosenSentence ? (
-                // Matured card (state 2/3) or Recall mode: existing sentence-on-front logic unchanged.
-                flashcardSubMode === 'recall' && recallBlanked ? (
-                  <>
-                    <p className="hangul-sentence text-foreground font-medium text-center text-2xl">
-                      {recallBlanked}
-                    </p>
-                    <p className="text-xs text-muted text-center">Recall the missing word</p>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-start justify-center gap-1">
-                      <HighlightedSentence
-                        korean={chosenSentence.korean}
-                        targetForm={chosenSentence.targetForm}
-                        cardType={card.type}
-                        className="font-medium text-center text-2xl text-foreground"
-                        onWordTap={onWordTap}
-                      />
-                      <AudioButton
-                        text={chosenSentence.korean}
-                        aria-label={`Play sentence: ${chosenSentence.korean}`}
-                        size="sm"
-                      />
-                    </div>
-                    <p className="text-xs text-muted text-center">Recall the meaning of the highlighted part</p>
-                  </>
-                )
+                // Matured card (state 2/3): sentence-on-front.
+                <>
+                  <div className="flex items-start justify-center gap-1">
+                    <HighlightedSentence
+                      korean={chosenSentence.korean}
+                      targetForm={chosenSentence.targetForm}
+                      cardType={card.type}
+                      className="font-medium text-center text-2xl text-foreground"
+                      onWordTap={onWordTap}
+                    />
+                    <AudioButton
+                      text={chosenSentence.korean}
+                      aria-label={`Play sentence: ${chosenSentence.korean}`}
+                      size="sm"
+                    />
+                  </div>
+                  <p className="text-xs text-muted text-center">Recall the meaning of the highlighted part</p>
+                </>
               ) : (
                 // No sentences at all: bare-word block unchanged.
                 <div className="flex items-center justify-center gap-2">

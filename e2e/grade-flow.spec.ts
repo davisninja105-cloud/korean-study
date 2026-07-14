@@ -37,7 +37,19 @@ test.beforeAll(async () => {
 test('full flashcard session: reveal → grade → queue advance → completion', async ({ page }) => {
   await page.goto('/study')
   await page.getByTestId('start-studying-btn').click() // opens the mode Sheet
-  await page.getByTestId('mode-flashcard').click() // Exposure is the default sub-mode (D-03)
+
+  // MODE-02: Passive is selected by default, before any interaction.
+  await expect(page.getByTestId('mode-passive')).toHaveAttribute('aria-pressed', 'true')
+
+  // MODE-01: the retired modes (Multiple Choice, standalone Fill-in-the-Blank)
+  // are fully gone from the DOM — a stronger assertion than a source grep.
+  await expect(page.getByTestId('mode-multiple-choice')).toHaveCount(0)
+  await expect(page.getByTestId('mode-fill-blank')).toHaveCount(0)
+
+  // Deliberate mode pick per CONTEXT integration note — do not rely on the
+  // default for session entry.
+  await page.getByTestId('mode-passive').click()
+  await page.getByTestId('begin-session-btn').click()
 
   const frontsSeen = new Set<string>()
   const MAX_GRADES = 25 // 3 cards × worst-case requeues, with generous headroom
