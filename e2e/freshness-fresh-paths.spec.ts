@@ -122,8 +122,11 @@ async function gradeAllDueCardsToCompletion(page: Page): Promise<void> {
   await ensureAllSeededReviewsDue()
   await page.goto('/study')
   await page.waitForLoadState('networkidle')
+  // Pick Passive (D-14 — the 3-mode grid + "Flashcards" button no longer
+  // exist post-Plan 28-01; the mode Sheet is now a single Passive/Active toggle).
   await page.getByRole('button', { name: 'Start studying →' }).click()
-  await page.getByRole('button', { name: /Flashcards/ }).click()
+  await page.getByTestId('mode-passive').click()
+  await page.getByTestId('begin-session-btn').click()
 
   let reachedCompletion = false
   for (let i = 0; i < 20; i++) {

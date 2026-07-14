@@ -134,6 +134,29 @@ export async function promoteOneReviewToMasteredDirect(): Promise<void> {
   }
 }
 
+/**
+ * Phase 28-02 (Pitfall N-1 / Open Q1): the seeded due `CardReview` rows are
+ * all `state: 1`, so a naive Active-mode e2e spec would only ever see the
+ * ACTIVE-05 passive-degrade face — the production face would be
+ * unreachable, and the spec would pass vacuously. This promotes ONE
+ * currently-due review (state <= 1) to `state: 2`, leaving `nextReview`
+ * UNTOUCHED so the card stays due — unlike `promoteOneReviewToMasteredDirect`
+ * above, which deliberately pins `scheduledDays` so the card is never due
+ * again. Does not touch `FIXTURE.dueCards`/`FIXTURE.masteredCards` — smoke
+ * and freshness specs derive their expectations from those counts, and this
+ * mutation changes neither the due-count nor the mastered-count query
+ * results (mastered requires `scheduledDays >= 21`, which this never sets).
+ */
+export async function promoteOneDueCardToProductionDirect(): Promise<void> {
+  const prisma = await getTestPrisma()
+  const candidate = await prisma.cardReview.findFirst({
+    where: { nextReview: { lte: new Date() }, state: { lte: 1 } },
+  })
+  if (candidate) {
+    await prisma.cardReview.update({ where: { id: candidate.id }, data: { state: 2 } })
+  }
+}
+
 // Since this module has no seededCardIds array in scope (unlike the
 // throwaway script), this updates ALL CardReview rows unconditionally —
 // safe here because resetToBaseline() (called in every spec's beforeEach)
@@ -206,6 +229,10 @@ export async function createMutationCard(): Promise<void> {
 
 export async function promoteOneReviewToMastered(): Promise<void> {
   runMutateOp('promoteOneReviewToMastered')
+}
+
+export async function promoteOneDueCardToProduction(): Promise<void> {
+  runMutateOp('promoteOneDueCardToProduction')
 }
 
 export async function ensureAllSeededReviewsDue(): Promise<void> {

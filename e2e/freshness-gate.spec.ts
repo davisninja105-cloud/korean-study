@@ -42,9 +42,11 @@ test('/study mid-session boundary refresh never clobbers the active session (FRE
   // Select-mode shows the due count (FIXTURE.dueCards = 3).
   await expect(page.locator('p.text-5xl.font-bold.animate-reveal')).toHaveText(String(FIXTURE.dueCards))
 
-  // Start a real session: open the mode Sheet, pick Flashcards.
+  // Start a real session: open the mode Sheet, pick Passive (D-14 — the
+  // 3-mode grid + "Flashcards" button no longer exist post-Plan 28-01).
   await page.getByRole('button', { name: 'Start studying →' }).click()
-  await page.getByRole('button', { name: /Flashcards/ }).click()
+  await page.getByTestId('mode-passive').click()
+  await page.getByTestId('begin-session-btn').click()
 
   // Wait for the flashcard face to render.
   await expect(page.getByRole('button', { name: 'Show Answer' })).toBeVisible()
