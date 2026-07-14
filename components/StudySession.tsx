@@ -5,6 +5,7 @@ import { StudyMode } from './ModeSelector'
 import { habitDateStr, DEFAULT_DAY_START_HOUR, nextHabitDayStart } from '@/lib/habit'
 import FlashcardMode from './FlashcardMode'
 import { selectSentence } from '@/lib/sentence-selection'
+import { deriveActiveFace } from '@/lib/active-prompt'
 import { previewIntervalLabels, reviewCard, type Grade } from '@/lib/fsrs'
 import { haptic } from '@/lib/haptics'
 import { typeBadgeClass } from '@/lib/card-style'
@@ -162,6 +163,11 @@ export default function StudySession({ cards, extraPractice, mode, onComplete }:
   const [cursor, setCursor] = useState(0)
 
   const [revealed, setRevealed] = useState(false)
+  // Active mode's hidden-until-tapped hint control (ACTIVE-02). Parent-owned
+  // (REFACTOR-01 — FlashcardMode is not remounted per card, only its inner
+  // key={cursor} div is, so a local useState there would leak across cards).
+  // Reset alongside `revealed` on both advance (submitReview) and undo.
+  const [hintRevealed, setHintRevealed] = useState(false)
   const [stats, setStats] = useState({ reviewed: 0, correct: 0, incorrect: 0 })
   // "See another example →": cycles through a card's extra sentences on the reveal side
   const [exampleOffset, setExampleOffset] = useState(0)
@@ -329,6 +335,13 @@ export default function StudySession({ cards, extraPractice, mode, onComplete }:
   // chosenSentence = selected for this review
   const chosenSentence = chosenIdx >= 0 ? cardSentences[chosenIdx] : null
 
+  // Active mode's face derivation (ACTIVE-01..05, D-15). Derived in render
+  // scope from queue[0]-derived values — never snapshotted, so a requeued
+  // card re-derives its face on every render (Pitfall N-3): a state-1 card
+  // graded up mid-session flips from passive-degrade to production on its
+  // next appearance, and a lapsed card keeps degrading.
+  const activeFace = deriveActiveFace(currentCard, chosenSentence, isNewCard, isPractice)
+
   // Show the bare Korean word on the front only when the card is new AND
   // the best available sentence still contains words the learner hasn't seen yet.
   // Once all context words are known (unknownCount === 0), show the sentence directly
@@ -491,6 +504,7 @@ export default function StudySession({ cards, extraPractice, mode, onComplete }:
     setQueue(nextQueue)
     setCursor((c) => c + 1)
     setRevealed(false)
+    setHintRevealed(false)
     setExampleOffset(0)
     setIntervalHints(null)
   }
@@ -541,6 +555,7 @@ export default function StudySession({ cards, extraPractice, mode, onComplete }:
     setSeenCount(prevSeenCount)
     setCursor((c) => c + 1)
     setRevealed(false)
+    setHintRevealed(false)
     setIntervalHints(null)
   }
 
@@ -648,6 +663,10 @@ export default function StudySession({ cards, extraPractice, mode, onComplete }:
         onReveal={handleReveal}
         onGrade={submitReview}
         onCycleExample={() => setExampleOffset((o) => o + 1)}
+        studyMode={mode}
+        activeFace={activeFace}
+        hintRevealed={hintRevealed}
+        onToggleHint={() => setHintRevealed(true)}
       />
     </div>
   )

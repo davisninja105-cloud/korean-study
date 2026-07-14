@@ -4,26 +4,43 @@
  * FlashcardMode
  * =============
  * Presentational sub-component for the flashcard study mode. Renders the 3D
- * flip card (front: bare-word / sentence; back: revealed answer + sentence)
- * and its own sticky action bar (Show Answer, or the four FSRS grade buttons
- * Again/Hard/Good/Easy). Shared by both Passive and Active — Active's
- * production-mode front/back branches land in Plan 28-02.
+ * flip card and its own sticky action bar (Show Answer, or the four FSRS
+ * grade buttons Again/Hard/Good/Easy). Shared by both Passive and Active:
+ *
+ * - Passive faces (front: bare-word / sentence; back: revealed answer +
+ *   sentence, with the "See another example →" cycle control) — unchanged
+ *   from the pre-Active surface.
+ * - Active faces (`studyMode === 'active' && activeFace.face !== 'passive-degrade'`):
+ *   front shows an English prompt (`activeFace.prompt`) with an optional
+ *   hidden-until-tapped hint pill (sentence-production only — the hint would
+ *   be circular for word-production, since the prompt already IS the
+ *   English gloss); back pins the reveal to `chosenSentence` (never the
+ *   cycling `displayedSentence`) with a grade-anchoring caption, or to the
+ *   bare word/gloss block for the word-production fallback (practice cards,
+ *   and any matured real card with zero sentences).
+ * - A state <= 1 real card in Active mode silently falls through to the
+ *   exact same Passive branches as a genuine Passive session — no badge, no
+ *   copy, byte-identical rendering (D-03/D-10 — the ACTIVE-05 new-card gate).
  *
  * Pure presentation — owns NO session state. The parent StudySession retains
- * queue/stats/undo/saveError and all useMemo/handlers (RESEARCH Pitfall 4).
- * The only hook called here is `useWordTap()` (tap-to-gloss), matching the
- * pattern of the pre-refactor inline JSX (RESEARCH Pitfall 3: each mode owns
- * its full sticky action-bar wrapper; no shared slot abstraction).
+ * queue/stats/undo/saveError/hintRevealed and all useMemo/handlers (RESEARCH
+ * Pitfall 4). The only hook called here is `useWordTap()` (tap-to-gloss),
+ * matching the pattern of the pre-refactor inline JSX (RESEARCH Pitfall 3:
+ * each mode owns its full sticky action-bar wrapper; no shared slot
+ * abstraction).
  *
  * The parent-owned measurement refs (`frontRef`/`backRef`) and reveal-focus
  * ref (`againBtnRef`) are threaded through as props so the parent's measuring
  * `useLayoutEffect` and `handleReveal`'s `requestAnimationFrame` focus call
  * keep working unchanged.
  */
+import { Lightbulb } from 'lucide-react'
 import HighlightedSentence from './HighlightedSentence'
 import AudioButton from './AudioButton'
 import { useWordTap } from './GlossProvider'
 import { type Card, type PracticeCard, type Sentence } from './StudySession'
+import { type StudyMode } from './ModeSelector'
+import { type ActiveFace } from '@/lib/active-prompt'
 
 interface Props {
   card: Card | PracticeCard
@@ -42,6 +59,10 @@ interface Props {
   onReveal: () => void
   onGrade: (rating: number) => void
   onCycleExample: () => void
+  studyMode: StudyMode
+  activeFace: ActiveFace
+  hintRevealed: boolean
+  onToggleHint: () => void
 }
 
 export default function FlashcardMode({
@@ -61,6 +82,10 @@ export default function FlashcardMode({
   onReveal,
   onGrade,
   onCycleExample,
+  studyMode,
+  activeFace,
+  hintRevealed,
+  onToggleHint,
 }: Props) {
   // Tap-to-gloss callback (undefined when GlossProvider not mounted — safe).
   // Sole hook permitted in mode components per RESEARCH Pitfall 4.
@@ -76,7 +101,38 @@ export default function FlashcardMode({
               <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
                 {card.type}
               </span>
-              {showBareFront ? (
+              {studyMode === 'active' && activeFace.face !== 'passive-degrade' ? (
+                // Active production faces (ACTIVE-01/03, D-07). English prompt,
+                // NO hangul/Korean styling, no highlight, no audio (nothing
+                // Korean to play pre-reveal). The hint pill only makes sense
+                // for the sentence-production face — for word-production the
+                // prompt already IS the English gloss, so a hint would just
+                // repeat it (P-03).
+                <>
+                  <p data-testid="active-prompt" className="font-medium text-center text-2xl text-foreground">
+                    {activeFace.prompt}
+                  </p>
+                  {activeFace.face === 'sentence-production' && (
+                    <>
+                      <button
+                        type="button"
+                        data-testid="hint-toggle"
+                        onClick={onToggleHint}
+                        className="inline-flex items-center gap-1 py-2 px-3 text-button"
+                      >
+                        <Lightbulb className="w-4 h-4" />
+                        {!hintRevealed && <span className="text-sm font-semibold">Show hint</span>}
+                      </button>
+                      {hintRevealed && (
+                        <p data-testid="hint-text" className="text-base italic text-muted-foreground animate-reveal">
+                          Hint: {card.back}
+                        </p>
+                      )}
+                    </>
+                  )}
+                  <p className="text-xs text-muted text-center">Translate this, then reveal</p>
+                </>
+              ) : showBareFront ? (
                 // New card whose context words aren't all known yet: bare word on front.
                 <div className="flex items-center justify-center gap-2">
                   <p className="hangul text-5xl font-bold text-foreground text-center">{card.front}</p>
@@ -119,7 +175,66 @@ export default function FlashcardMode({
               <span className={`text-xs font-semibold px-2 py-1 rounded-full ${typeBadgeColor}`}>
                 {card.type}
               </span>
-              {chosenSentence ? (
+              {studyMode === 'active' && activeFace.face === 'sentence-production' && chosenSentence ? (
+                // Active sentence-production reveal (ACTIVE-03, D-15): pinned
+                // to chosenSentence — NEVER the cycling displayedSentence —
+                // since the reveal must stay pinned to the sentence the
+                // English prompt was translated from (D-02). Keeps the
+                // word/gloss block (card-front-word testid, Open Q2) but
+                // drops the redundant sentence-translation line (it was the
+                // prompt just read) and adds the grade-anchoring caption.
+                <div className="flex flex-col items-center gap-4 w-full">
+                  <div className="flex items-start justify-center gap-1">
+                    <HighlightedSentence
+                      korean={chosenSentence.korean}
+                      targetForm={chosenSentence.targetForm}
+                      cardType={card.type}
+                      className="text-xl text-muted-foreground text-center"
+                      onWordTap={onWordTap}
+                    />
+                    <AudioButton
+                      text={chosenSentence.korean}
+                      aria-label={`Play sentence: ${chosenSentence.korean}`}
+                      size="sm"
+                    />
+                  </div>
+                  <hr className="w-full border-border" />
+                  <div className="flex items-center justify-center gap-2">
+                    <p data-testid="card-front-word" className="hangul text-3xl font-bold text-foreground text-center">{card.front}</p>
+                    <AudioButton
+                      text={card.front}
+                      aria-label={`Play: ${card.front}`}
+                      size="sm"
+                    />
+                  </div>
+                  <p className="text-xl text-muted-foreground text-center">{card.back}</p>
+                  {card.notes && (
+                    <p className="text-sm text-muted text-center italic">{card.notes}</p>
+                  )}
+                  <p data-testid="active-anchor-caption" className="text-xs text-muted text-center">
+                    Grade yourself on the highlighted expression — wording or word order can differ.
+                  </p>
+                </div>
+              ) : studyMode === 'active' && activeFace.face === 'word-production' ? (
+                // Active word-production reveal (P-03): existing bare-word
+                // back rendering — no anchor caption (a bare word needs no
+                // sentence-anchoring disambiguation).
+                <div className="flex flex-col items-center gap-4 w-full">
+                  <div className="flex items-center justify-center gap-2">
+                    <p data-testid="card-front-word" className="hangul text-5xl font-bold text-foreground text-center">{card.front}</p>
+                    <AudioButton
+                      text={card.front}
+                      aria-label={`Play: ${card.front}`}
+                      size="sm"
+                    />
+                  </div>
+                  <hr className="w-full border-border" />
+                  <p className="text-xl text-muted-foreground text-center">{card.back}</p>
+                  {card.notes && (
+                    <p className="text-sm text-muted text-center italic">{card.notes}</p>
+                  )}
+                </div>
+              ) : chosenSentence ? (
                 <div className="flex flex-col items-center gap-4 w-full">
                   {displayedSentence && (
                     <div className="flex items-start justify-center gap-1">
@@ -157,6 +272,7 @@ export default function FlashcardMode({
                   )}
                   {hasMultipleSentences && (
                     <button
+                      data-testid="cycle-example-btn"
                       onClick={onCycleExample}
                       className="text-xs text-button hover:text-button-hover hover:underline mt-1"
                     >
