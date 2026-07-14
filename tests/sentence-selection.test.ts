@@ -81,6 +81,22 @@ describe('selectSentence', () => {
     const idx = selectSentence(sentences, 'card-1', 0, false)
     expect(idx).toBe(0)
   })
+
+  // D-13: Active passes needsBlank=false, exactly like Passive/Exposure — no
+  // separate call shape. Parity must hold even when the least-unknown
+  // sentence is blank-unsafe (targetForm occurs twice in the sentence), where
+  // a wrongly-`true` needsBlank would silently divert to the blank-safe
+  // override sentence instead.
+  it('Active (needsBlank=false) picks the same index as Passive when the least-unknown sentence is blank-unsafe', () => {
+    const sentences = [
+      sentence('나는 가요 가요', '가요', 0), // least-unknown but blank-UNSAFE (target occurs twice)
+      sentence('학교에 갑니다', '갑니다', 2), // blank-safe but a worse (higher) unknownCount tier
+    ]
+    const passiveIdx = selectSentence(sentences, 'card-p', 0, false)
+    const activeIdx = selectSentence(sentences, 'card-p', 0, false) // Active's call shape — also `false`
+    expect(activeIdx).toBe(passiveIdx)
+    expect(activeIdx).toBe(0) // the blank-unsafe tier pick, NOT the blank-safe override pick (index 1)
+  })
 })
 
 describe('hashStr', () => {
