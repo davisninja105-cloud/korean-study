@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.6
 milestone_name: Freshness, Performance & E2E Testing
-current_phase: 27
-status: verifying
+current_phase: 6
+status: Awaiting next milestone
 stopped_at: Completed 27-03-PLAN.md — Phase 27 fully complete
-last_updated: "2026-07-13T19:09:13.135Z"
-last_activity: 2026-07-13
-last_activity_desc: Phase 27 complete
+last_updated: "2026-07-14T00:44:18.805Z"
+last_activity: 2026-07-14
+last_activity_desc: Milestone v1.6 completed and archived
 progress:
   total_phases: 4
   completed_phases: 4
@@ -28,12 +28,10 @@ See: .planning/PROJECT.md (updated 2026-07-11)
 
 ## Current Position
 
-Phase: 27
-Plan: Not started
-Status: Phase complete — ready for verification
-Last activity: 2026-07-13 - Completed quick task 260713-imz: Performance pass: squeeze /study further and improve page-load times across the app
-
-Progress: [░░░░░░░░░░] 0%
+Phase: Milestone v1.6 complete
+Plan: —
+Status: Awaiting next milestone
+Last activity: 2026-07-14 — Milestone v1.6 completed and archived
 
 ## Performance Metrics
 
@@ -136,4 +134,4 @@ Resume file: None
 
 ## Operator Next Steps
 
-- `/gsd-execute-phase 25` — execute all 3 plans (Wave 1: 25-01 has a blocking package-legitimacy checkpoint; Wave 3: 25-03 has a blocking trace/CR-01/deletion checkpoint).
+- Start the next milestone with /gsd-new-milestone

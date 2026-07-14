@@ -4,7 +4,7 @@
     "gsd-doc-writer": "fable",
     "gsd-codebase-mapper": "fable",
     "gsd-planner": "fable",
-    "gsd-phase-researcher": "sonnet",
+    "gsd-phase-researcher": "fable",
     "gsd-project-researcher": "fable"
   },
   "commit_docs": true,
