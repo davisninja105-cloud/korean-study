@@ -1,20 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.6
-milestone_name: Freshness, Performance & E2E Testing
-current_phase: 6
-status: Awaiting next milestone
-stopped_at: Completed 27-03-PLAN.md — Phase 27 fully complete
-last_updated: "2026-07-14T00:44:18.805Z"
+milestone: v1.7
+milestone_name: Active Recall Study Mode
+status: planning
+last_updated: "2026-07-14T01:10:26.735Z"
 last_activity: 2026-07-14
-last_activity_desc: Milestone v1.6 completed and archived
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 14
-  completed_plans: 14
-  percent: 100
-current_phase_name: e2e-coverage-performance-validation
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -28,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-07-14)
 
 ## Current Position
 
-Phase: Milestone v1.6 complete
+Phase: Not started (defining requirements)
 Plan: —
-Status: Awaiting next milestone
-Last activity: 2026-07-14 — Milestone v1.6 completed and archived
+Status: Defining requirements
+Last activity: 2026-07-14 — Milestone v1.7 started
 
 ## Performance Metrics
 

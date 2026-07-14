@@ -16,6 +16,18 @@ The app is deployed and fully functional. v1.6 diagnosed and fixed a real produc
 
 **Next:** Planning next milestone — run `/gsd-new-milestone`.
 
+## Current Milestone: v1.7 Active Recall Study Mode
+
+**Goal:** Give the study session a real active-recall path — a Passive/Active toggle on the mode-select screen that swaps flashcard exposure for a "translate the English sentence" production exercise — while retiring Multiple Choice and the standalone Fill-in-the-Blank mode.
+
+**Target features:**
+- Passive/Active toggle replaces today's 3-mode grid (Flashcards / Multiple Choice / Fill-in-the-Blank) and the old Exposure/Recall sub-toggle
+- Passive = today's flashcard exposure behavior unchanged (sentence/word shown, tap to reveal, self-rate)
+- Active = new default production mode: English translation shown, Korean fully hidden, tap to reveal correct Korean sentence + audio, self-rate on the same grading bar
+- Multiple Choice fully deleted: `MultipleChoiceMode.tsx`, distractor-selection logic in `StudySession.tsx`, related tests
+- Fill-in-the-Blank retired as a standalone mode (superseded by Active)
+- `Card.distractors` DB column left in place but no longer written (deprecated, like `clozeSentence`/`clozeAnswer`)
+
 <details>
 <summary>v1.6 Freshness, Performance & E2E Testing (archived 2026-07-14)</summary>
 
@@ -126,7 +138,7 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 
 ### Active
 
-(All v1.6 requirements validated and shipped — see Validated above. No active milestone; run `/gsd-new-milestone` to define v1.7 requirements.)
+(v1.7 requirements being defined — see `.planning/REQUIREMENTS.md` once written.)
 
 **Deferred candidates** (raised during v1.2/v1.3/v1.4/v1.5/v1.6, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
