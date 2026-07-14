@@ -118,6 +118,7 @@ export default function FlashcardMode({
                         type="button"
                         data-testid="hint-toggle"
                         onClick={onToggleHint}
+                        aria-label={hintRevealed ? 'Hint shown' : 'Show hint'}
                         className="inline-flex items-center gap-1 py-2 px-3 text-button"
                       >
                         <Lightbulb className="w-4 h-4" />
