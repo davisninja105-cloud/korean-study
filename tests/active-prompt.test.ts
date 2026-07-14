@@ -7,12 +7,21 @@ function card(front: string, back: string) {
 }
 
 describe('deriveActiveFace', () => {
-  // D-15/D-04: practice cards always take the word-production fallback, even
-  // when isNewCard is also true — practice precedes the new-card check
-  // (asserted explicitly with both flags true).
-  it('returns word-production for a practice card even when isNewCard is true', () => {
+  // CR-01: practice cards always degrade to the Passive/exposure face,
+  // regardless of isNewCard or chosenSentence — AI-generated PracticeCard
+  // items have no guaranteed single-language front/back split, so they can
+  // never safely support the production mechanic.
+  it('returns passive-degrade for a practice card even when isNewCard is true', () => {
     const result = deriveActiveFace(card('안녕', 'hello'), { translation: 'Hello there' }, true, true)
-    expect(result).toEqual({ face: 'word-production', prompt: 'hello' })
+    expect(result).toEqual({ face: 'passive-degrade' })
+  })
+
+  // CR-01: a practice card with isNewCard false (shouldn't normally happen,
+  // since practice items have no FSRS state, but the practice check must
+  // still take precedence over the new-card branch either way).
+  it('returns passive-degrade for a practice card even when isNewCard is false', () => {
+    const result = deriveActiveFace(card('안녕', 'hello'), null, false, true)
+    expect(result).toEqual({ face: 'passive-degrade' })
   })
 
   // ACTIVE-05/D-10: a real card that is still new (state <= 1) degrades to

@@ -3,11 +3,19 @@
  * + reveal shape) an Active-mode flashcard should render for the current
  * study item.
  *
- * Precedence (order matters — a practice card is also "new" by the existing
- * `isNewCard` computation, since it has no FSRS review state at all):
- *   1. `isPractice` → word-production, prompt = `card.back`. Practice cards
- *      have no `sentences` field, so they always take the word-level
- *      production fallback — checked BEFORE the new-card check (D-04).
+ * Precedence (order matters):
+ *   1. `isPractice` → passive-degrade, unconditionally (CR-01 fix). AI-generated
+ *      `PracticeCard` items (`lib/generate-practice.ts`) do NOT mirror the real
+ *      `Card.front`/`Card.back` shape — `front` is a Korean instruction/prompt
+ *      (not a bare word) and `back` is mixed Korean+English content (not a
+ *      clean English gloss). Reusing the production mechanic for them either
+ *      leaks the Korean answer into the un-revealed prompt (`card.back` shown
+ *      as the "translate this" text) or renders a broken/oversized reveal
+ *      (`card.front` styled as a single giant bold word). Practice cards have
+ *      no guaranteed single-language field split, so they always render via
+ *      the same silent Passive/exposure face real new cards use — checked
+ *      BEFORE the new-card check since a practice item is also "new" by the
+ *      `isNewCard` computation (no FSRS review state at all).
  *   2. `isNewCard` (state <= 1) → passive-degrade. A never/barely-seen real
  *      card silently renders the existing Passive/exposure face for that
  *      review (D-03/D-10) — checked BEFORE the null-sentence fallback so a
@@ -28,8 +36,8 @@
  */
 
 export type ActiveFace =
-  | { face: 'passive-degrade' } // real card, state <= 1 (D-10)
-  | { face: 'word-production'; prompt: string } // practice card OR matured zero-sentence (D-04)
+  | { face: 'passive-degrade' } // real card, state <= 1 (D-10), or ANY practice card (CR-01)
+  | { face: 'word-production'; prompt: string } // matured real card, zero sentences (D-04)
   | { face: 'sentence-production'; prompt: string } // matured card with a chosen sentence
 
 export function deriveActiveFace(
@@ -38,7 +46,7 @@ export function deriveActiveFace(
   isNewCard: boolean,
   isPractice: boolean,
 ): ActiveFace {
-  if (isPractice) return { face: 'word-production', prompt: card.back }
+  if (isPractice) return { face: 'passive-degrade' }
   if (isNewCard) return { face: 'passive-degrade' }
   if (!chosenSentence) return { face: 'word-production', prompt: card.back }
   return { face: 'sentence-production', prompt: chosenSentence.translation }
