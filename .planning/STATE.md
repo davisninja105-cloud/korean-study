@@ -21,10 +21,10 @@ current_phase_name: e2e-coverage-performance-validation
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-11)
+See: .planning/PROJECT.md (updated 2026-07-14)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 27 — e2e-coverage-performance-validation
+**Current focus:** Planning next milestone — run /gsd-new-milestone
 
 ## Current Position
 
