@@ -1,13 +1,10 @@
 'use client'
 
 import { useState, useMemo, useRef, useEffect, useLayoutEffect } from 'react'
-import { StudyMode, FlashcardSubMode } from './ModeSelector'
+import { StudyMode } from './ModeSelector'
 import { habitDateStr, DEFAULT_DAY_START_HOUR, nextHabitDayStart } from '@/lib/habit'
 import FlashcardMode from './FlashcardMode'
-import MultipleChoiceMode from './MultipleChoiceMode'
-import FillBlankMode from './FillBlankMode'
-import { sentenceMatch, blankSentence } from '@/lib/sentence-match'
-import { selectSentence, hashStr } from '@/lib/sentence-selection'
+import { selectSentence } from '@/lib/sentence-selection'
 import { previewIntervalLabels, reviewCard, type Grade } from '@/lib/fsrs'
 import { haptic } from '@/lib/haptics'
 import { typeBadgeClass } from '@/lib/card-style'
@@ -28,7 +25,6 @@ export interface Card {
   front: string
   back: string
   notes?: string | null
-  distractors?: string | null      // JSON array of wrong English meanings
   sentences?: Sentence[]
   review?: {
     reps?: number | null
@@ -53,36 +49,9 @@ export interface PracticeCard {
   notes?: string
 }
 
-// How long multiple-choice waits before auto-advancing. A "Next" button lets
-// the user skip the wait and move on immediately.
-const MC_ADVANCE_MS = 1800
-
 // How many cards ahead a re-queued card is inserted. Keeps a lapsed card from
 // reappearing immediately when other cards are available.
 const REQUEUE_GAP = 4
-
-// Normalize answers for forgiving fill-in-the-blank comparison.
-function normalizeAnswer(s: string): string {
-  return s.trim().replace(/\s+/g, ' ')
-}
-
-// Deterministic (pure) shuffle so it can run during render without violating
-// React's purity rules. Randomness comes from a per-session seed (see below).
-function seededShuffle<T>(arr: T[], seed: number): T[] {
-  let s = seed >>> 0
-  const rand = () => {
-    s = (s + 0x6d2b79f5) | 0
-    let t = Math.imul(s ^ (s >>> 15), 1 | s)
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-  }
-  const a = [...arr]
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(rand() * (i + 1))
-    ;[a[i], a[j]] = [a[j], a[i]]
-  }
-  return a
-}
 
 // Background review-save endpoint (REVIEW-04). Kept as a module constant so the
 // retry wrapper can issue the POST without reintroducing a bare inline
@@ -174,33 +143,17 @@ interface Props {
   cards: Card[]
   extraPractice: PracticeCard[]
   mode: StudyMode
-  flashcardSubMode?: FlashcardSubMode  // 'exposure' (default) | 'recall'
   onComplete: (stats: { reviewed: number; correct: number; incorrect: number }) => void
 }
 
-export default function StudySession({ cards, extraPractice, mode, flashcardSubMode = 'exposure', onComplete }: Props) {
-  // Deterministic seed derived from the due-card set. Pure (no impure call in
-  // render), and naturally varies between sessions because the set of due
-  // cards differs each time.
-  const seed = useMemo(() => {
-    let h = 2166136261
-    for (const c of cards) {
-      for (let i = 0; i < c.id.length; i++) {
-        h ^= c.id.charCodeAt(i)
-        h = Math.imul(h, 16777619)
-      }
-    }
-    return (h >>> 0) || 1
-  }, [cards])
-
+export default function StudySession({ cards, extraPractice, mode, onComplete }: Props) {
   // Queue: mutable list of remaining items. Always show queue[0].
   // Initialized once — the component is remounted per batch via key={sessionKey}.
   // initialCount is derived from stable props so it's safe to compute during render.
   const initialCount = cards.length + extraPractice.length
   const [queue, setQueue] = useState<StudyItem[]>(() => {
     // Server already returns cards in foundation-first blended order (lib/sequence.ts).
-    // Preserve that order — do NOT shuffle here. seededShuffle is still used below
-    // for multiple-choice option ordering.
+    // Preserve that order — do NOT shuffle here.
     const real: StudyItem[] = cards.map((c) => ({ kind: 'real', card: c }))
     const practice: StudyItem[] = extraPractice.map((c) => ({ kind: 'practice', card: c }))
     return [...real, ...practice]
@@ -209,8 +162,6 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   const [cursor, setCursor] = useState(0)
 
   const [revealed, setRevealed] = useState(false)
-  const [fillInput, setFillInput] = useState('')
-  const [mcSelected, setMcSelected] = useState<string | null>(null)
   const [stats, setStats] = useState({ reviewed: 0, correct: 0, incorrect: 0 })
   // "See another example →": cycles through a card's extra sentences on the reveal side
   const [exampleOffset, setExampleOffset] = useState(0)
@@ -255,10 +206,6 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
       .then((d) => { if (typeof d.dayStartHour === 'number') dayStartHourRef.current = d.dayStartHour })
       .catch(() => {})
   }, [])
-
-  // Timer for multiple-choice auto-advance; cleared on manual Next / unmount.
-  const advanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-  useEffect(() => () => { if (advanceTimer.current) clearTimeout(advanceTimer.current) }, [])
 
   // --- Active study-time tracking (feeds the dashboard habit streak) ---
   const secBuffer = useRef(0)
@@ -312,42 +259,6 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     }
   }, [])
 
-  // Build the four multiple-choice options. Prefer the card's pre-generated
-  // distractors (high quality); fall back to scraping other cards' answers for
-  // legacy cards or practice items that have none.
-  const mcOptions = useMemo(() => {
-    if (mode !== 'multiple-choice' || queue.length === 0) return []
-    const item = queue[0]
-    const current = item.card
-    // Seed by card identity so options are stable across re-shows of the same card.
-    const cardSeed = item.kind === 'real' ? hashStr(item.card.id) : hashStr(item.card.front)
-
-    let distractors: string[] = []
-    if (item.kind === 'real' && item.card.distractors) {
-      try {
-        distractors = (JSON.parse(item.card.distractors) as string[])
-          .filter((d) => d && d !== current.back)
-      } catch (err) {
-        console.error('Failed to parse distractors for card', item.card.id, err)
-        distractors = []
-      }
-    }
-
-    if (distractors.length < 3) {
-      const pool = seededShuffle(
-        [...new Set(
-          cards.map((c) => c.back).filter((b) => b !== current.back && !distractors.includes(b))
-        )],
-        seed + cardSeed
-      )
-      distractors = [...distractors, ...pool].slice(0, 3)
-    } else {
-      distractors = distractors.slice(0, 3)
-    }
-
-    return seededShuffle([...distractors, current.back], seed + cardSeed * 31)
-  }, [mode, queue, seed, cards])
-
   // Ref for the card container so we can return focus after card advance (keyboard shortcuts)
   const containerRef = useRef<HTMLDivElement>(null)
   // Ref for the "Again" grade button — focus moves here on reveal so screen readers
@@ -381,20 +292,17 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   const item = queue[0]
   const realCard = item?.kind === 'real' ? item.card : null
   const cardSentences = realCard?.sentences ?? []
-  // Whether the current mode needs a blank-safe sentence to function correctly.
-  // Exposure flashcard rotates freely; Recall and fill-blank require safeToBlank.
-  const needsBlank =
-    mode === 'fill-blank' ||
-    (mode === 'flashcard' && flashcardSubMode === 'recall')
   // Least-unknown sentence selection — see lib/sentence-selection.ts (REFACTOR-02).
   // Step 1: minimum unknownCount tier. Step 2: collect candidate indices at that tier.
   // Step 3: hash-tie-break rotation by reps. Step 4: blank-safety override.
   // Memoized (PERF-03): recomputes only when [cardSentences, realCard?.id,
-  // realCard?.review?.reps, needsBlank] change — not on every unrelated re-render
-  // (typing in fill-blank input, MC selection, exampleOffset cycling).
+  // realCard?.review?.reps] change — not on every unrelated re-render
+  // (exampleOffset cycling). needsBlank is a literal `false` (D-13) — the
+  // Passive/Active split no longer has a blanked front, so blank-safety is
+  // never required for sentence selection.
   const chosenIdx = useMemo(
-    () => selectSentence(cardSentences, realCard?.id ?? '', realCard?.review?.reps ?? 0, needsBlank),
-    [cardSentences, realCard?.id, realCard?.review?.reps, needsBlank]
+    () => selectSentence(cardSentences, realCard?.id ?? '', realCard?.review?.reps ?? 0, false),
+    [cardSentences, realCard?.id, realCard?.review?.reps]
   )
 
   if (queue.length === 0) return null
@@ -418,16 +326,14 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   // isNewCard = never reviewed or still in Learning (state 0 or 1).
   const isNewCard = !realCard?.review || (realCard.review.state ?? 0) <= 1
 
-  // chosenSentence = selected for this review; used for fill-blank answer / Recall front
+  // chosenSentence = selected for this review
   const chosenSentence = chosenIdx >= 0 ? cardSentences[chosenIdx] : null
 
-  // Show the bare Korean word on the Exposure front only when the card is new AND
+  // Show the bare Korean word on the front only when the card is new AND
   // the best available sentence still contains words the learner hasn't seen yet.
   // Once all context words are known (unknownCount === 0), show the sentence directly
   // so the learner encounters the new word in a fully readable sentence.
   const showBareFront =
-    mode === 'flashcard' &&
-    flashcardSubMode === 'exposure' &&
     isNewCard &&
     cardSentences.length > 0 &&
     (chosenSentence?.unknownCount ?? 0) > 0
@@ -436,29 +342,6 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   const displayedSentence = chosenSentence !== null
     ? cardSentences[(chosenIdx + exampleOffset) % cardSentences.length]
     : null
-
-  // Fill-blank: use chosenSentence if safe to blank, else fall back to legacy cloze
-  const chosenMatch = chosenSentence
-    ? sentenceMatch(chosenSentence.korean, chosenSentence.targetForm)
-    : null
-  const useChosenForFill = !!(chosenMatch?.found && chosenMatch.safeToBlank)
-
-  // For Recall flashcard front: blank the chosen sentence (or degrade to Exposure if unsafe)
-  const recallBlanked = chosenSentence && chosenMatch?.safeToBlank
-    ? blankSentence(chosenSentence.korean, chosenSentence.targetForm)
-    : null  // null → Recall degrades to Exposure for this card
-
-  // Fill-blank prompts: sentence-based when safe, otherwise plain front-prompt
-  const fillSentence = useChosenForFill
-    ? blankSentence(chosenSentence!.korean, chosenSentence!.targetForm)
-    : null
-  const fillTranslation = useChosenForFill
-    ? chosenSentence!.translation
-    : null
-  const fillAnswer = useChosenForFill
-    ? chosenSentence!.targetForm
-    : currentCard.front
-  const fillCorrect = normalizeAnswer(fillInput) === normalizeAnswer(fillAnswer)
 
   // ── Type badge colours (single source of truth: lib/card-style.ts) ──────────
   const typeBadgeColor = typeBadgeClass(currentCard.type)
@@ -608,15 +491,8 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     setQueue(nextQueue)
     setCursor((c) => c + 1)
     setRevealed(false)
-    setFillInput('')
-    setMcSelected(null)
     setExampleOffset(0)
     setIntervalHints(null)
-  }
-
-  const advanceMc = (rating: number) => {
-    if (advanceTimer.current) { clearTimeout(advanceTimer.current); advanceTimer.current = null }
-    submitReview(rating)
   }
 
   const handleUndo = async () => {
@@ -668,16 +544,6 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
     setIntervalHints(null)
   }
 
-  const mcRating = mcSelected === currentCard.back ? 3 : 1
-
-  // Multiple-choice option select: set selected, then arm the auto-advance
-  // timer. The parent owns advanceTimer, MC_ADVANCE_MS, and advanceMc so the
-  // timer lifecycle (clear on manual Next / unmount) stays in one place.
-  const handleMcSelect = (opt: string) => {
-    setMcSelected(opt)
-    advanceTimer.current = setTimeout(() => advanceMc(opt === currentCard.back ? 3 : 1), MC_ADVANCE_MS)
-  }
-
   const handleReveal = () => {
     setRevealed(true)
     haptic('selection')
@@ -689,7 +555,7 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    // Never intercept while the fill-blank input is focused
+    // Never intercept while an input element is focused (tap-to-gloss / other UI)
     if (document.activeElement?.tagName === 'INPUT') return
     // lastInteraction is already bumped by the global 'keydown' listener in the activity effect
 
@@ -698,32 +564,12 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
         e.preventDefault()
         handleReveal()
       }
-      // MC: 1-4 selects an option
-      if (mode === 'multiple-choice' && mcOptions.length > 0 && !mcSelected) {
-        const n = parseInt(e.key)
-        if (n >= 1 && n <= 4 && mcOptions[n - 1] !== undefined) {
-          e.preventDefault()
-          const opt = mcOptions[n - 1]
-          const isCorrect = opt === currentCard.back
-          setMcSelected(opt)
-          advanceMc(isCorrect ? 3 : 1)
-        }
-      }
     } else {
-      if (mode === 'flashcard') {
-        if (e.key === '1') { e.preventDefault(); submitReview(1) }
-        else if (e.key === '2') { e.preventDefault(); submitReview(2) }
-        else if (e.key === '3') { e.preventDefault(); submitReview(3) }
-        else if (e.key === '4') { e.preventDefault(); submitReview(4) }
-      }
-      if (mode === 'fill-blank') {
-        if (e.key === '1') { e.preventDefault(); submitReview(1) }
-        else if (e.key === '3') { e.preventDefault(); submitReview(3) }
-      }
-      if (mode === 'multiple-choice' && mcSelected !== null) {
-        const isCorrect = mcSelected === currentCard.back
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); advanceMc(isCorrect ? 3 : 1) }
-      }
+      // Both Passive and Active grade via 1-4 (Again/Hard/Good/Easy).
+      if (e.key === '1') { e.preventDefault(); submitReview(1) }
+      else if (e.key === '2') { e.preventDefault(); submitReview(2) }
+      else if (e.key === '3') { e.preventDefault(); submitReview(3) }
+      else if (e.key === '4') { e.preventDefault(); submitReview(4) }
     }
   }
 
@@ -779,59 +625,30 @@ export default function StudySession({ cards, extraPractice, mode, flashcardSubM
         </p>
       </div>
 
-      {/* ── Mode dispatch (REFACTOR-01) ──
-          Each mode sub-component renders its own card face + sticky action bar.
-          Session state, both useMemos, and the Phase 13 review/undo pipeline
-          stay in this parent (RESEARCH Pitfall 4). */}
-      {mode === 'flashcard' ? (
-        <FlashcardMode
-          card={currentCard}
-          typeBadgeColor={typeBadgeColor}
-          revealed={revealed}
-          cardHeight={cardHeight}
-          frontRef={frontRef}
-          backRef={backRef}
-          againBtnRef={againBtnRef}
-          cursor={cursor}
-          flashcardSubMode={flashcardSubMode}
-          showBareFront={showBareFront}
-          chosenSentence={chosenSentence}
-          displayedSentence={displayedSentence}
-          recallBlanked={recallBlanked}
-          hasMultipleSentences={cardSentences.length > 1}
-          hints={hints}
-          onReveal={handleReveal}
-          onGrade={submitReview}
-          onCycleExample={() => setExampleOffset((o) => o + 1)}
-        />
-      ) : mode === 'multiple-choice' ? (
-        <MultipleChoiceMode
-          card={currentCard}
-          typeBadgeColor={typeBadgeColor}
-          cursor={cursor}
-          options={mcOptions}
-          selected={mcSelected}
-          onSelect={handleMcSelect}
-          onAdvance={() => advanceMc(mcRating)}
-        />
-      ) : (
-        <FillBlankMode
-          card={currentCard}
-          typeBadgeColor={typeBadgeColor}
-          cursor={cursor}
-          fillSentence={fillSentence}
-          fillTranslation={fillTranslation}
-          fillAnswer={fillAnswer}
-          fillInput={fillInput}
-          fillCorrect={fillCorrect}
-          revealed={revealed}
-          chosenSentence={chosenSentence}
-          hints={hints}
-          onInputChange={setFillInput}
-          onReveal={handleReveal}
-          onGrade={submitReview}
-        />
-      )}
+      {/* ── FlashcardMode (REFACTOR-01) ──
+          Renders its own card face + sticky action bar. Session state, both
+          useMemos, and the Phase 13 review/undo pipeline stay in this parent
+          (RESEARCH Pitfall 4). MC/fill-blank dispatch retired (D-11/D-14) —
+          Passive and Active both render through FlashcardMode; the Active
+          production branch lands in Plan 28-02. */}
+      <FlashcardMode
+        card={currentCard}
+        typeBadgeColor={typeBadgeColor}
+        revealed={revealed}
+        cardHeight={cardHeight}
+        frontRef={frontRef}
+        backRef={backRef}
+        againBtnRef={againBtnRef}
+        cursor={cursor}
+        showBareFront={showBareFront}
+        chosenSentence={chosenSentence}
+        displayedSentence={displayedSentence}
+        hasMultipleSentences={cardSentences.length > 1}
+        hints={hints}
+        onReveal={handleReveal}
+        onGrade={submitReview}
+        onCycleExample={() => setExampleOffset((o) => o + 1)}
+      />
     </div>
   )
 }

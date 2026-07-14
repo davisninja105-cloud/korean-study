@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
-import ModeSelector, { StudyMode, FlashcardSubMode } from '@/components/ModeSelector'
+import ModeSelector, { StudyMode } from '@/components/ModeSelector'
 import StudySession from '@/components/StudySession'
 import LessonRangeFilter, { isFullSpan } from '@/components/LessonRangeFilter'
 import ProgressRing from '@/components/ProgressRing'
@@ -31,8 +31,7 @@ interface Props {
 export default function StudyClient({ initialCards, initialLessons }: Props) {
   const [studyCards, setStudyCards] = useState<CardDTO[]>(initialCards)
   const [practice, setPractice] = useState<PracticeCard[]>([])
-  const [mode, setMode] = useState<StudyMode>('flashcard')
-  const [flashcardSubMode, setFlashcardSubMode] = useState<FlashcardSubMode>('exposure')
+  const [mode, setMode] = useState<StudyMode>('passive')
   const [phase, setPhase] = useState<Phase>('select-mode')
   const [scope, setScope] = useState<Scope>('due')
   const [completeStats, setCompleteStats] = useState({ reviewed: 0, correct: 0, incorrect: 0 })
@@ -174,10 +173,9 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
     loadDue(from, to, maxOrder)
   }
 
-  const handleModeSelect = async (selectedMode: StudyMode, includeAI: boolean, subMode: FlashcardSubMode) => {
+  const handleModeSelect = async (selectedMode: StudyMode, includeAI: boolean) => {
     setShowModeSheet(false)
     setMode(selectedMode)
-    setFlashcardSubMode(subMode)
 
     if (includeAI && studyCards.length > 0) {
       setPhase('loading-practice')
@@ -363,7 +361,6 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
         cards={studyCards}
         extraPractice={practice}
         mode={mode}
-        flashcardSubMode={flashcardSubMode}
         onComplete={handleComplete}
       />
     )
