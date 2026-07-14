@@ -296,6 +296,53 @@
 
 ---
 
+## Milestone: v1.6 — Freshness, Performance & E2E Testing
+
+**Shipped:** 2026-07-14
+**Phases:** 4 | **Plans:** 14
+
+### What Was Built
+
+- A 16-cell route×navigation-path matrix run against a production build (`next build && next start`) diagnosed the staleness bug as two distinct root causes — back/forward Router Cache reuse (zero re-fetch) and client-shell `useState(initialProps)` non-resync (RSC re-fetch happens but the UI never adopts it)
+- An isolated, authenticated Playwright E2E harness: production-build `webServer` on a dedicated port, seeded `file:` SQLite DB structurally prevented from touching production Turso, setup-project auth via a real `/api/login` call, ported per-route DOM readers, and a red freshness-regression spec encoding the diagnosis before any fix landed
+- `FreshnessWatcher` — a client component (later a context provider) mounted app-wide that fires `router.refresh()` at real staleness boundaries (resume/back-forward/bfcache), paired with gated render-phase prop-adoption in `StudyClient`/`CardsClient` that never clobbers an active study session or open editor sheet
+- A pre-existing Next.js 16.2.1 reliability flake in `router.refresh()`'s delivery to a mounted client tree (worst on `/study resume`, 0/7) was root-caused after 6 rejected fix attempts, then closed with a Suspense-independent JSON re-fetch backstop — closing to a clean 5/5 across repeated runs
+- Broadened E2E coverage to the study grade-flow (which caught and fixed a real production FSRS bug: `learningSteps` wasn't persisted, so repeatedly-graded-Good cards never graduated out of Learning state) and added median-of-5 page/API performance budgets, both falsifiability-proven live
+- Registered and documented the Playwright MCP server in `CLAUDE.md` for Claude Code to drive the real dev server interactively during exploratory QA
+
+### What Worked
+
+- **Build-order invariant enforced from research, not discovered by accident:** diagnosis (24) and the harness + red spec (25) were required to exist *before* the fix (26) — the fix was validated by a red→green spec and guarded by a first-load baseline, never shipped by feel
+- **Honesty-mandate gap closure:** when Phase 26's first verification found `/study resume` failing 7/7 live runs, the user explicitly declined an accepted-risk override and locked in a real fix (JSON backstop) with a non-negotiable rule — no weakened assertions, no retries-until-green, every run recorded. Re-verification scored 5/5 (from 2/5)
+- **tsx-subprocess delegation pattern:** DB mutators/seed/reset called from inside a Playwright worker process via a spawned `tsx` subprocess, avoiding Prisma-client-in-worker issues while keeping spec files simple
+- **Root-causing instead of working around:** the `router.refresh()` flake was investigated via a controlled experiment before any fix was chosen, ruling out 6 alternative approaches (startTransition, setTimeout-deferred refresh, double refresh, disabling prefetch, `router.push`/`replace`, a Next.js patch bump) and landing on a fix that sidesteps the unreliable mechanism entirely instead of retrying it
+
+### What Was Inefficient
+
+- **Phase 26 needed 3 extra gap-closure plans (waves 4-6)** beyond the original 3-plan scope — the first verification pass scored 2/5 and surfaced a genuine, deeply-rooted framework reliability issue that couldn't have been fully anticipated in planning
+- **A real production FSRS bug was discovered mid-E2E-spec-write (Phase 27-01), not during the original FSRS work** — the grade-flow spec's own acceptance criteria (reaching "Session complete!") was the thing that surfaced it; the app had been silently shipping cards permanently stuck at a 10-minute review interval
+
+### Patterns Established
+
+- **Throwaway diagnosis script → permanent helpers:** `scripts/diagnose-freshness.mts` was built fast to answer the diagnosis question, then every reusable piece (DB guard, RSC-signature detection, resume simulation, mutators) was ported into permanent `e2e/helpers/` modules before the script was deleted — spike code and permanent infrastructure code stayed cleanly separated
+- **Gated render-phase prop adoption:** a client shell adopts a fresh server prop only when no in-flight interaction needs protecting (no open sheet, no active session); otherwise it discards the delivered payload — now the standard shape for `StudyClient`/`CardsClient`/`HabitsClient`
+- **JSON re-fetch backstop as a context provider:** `useFreshPayload()` supplements (not replaces) `router.refresh()` with a direct client-side JSON fetch of the route's existing API endpoint, reusing the already-proven gated-adoption pattern rather than inventing a new one
+- **Median-of-N timing assertion:** sorted-middle picker (N=5) absorbs first-sample cold-start skew without masking real regressions — reusable for any future performance-regression spec
+- **Falsifiability-proving a guard rail:** temporarily break the budget/threshold, confirm the spec goes red, then restore and confirm green — proves the assertion can actually fail before trusting it as a regression net
+
+### Key Lessons
+
+- **A red spec that exists before the fix is a stronger guarantee than a green spec written after:** Phase 25's genuinely-red freshness spec (9 red cells, not `test.fail()`-masked) is what let Phase 26 prove the fix rather than assert it
+- **When verification finds a real gap, ask the human rather than defaulting to an accepted-risk override:** the 7/7-failing `/study resume` cell could have been documented as a known flake and shipped; instead the user chose to close it properly, and the resulting fix (JSON backstop) is now load-bearing infrastructure for the whole freshness system
+- **Writing a real E2E spec against real app behavior surfaces real bugs a unit test can't:** the FSRS `learningSteps` bug was invisible to existing unit/route tests because none of them chained multiple reviews across a full session — only a genuine loop-until-complete E2E spec exercised the code path that broke
+
+### Cost Observations
+
+- Sessions: spanning 2026-07-10 to 2026-07-13 (~4 days, 119 commits)
+- Notable: Phase 26 (6 plans across the original 3 waves + 3 gap-closure waves) was the milestone's clear cost center — the gap closure alone (waves 4-6) accounted for half its plans, driven entirely by a real framework reliability issue rather than planning or execution error
+
+---
+
 ## Cross-Milestone Trends
 
 | Milestone | Phases | Plans | Key Pattern | Main Pitfall |
@@ -305,4 +352,6 @@
 | v1.2 Performance & Snappiness | 4 | 9 | RSC + client-shell + DTO pattern, established once and reused | Paint-timing/jitter claims left unverified in a browser for 2 of 4 phases; REQUIREMENTS.md checkboxes unticked again |
 | v1.3 Reliability & Hardening | 3 | 6 | Audit-sourced milestone (zero research phase) + risk-ordered phasing (behavior fixes before structural refactor) | Sibling route with the identical gap (`api/review/undo`) not grepped-for and deferred instead of fixed — same "scope corpus-wide" pitfall as v1.1's NAV-01 |
 | v1.4 Knowledge Graph Quality & History | 4 | 15 | Independent re-verification (fresh reproduction, not the fixer's own test) turns a "passed" status into a real guarantee | A phase (17) shipped and closed with no VERIFICATION.md ever generated — silently unnoticed until the milestone audit's retroactive pass found it and, in fixing it, uncovered a real production bug |
+| v1.5 Extraction Quality & Reliability | 4 | 9 | Findings-first methodology (audit produces an evidence report before any fix decision, every action traceable to a card id) | Verification discipline regressed again — 3 of 4 phases needed overrides, repeating v1.4's "VERIFICATION.md missing" pattern at double the rate |
+| v1.6 Freshness, Performance & E2E Testing | 4 | 14 | Build-order invariant (diagnosis + red spec before fix) + honesty-mandate gap closure over accepted-risk override | A real Next.js framework reliability flake cost 3 unplanned gap-closure plans; only fully closed after a human explicitly rejected the easier accepted-risk path |
 | v1.5 Extraction Quality & Reliability | 4 | 9 | Findings-first methodology (audit → evidence → act); pure audit module over production helpers; auto-relink as sync hook | Verification discipline regressed — 3 of 4 phases needed override at close (Phase 20 no VERIFICATION.md, Phase 21 human_needed + 2 UAT pending); stale REQUIREMENTS.md checkbox for EXTRACT-01 |
