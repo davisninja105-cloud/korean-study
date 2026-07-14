@@ -116,10 +116,10 @@ See `.planning/milestones/v1.6-ROADMAP.md` for full phase details.
   4. After revealing, the user self-grades on the existing Again/Hard/Good/Easy bar, with reveal copy anchoring the grade to the highlighted target expression rather than the whole sentence.
   5. A brand-new card (FSRS state 0/1) selected in Active mode falls back to the Passive/exposure experience (bare word / sentence shown) and graduates to full Active production once state ≥ 1; the existing Passive flow (grade, undo, requeue, audio, tap-to-gloss) shows no regressions and the e2e grade-flow suite stays green.
 
-**Plans**: 1/2 plans executed
+**Plans**: 2/2 plans complete
 
 - [x] 28-01-PLAN.md
-- [ ] 28-02-PLAN.md
+- [x] 28-02-PLAN.md
 
 **UI hint**: yes
 
@@ -171,7 +171,7 @@ Phases execute in numeric order: 1 → 2 → ... → 27 (all complete) → 28 �
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 3/3 | Complete | 2026-07-12 |
 | 26. Freshness Fix | v1.6 | 6/6 | Complete | 2026-07-13 |
 | 27. E2E Coverage & Performance Validation | v1.6 | 3/3 | Complete | 2026-07-13 |
-| 28. Active Recall Study Mode | v1.7 | 1/2 | In Progress|  |
+| 28. Active Recall Study Mode | v1.7 | 2/2 | Complete   | 2026-07-14 |
 | 29. Distractor Write-Side Retirement | v1.7 | 0/TBD | Not started | - |
 
 ---
