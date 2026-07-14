@@ -666,7 +666,7 @@ export default function StudySession({ cards, extraPractice, mode, onComplete }:
         studyMode={mode}
         activeFace={activeFace}
         hintRevealed={hintRevealed}
-        onToggleHint={() => setHintRevealed(true)}
+        onRevealHint={() => setHintRevealed(true)}
       />
     </div>
   )

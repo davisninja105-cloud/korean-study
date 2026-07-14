@@ -80,7 +80,7 @@ test('Active mode: toggle entry, production front, hint flow, pinned reveal, sil
       productionSeen++
       // ACTIVE-02: hint hidden by default, revealed only on tap.
       await expect(page.getByTestId('hint-text')).toHaveCount(0)
-      await page.getByTestId('hint-toggle').click()
+      await page.getByTestId('hint-reveal-btn').click()
       await expect(page.getByTestId('hint-text')).toBeVisible()
       const hintText = (await page.getByTestId('hint-text').textContent()) ?? ''
       expect(hintText.startsWith('Hint:')).toBe(true)
@@ -100,7 +100,7 @@ test('Active mode: toggle entry, production front, hint flow, pinned reveal, sil
       // ACTIVE-05/D-03: a state <= 1 card renders the silent Passive/exposure
       // face — no production prompt, no hint control, no badge.
       await expect(page.getByTestId('active-prompt')).toHaveCount(0)
-      await expect(page.getByTestId('hint-toggle')).toHaveCount(0)
+      await expect(page.getByTestId('hint-reveal-btn')).toHaveCount(0)
 
       await page.getByTestId('reveal-btn').click()
       await expect(page.getByTestId('grade-good')).toBeVisible()
@@ -187,7 +187,7 @@ test('Active mode + AI practice: practice card degrades to Passive face, never l
       // card must render via the exact same silent Passive/exposure face a
       // new real card uses.
       await expect(page.getByTestId('active-prompt')).toHaveCount(0)
-      await expect(page.getByTestId('hint-toggle')).toHaveCount(0)
+      await expect(page.getByTestId('hint-reveal-btn')).toHaveCount(0)
       // The un-revealed front must never contain the mixed Korean+English
       // answer text — this is exactly what the pre-fix word-production
       // branch would have shown as the "translate this" prompt.

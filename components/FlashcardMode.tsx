@@ -62,7 +62,7 @@ interface Props {
   studyMode: StudyMode
   activeFace: ActiveFace
   hintRevealed: boolean
-  onToggleHint: () => void
+  onRevealHint: () => void
 }
 
 export default function FlashcardMode({
@@ -85,7 +85,7 @@ export default function FlashcardMode({
   studyMode,
   activeFace,
   hintRevealed,
-  onToggleHint,
+  onRevealHint,
 }: Props) {
   // Tap-to-gloss callback (undefined when GlossProvider not mounted — safe).
   // Sole hook permitted in mode components per RESEARCH Pitfall 4.
@@ -116,10 +116,11 @@ export default function FlashcardMode({
                     <>
                       <button
                         type="button"
-                        data-testid="hint-toggle"
-                        onClick={onToggleHint}
+                        data-testid="hint-reveal-btn"
+                        onClick={onRevealHint}
+                        disabled={hintRevealed}
                         aria-label={hintRevealed ? 'Hint shown' : 'Show hint'}
-                        className="inline-flex items-center gap-1 py-2 px-3 text-button"
+                        className="inline-flex items-center gap-1 py-2 px-3 text-button disabled:opacity-60 disabled:cursor-default"
                       >
                         <Lightbulb className="w-4 h-4" />
                         {!hintRevealed && <span className="text-sm font-semibold">Show hint</span>}
