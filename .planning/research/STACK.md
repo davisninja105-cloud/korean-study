@@ -1,140 +1,91 @@
 # Stack Research
 
-**Domain:** RSC client-navigation freshness + Playwright E2E infrastructure (Next.js 16 App Router, single-tenant hobby app on Vercel Hobby) — v1.6 Freshness, Performance & E2E Testing
-**Researched:** 2026-07-10
-**Confidence:** HIGH for versions (verified directly against the npm registry and the installed `package.json`); MEDIUM for Next.js cache-behavior claims (all from official nextjs.org docs versioned 16.2.10, mutually cross-consistent, but the research seam classifies web-fetched sources LOW — verify the back/forward diagnosis empirically in Phase 1)
+**Domain:** Self-graded "translate the sentence" production exercise (Active Recall mode) inside an existing Next.js 16 / React 19 study app — v1.7 Active Recall Study Mode
+**Researched:** 2026-07-14
+**Confidence:** HIGH for the zero-new-dependencies verdict (grounded in direct inspection of the installed codebase — every required primitive already exists and was read at source); LOW–MEDIUM for the ecosystem survey corroboration (web-sourced per the research seam's confidence classifier, but consistent with first-party evidence)
 
 ## Executive Answer
 
-**(a) Freshness: zero new dependencies.** Every mechanism needed is already inside the installed `next@16.2.1`. The staleness the milestone targets is a *client-side Router Cache* behavior, not a server one — all four pages (`/`, `/study`, `/cards`, `/habits`) already declare `export const dynamic = 'force-dynamic'`, so the server always renders fresh. The Next.js 16 glossary states the diagnosis directly: *"Pages are not cached by default but are reused during browser back/forward navigation."* Since Next 15, `staleTimes.dynamic` defaults to **0 seconds** — a normal bottom-nav `<Link>` push navigation re-fetches the page segment — but back/forward navigation (browser back button, iOS swipe-back gesture) restores the cached RSC payload unconditionally, and `staleTimes` is explicitly documented as *not* changing that. The fix is the built-in invalidation APIs: `router.refresh()` (same-route) and `revalidatePath` called **from a Server Action** (cross-route, purges the Client Cache including back/forward entries). No `staleTimes` tweak, no Cache Components migration, no client data library.
+**Zero new dependencies. Zero stack changes. This milestone is a pure recomposition of primitives that already exist in the repo.**
 
-**(b) E2E: two new dev dependencies.** `@playwright/test` (^1.61.1, latest as of 2026-07-10) as the test runner, plus a downloaded Chromium browser binary. Playwright's `webServer` config boots `next dev` (or `next build && next start`) automatically and — critically for this repo — its `env` option can override `DATABASE_URL` to a local `file:` SQLite DB so E2E runs never touch the production Turso deck. For AI-agent driving, Microsoft's official `@playwright/mcp` (0.0.78) gives Claude Code interactive accessibility-tree browser control against the running dev server; the `npx playwright test` CLI (runnable from Claude Code's Bash tool with `--reporter=list`) covers repeatable regression suites. Both integrate with the existing Vitest setup via a one-line `exclude` addition.
+The proposed Active mode — English translation shown, Korean fully hidden, tap to reveal Korean sentence + audio, self-grade on the FSRS bar — is structurally *simpler* than the two modes being deleted. It is the classic Anki "Basic (and reversed card)" production-direction pattern: prompt in L1, learner mentally composes the L2 answer, reveal, honest self-grade. An ecosystem survey confirms **no established React library exists for this UI pattern**, and none is wanted: every mainstream implementation (Anki itself, Synapse, Quanta, self-hosted Flashcards apps) builds the reveal-then-grade surface from app-local components on top of a scheduling library — which this app already has (`ts-fsrs` 5.3.1 via `lib/fsrs.ts`). The self-graded-reveal choice also sidesteps the one thing that *would* have required new machinery: typed-answer auto-scoring of free-form sentence translation has no canonical string match (many valid Korean renderings of one English sentence) and would demand fuzzy matching or LLM judging — deliberately out of scope per the milestone definition, and correctly so.
+
+Concretely, a new `ActiveRecallMode.tsx` is a strict subset-plus-rearrangement of the existing `FlashcardMode.tsx` (read at source, 262 lines): the same flip-card container, the same sticky action bar with `Show Answer` → Again/Hard/Good/Easy, the same `HighlightedSentence` + `AudioButton` back face — with the front face swapped from Korean sentence to `sentence.translation` (English) and all Korean/audio withheld until reveal. The net milestone diff is likely **negative** (deleting `MultipleChoiceMode.tsx` (106 lines), `FillBlankMode.tsx` (137 lines), the distractor logic in `StudySession.tsx`, and the 3-mode grid in `ModeSelector.tsx`).
 
 ## Recommended Stack
 
-### Core Technologies
+### Core Technologies (all already installed — listed for integration clarity, not installation)
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| `next` | 16.2.1 installed (16.2.10 latest patch) | Freshness APIs: `router.refresh()`, `revalidatePath`, Server Actions | Already installed — all three invalidation mechanisms ship in it. Behavior claims in this doc were verified against docs versioned 16.2.10; the optional patch bump is hygiene, not a prerequisite. |
-| `@playwright/test` | ^1.61.1 | E2E test runner + browser automation | The framework Next.js officially documents for E2E (`nextjs.org/docs/app/guides/testing/playwright`). Auto-manages the dev server via `webServer`, ships trace/screenshot debugging, and is the same engine the agent-facing MCP server uses — one browser stack for both humans-in-CI and agents. |
-| `@playwright/mcp` | 0.0.78 (run via `npx @playwright/mcp@latest`, not a package.json dep) | MCP server letting Claude Code drive a real browser | Microsoft-official. Operates on the accessibility tree (structured snapshots via `browser_snapshot`), not screenshots — token-cheap and deterministic for an agent. ~34 tools: navigate, click, type, snapshot, screenshot. Registered once via `claude mcp add playwright npx @playwright/mcp@latest`. |
+| Technology | Version | Purpose in this milestone | Why it already covers the need |
+|------------|---------|---------------------------|-------------------------------|
+| `next` | 16.2.1 (installed) | No change — `/study` RSC + `StudyClient` shell unchanged | Mode selection is purely client-side state inside `StudyClient`/`StudySession`; no new routes, no API changes |
+| `react` | 19.2.4 (installed) | New `ActiveRecallMode.tsx` presentational component | Same "pure presentation, parent owns state" contract as `FlashcardMode.tsx` (its header comment documents this explicitly: sub-components own no session state, sole hook is `useWordTap()`) |
+| `ts-fsrs` | 5.3.1 (installed) | Grading unchanged | Active mode reuses the exact same `onGrade(rating)` → optimistic `reviewCard()` → fire-and-forget `POST /api/review` path. FSRS is direction-agnostic: `Card` stays the review unit regardless of prompt direction |
+| Tailwind CSS | 4.2.2 (installed) | Passive/Active toggle styling | The Exposure/Recall sub-toggle in `ModeSelector.tsx` (lines 42–66) is already a two-segment pill built from `bg-surface-3`/`bg-surface-1` tokens — the new Passive/Active toggle is the same component pattern promoted to top level |
 
-### The Freshness Mechanism Matrix (all built into next@16)
+### Existing primitives that compose the feature (the real "stack")
 
-This is the core finding — which API fixes which staleness path:
-
-| Mechanism | Called from | Effect on client Router Cache | Use for |
-|-----------|-------------|-------------------------------|---------|
-| `router.refresh()` (`next/navigation`) | Client component | Clears **current route only**; re-fetches RSC payload, merges without losing `useState`/scroll | Same-route refresh: Home after pull-to-refresh sync completes; Study completion screen's due count |
-| `revalidatePath(path)` / `revalidatePath('/', 'layout')` in a **Server Action** | `'use server'` function invoked from client | **Purges the Client Cache** — docs: "causes all previously visited pages to refresh when navigated to again" (documented as current, temporarily-broad behavior). `('/', 'layout')` purges everything | Cross-route staleness: the back/forward-restored `/` or `/cards` after grading/sync/CRUD. This is the only documented API that invalidates *other routes'* back/forward entries |
-| `revalidatePath` in a **Route Handler** | `app/api/*/route.ts` | **Does NOT purge the client cache** — only marks the path for server-side revalidation on next visit (a no-op for already-force-dynamic pages) | Nothing here. Adding it to the existing `POST /api/review`/`/api/sync` would *not* fix the bug — this is why the fix needs a small Server Action, not a route-handler edit |
-| `experimental.staleTimes` | `next.config.ts` | `dynamic` already defaults to 0s (since v15); explicitly "doesn't change back/forward caching behavior" | Nothing — it cannot address the observed staleness and is experimental |
-| Cache Components (`cacheComponents: true`, `use cache`, `cacheTag`, `updateTag`, `cacheLife`) | App-wide config + directives | `updateTag` expires tagged cached data; `cacheLife.stale` is the per-route successor to `staleTimes` | Not this milestone — it's a system for *adding* caching to static-ish content. These pages are fully dynamic; adopting it is an app-wide migration (`force-dynamic` removed, Suspense-boundary restructuring) that solves a problem this app doesn't have. PROJECT.md already deferred cross-request caching twice for staleness-risk reasons |
-
-### Recommended fix shape (integration with the existing RSC/DTO pattern)
-
-1. **One Server Action file** (e.g. `app/actions.ts`): `'use server'; export async function refreshAppData() { revalidatePath('/', 'layout') }`. Invoked fire-and-forget from the client at mutation **commit points** — study-session end (not per grade), sync completion, card create/edit/delete. This purges every route's Client Cache entry, so the next navigation — push *or* back/forward — re-runs the force-dynamic RSC and arrives fresh, preserving the v1.2 instant-first-paint on cold loads (that path is untouched: server render still carries the data).
-2. **`router.refresh()`** where the *current* route must update in place (Home after pull-to-refresh sync).
-3. **Do not call `revalidatePath` per grade.** From a Server Action it immediately refreshes the route you're viewing — mid-session that means a `getStudyCards()` DB round-trip per grade and a Vercel function invocation per grade, for data the session deliberately ignores. Once at session end is correct and cheap (one extra invocation, well inside the Hobby 60s limit since it's just a page re-render).
-4. **Client-shell caveat (design constraint, not a dependency):** the `*Client.tsx` shells copy props into state (`useState(initialCards)`), which initializes **only on mount**. A `router.refresh()` on the *same* route delivers new props to an already-mounted shell that ignores them. Cross-route navigation remounts the page's client shell, so the Server-Action purge path is unaffected — but any same-route `router.refresh()` fix must also make the shell consume updated props (e.g. derive display from props, sync via effect, or `key` the shell). Budget for this in the phase plan.
-5. **Empirically confirm the diagnosis first** (MEDIUM confidence): reproduce with `npm run build && npm start` (per the repo's own gotcha, `next dev` does not exercise Router Cache/first-paint behavior like production). Verify whether plain bottom-nav push navigation is also stale (would implicate the shells' `useState`-on-mount, not the router cache) versus only back/forward (pure router-cache reuse).
-
-### Supporting Libraries (E2E)
-
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|-------------|
-| `@playwright/test` | ^1.61.1 (devDep) | Runner, assertions, fixtures, `webServer` lifecycle, trace viewer | All persisted E2E specs in `e2e/` |
-| Chromium (Playwright-managed binary) | pinned to Playwright version | The single browser to test against | `npx playwright install chromium` — skip Firefox/WebKit; single-tenant personal app used from one browser family, and one browser keeps CI-less local runs fast |
-| `@playwright/mcp` | 0.0.78, via `npx` | Agent-interactive browser (exploratory QA, bug repro, UAT assist) | Not in `package.json` — registered in Claude Code once. Use MCP for exploration; use `npx playwright test` for repeatable suites |
-
-### Development Tools / Config
-
-| Tool | Purpose | Notes |
-|------|---------|-------|
-| `playwright.config.ts` | Runner config | `testDir: './e2e'`, `use: { baseURL: 'http://localhost:3000' }`, `webServer` (below). Keep specs out of `tests/` (Vitest's turf) |
-| `webServer` block | Boots the app for tests | `{ command: 'npm run dev', url: 'http://localhost:3000', reuseExistingServer: !process.env.CI, timeout: 120_000, env: { DATABASE_URL: 'file:./e2e.db', DATABASE_AUTH_TOKEN: '' } }` — `env` inherits `process.env` and adds `PLAYWRIGHT_TEST=1`; explicit `DATABASE_URL` here wins over `.env` (Next.js never overrides pre-set process env), which is the isolation guarantee against the production Turso deck |
-| E2E database seed | Isolated SQLite DB | `DATABASE_URL=file:./e2e.db npx prisma db push` works fine — the Turso `prisma db push` limitation applies only to `libsql://` URLs, not `file:`. Add a small seed script (or Playwright `globalSetup`) for deterministic cards/reviews |
-| Auth `globalSetup` / setup project | One login, reused everywhere | Shared-password gate: a setup test POSTs `/api/login` (password from `APP_PASSWORD`) or drives the login form once, saves `storageState` to `e2e/.auth/user.json`; all projects declare `use: { storageState }`. Standard Playwright pattern — no auth changes needed |
-| `vitest.config.ts` edit | Keep runners apart | Vitest's default include (`**/*.{test,spec}.ts`) would swallow `e2e/*.spec.ts` and crash on `@playwright/test` imports. Add `exclude: [...configDefaults.exclude, 'e2e/**']` |
-| npm scripts | Ergonomics | `"test:e2e": "playwright test"`, `"test:e2e:ui": "playwright test --ui"`. Leave `"test": "vitest run"` untouched |
-
-### How an AI agent drives it (two complementary paths)
-
-1. **Claude Code → Bash → `npx playwright test --reporter=list`** — repeatable regression suites; `list`/`line` reporters are agent-parseable, failures carry file:line; `trace: 'on-first-retry'` + `npx playwright show-trace` for post-mortems. The `webServer.reuseExistingServer: true` (non-CI) means the agent can keep one `npm run dev` running in the background and iterate test↔fix quickly without server restarts.
-2. **Claude Code → Playwright MCP (`claude mcp add playwright npx @playwright/mcp@latest`)** — interactive: `browser_navigate` to `localhost:3000`, `browser_snapshot` (accessibility tree, not pixels), `browser_click`/`browser_type`, `browser_take_screenshot` for visual checks. Best for exploratory UAT (e.g. reproducing the staleness bug live, verifying the fix), then codifying what worked into an `e2e/` spec. Note: the MCP session drives whatever server is already running — for cache-behavior verification, run it against `npm run build && npm start`, not `next dev`.
-
-### Dev server vs production build for E2E
-
-The official Next.js guide recommends testing against `next build && next start` for realism, while explicitly blessing `webServer` + dev server. For **this milestone specifically**, the staleness/Router Cache specs MUST run against a production build (repo gotcha: `loading.tsx`/RSC-cache behavior differs in dev). Practical split: default `webServer.command: 'npm run build && npm run start'` for the persisted suite (slow but correct), `reuseExistingServer` so a manually-started server (dev for flow tests, prod-build for cache tests) is picked up during iteration.
-
-### Performance regression tests
-
-No new dependency needed: Playwright's built-in `test.step` timing, `page.evaluate(() => performance.getEntriesByType('navigation'))`, and trace files cover "did first-paint/query timing regress" assertions. Do **not** add Lighthouse CI / `@playwright/test`-external perf harnesses for a single-tenant app — coarse thresholds in plain Playwright specs are proportionate.
+| Primitive | File | Role in Active mode |
+|-----------|------|---------------------|
+| Flip card + dynamic height | `FlashcardMode.tsx` / `StudySession.tsx` (`frontRef`/`backRef` + measuring `useLayoutEffect`) | Reuse as-is — thread the same refs through `ActiveRecallMode` props |
+| FSRS grade bar (Again/Hard/Good/Easy + mastery hints) | `FlashcardMode.tsx` lines 202–259 (sticky action bar) | Copy per the established convention — Pitfall 3 from the v1.3 refactor research says each mode owns its full sticky action-bar wrapper, **no shared slot abstraction**. Do not extract a shared GradeBar as part of this milestone |
+| Revealed Korean sentence + highlight | `components/HighlightedSentence.tsx` + `lib/sentence-match.ts` | Back face only. Front face must render **no Korean at all** — including no `AudioButton` (audio is an answer leak) |
+| Audio on reveal | `components/AudioButton.tsx` | Mount on the back face next to the revealed sentence, exactly as `FlashcardMode`'s back face does today |
+| Tap-to-gloss | `useWordTap()` from `GlossProvider.tsx` | Back face only (revealed Korean is tappable; the English prompt is not) |
+| Sentence choice + `unknownCount` | `lib/sentence-selection.ts` (pure, memoized in parent) | Reuse the parent's `chosenSentence`/`displayedSentence` memos unchanged; the prompt is `chosenSentence.translation` |
+| Optimistic grading + undo + retry | `StudySession.tsx` (`submitReview`, `postReviewWithRetry`, snapshot undo) | Untouched — Active mode calls the same `onGrade` prop |
+| Mode selection state | `components/ModeSelector.tsx` (`StudyMode` type, `onSelect` signature) | The change surface: `StudyMode` collapses from `'flashcard' | 'multiple-choice' | 'fill-blank'` to a Passive/Active concept; `FlashcardSubMode` (`'exposure' | 'recall'`) is deleted along with its sub-toggle |
 
 ## Installation
 
 ```bash
-# E2E (the only installs this milestone needs)
-npm install -D @playwright/test
-npx playwright install chromium
-
-# One-time: register the MCP server for Claude Code (not a package.json dep)
-claude mcp add playwright npx @playwright/mcp@latest
-
-# One-time: create the isolated E2E database schema
-DATABASE_URL=file:./e2e.db npx prisma db push
-
-# Optional hygiene (not required by any finding)
-npm install next@16.2.10
+# Nothing. Zero packages added or removed.
+# (Deleting MultipleChoiceMode/FillBlankMode removes code, not dependencies —
+#  no package exists solely for those modes.)
 ```
 
 ## Alternatives Considered
 
-| Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|-------------------------|
-| Server Action + `revalidatePath('/', 'layout')` at commit points | Pathname-watcher client component calling `router.refresh()` on arrival at each route | If the Server Action's documented "refreshes all previously visited pages" behavior proves too broad/changed in a future Next release — the watcher works purely client-side but shows a stale→fresh flash on arrival (it can't refresh a route before you land on it) |
-| Keep mutations as existing API routes + one tiny Server Action | Migrate `POST /api/review`/`/api/sync`/cards CRUD fully to Server Actions | Only if a later milestone wants progressive-enhancement forms. Today the routes are shared with cron (`runSync`) and carry bespoke retry logic (`postReviewWithRetry`) — full migration is churn without freshness gain beyond the one-action approach |
-| `@playwright/test` | Cypress | No case here: Playwright is what Next.js documents first-class, has native `webServer`, better parallelism, and is the only option with an official agent-facing MCP server |
-| Playwright `webServer` boots the app | Manually starting servers in docs/scripts | Fine during agent iteration (that's what `reuseExistingServer` is for), but persisted suites must be one-command runnable |
-| Cache Components adoption | — | Revisit only if the app ever wants *cached* segments (e.g. an expensive stats aggregation) — then `use cache` + `cacheTag` + `updateTag` is the sanctioned path, and `cacheLife.stale` replaces `staleTimes` per-route |
+| Recommended | Alternative | When the alternative would make sense |
+|-------------|-------------|----------------------------------------|
+| Self-graded reveal (build from existing primitives) | Typed-answer input + auto-scoring (string/fuzzy match) | Only for single-word or cloze answers with one canonical form. Free-form sentence translation has many valid Korean renderings — string match would punish correct answers, and the milestone explicitly chose self-grading. Anki community consensus: honest self-grading is the load-bearing scheduler input; typed input is an optional discipline aid, not a correctness mechanism |
+| Self-graded reveal | LLM-judged answer scoring (Claude grades the user's typed Korean) | A plausible *future* milestone (the Claude API + haiku model are already integrated), but it changes the interaction cost per card (typing Korean on mobile), adds latency + per-review API cost, and undermines the optimistic-grading instant-advance UX shipped in v1.2. Not this milestone |
+| New `ActiveRecallMode.tsx` sub-component | Adding an `active` branch inside `FlashcardMode.tsx` | The v1.3 refactor (REFACTOR-01) deliberately split modes into focused components; a mode-within-a-mode branch would re-tangle what Phase 15 untangled. Follow the established one-file-per-mode pattern |
+| Prompt = `sentence.translation` | Prompt = `card.back` (English gloss of the word alone) | `card.back` is the right **fallback** for cards whose chosen sentence lacks a translation (the `Sentence.translation` field is optional — `FlashcardMode` line 163 guards `displayedSentence?.translation &&`). Sentence-level production is the primary experience; word-level production is the degraded path, not the default |
 
-## What NOT to Use
+## What NOT to Use / Add
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| SWR / TanStack Query / Zustand (client data layer) | Solves cross-route freshness by *duplicating* the data layer client-side — directly undoes the v1.2 RSC/DTO architecture and re-introduces loading flashes | `revalidatePath` (Server Action) + `router.refresh()` |
-| `experimental.staleTimes` tweaks | `dynamic` is already 0s by default; the option is experimental ("not recommended for production") and explicitly does not affect back/forward caching — it cannot fix the observed bug | Nothing — leave `next.config.ts` alone |
-| `revalidatePath` inside the existing Route Handlers | Documented to only mark server-side revalidation for the next visit; does not purge the client Router Cache — would look like a fix and change nothing | A `'use server'` action invoked from the client |
-| Cache Components migration (`cacheComponents: true`) this milestone | App-wide semantic change (dynamic-by-default, `force-dynamic` removed, Suspense restructuring) to enable caching the app deliberately doesn't want; PROJECT.md has deferred cross-request caching twice | Keep `force-dynamic` pages; revisit per the alternatives table |
-| Cypress, Selenium | Heavier, no first-class Next.js docs path, no official MCP story | `@playwright/test` |
-| E2E cloud services (Checkly, BrowserStack, Playwright service grids) | Single-tenant hobby app with no CI budget requirement; local Chromium is sufficient and free | Local `npx playwright test` |
-| Running E2E against `.env`'s Turso `DATABASE_URL` | Tests would grade cards / create cards / trigger syncs against the production deck | `webServer.env.DATABASE_URL: 'file:./e2e.db'` + `prisma db push` seed |
-| All three browser engines (`chromium`+`firefox`+`webkit`) | 3× runtime and flake surface for a personal app | Chromium only |
+| Any flashcard/SRS UI npm package | None exists at meaningful adoption for the reveal-then-self-grade React pattern (ecosystem survey, 2026-07: results are full apps — Synapse, Quanta — not composable component libraries). Anything found would be low-download, unmaintained, and style-incompatible with the semantic token system | The existing `FlashcardMode` composition, per this project's proven zero-new-packages pattern (v1.1, v1.2 both shipped entire milestones dependency-free) |
+| `react-card-flip` or animation libraries (framer-motion etc.) | The 3D flip with dynamic height already exists in `globals.css` (`card-flip-container`/`card-flip-inner`) + the parent's measuring `useLayoutEffect`, with reduced-motion handling already wired | Reuse the existing flip CSS |
+| Fuzzy string matching libs (fastest-levenshtein, fuse.js) | Only needed for typed-answer scoring, which this milestone explicitly excludes | Nothing — self-grading needs no matching |
+| Korean NLP/tokenization additions | Out of scope per PROJECT.md standing decision ("Perfect Korean tokenization" is explicitly out of scope; `splitParticle` ambiguity accepted) | Existing `lib/sentence-match.ts` on the back face |
+| DB schema changes | `Sentence.translation` already stores the English prompt; `Card.distractors` is deprecated-in-place (write path removed, column kept — same treatment as `clozeSentence`/`clozeAnswer`) | No DDL. This avoids the Turso manual-DDL gotcha entirely |
+| A shared `<GradeBar>` extraction | Tempting during the mode consolidation, but the v1.3 refactor explicitly rejected a shared action-bar slot abstraction (documented in `FlashcardMode.tsx`'s header as RESEARCH Pitfall 3) | Each mode owns its full sticky action bar; with only 2 modes remaining the duplication is small and intentional |
+
+## Integration Map (explicit change surface)
+
+1. **`components/ModeSelector.tsx`** — the largest UX change, smallest code change. Replace the 3-mode grid + Exposure/Recall sub-toggle with a Passive/Active segmented control (reuse the existing sub-toggle's pill styling). `StudyMode` type narrows; `FlashcardSubMode` deleted. `onSelect` signature simplifies — every call site is in `StudyClient.tsx`.
+2. **`components/StudySession.tsx`** (837 lines today) — delete distractor-selection logic and the `multiple-choice`/`fill-blank` render branches; add the `active` branch rendering `ActiveRecallMode`. The queue, undo snapshots, optimistic `submitReview`, sentence memos, and card-height measurement all stay. **Net deletion.** One decision to surface in planning: whether Active mode keeps the bare-word-first gate (`showBareFront`) — for production practice the equivalent question is "what's the prompt when the sentence has no translation or the card is brand-new?" → fall back to `card.back`.
+3. **New `components/ActiveRecallMode.tsx`** — clone of `FlashcardMode.tsx` structure. Front: `sentence.translation` (or `card.back` fallback) in English, "Compose the Korean" helper copy, **no Korean text, no AudioButton, no tap-to-gloss**. Back: identical to FlashcardMode's back face (revealed `HighlightedSentence` + `AudioButton` + `card.front`/`card.back`/notes + "See another example"). Action bar: copied Show Answer → grade bar.
+4. **Deletions** — `MultipleChoiceMode.tsx`, `FillBlankMode.tsx`, their tests, the `distractors` write in `lib/extract-cards.ts`'s pipeline (column stays, prompt may stop requesting distractors — flag for the extraction-prompt owner: removing the field from `ExtractionSchema` is safe for zod but check `normalizeExtractedCards`).
+5. **`lib/fsrs.ts` / `POST /api/review` / `ReviewLog`** — untouched. Grading direction is invisible to FSRS.
+6. **E2E** — `e2e/grade-flow.spec.ts` drives the flashcard mode via `data-testid` (`mode-flashcard`, `reveal-btn`, `grade-*`); the mode-select testids will change with the new toggle. Budget a spec update in the phase plan (keep the same testid names on the new controls where possible to minimize churn).
 
 ## Version Compatibility
 
-| Package A | Compatible With | Notes |
-|-----------|-----------------|-------|
-| `@playwright/test@1.61.1` | Node 25.8 (dev machine) | Playwright requires Node ≥20 — fine. Browser binaries are version-locked to the npm package; re-run `npx playwright install chromium` after Playwright upgrades |
-| `@playwright/test@1.61.1` | `vitest@^4.1.9` | No runtime conflict; the only hazard is test-file discovery overlap — fixed by the `e2e/**` exclude and never cross-importing the two runners' APIs |
-| `next@16.2.1` | `revalidatePath`/`router.refresh` behaviors cited | Docs verified at 16.2.10; no changelog entry between 16.2.1→16.2.10 alters these APIs, but the "all previously visited pages refresh" breadth is explicitly documented as *temporary* behavior — pin the expectation in an E2E spec so a future Next upgrade that narrows it fails loudly |
-| `@playwright/mcp@0.0.78` | Claude Code MCP client | Pre-1.0, moves fast — invoke via `@latest` rather than pinning |
-| `prisma@7.6.0` `db push` | `file:` SQLite URLs | Works (the P1013 limitation is `libsql://`-only) — this is what makes the isolated E2E DB cheap |
+| Package | Compatible With | Notes |
+|---------|-----------------|-------|
+| ts-fsrs 5.3.1 | This feature, unchanged | The v1.6 `learningSteps` persistence fix must be preserved — Active mode reviews flow through the same `reviewCard()` path, so no new risk |
+| next 16.2.1 / react 19.2.4 | This feature, unchanged | `react-hooks/purity` applies: any prompt-fallback choice logic that reads time/randomness belongs in the existing memoized sentence-selection layer, not in `ActiveRecallMode` render |
 
 ## Sources
 
-- https://nextjs.org/docs/app/api-reference/config/next-config-js/staleTimes (docs v16.2.10) — dynamic default 0s since v15, back/forward exemption [official docs via webfetch; seam tier LOW, corroborated across three official pages]
-- https://nextjs.org/docs/app/glossary (docs v16.2.10) — Client Cache definition, "pages reused during back/forward navigation", invalidation API list [same tier]
-- https://nextjs.org/docs/app/api-reference/functions/use-router — `router.refresh()` semantics (current-route-only, state-preserving) [same tier]
-- https://nextjs.org/docs/app/api-reference/functions/revalidatePath — Server Function vs Route Handler behavior split; `('/', 'layout')` full-cache purge [same tier]
-- `vercel:next-cache-components` curated skill (plugin 0.44.0) — Cache Components enablement/migration and `updateTag` vs `revalidateTag` [curated; MEDIUM]
-- https://nextjs.org/docs/app/guides/testing/playwright + https://playwright.dev/docs/test-webserver — official setup, `webServer` options incl. `env` [official docs via webfetch; LOW tier per seam]
-- npm registry via `npm view` — `@playwright/test@1.61.1`, `@playwright/mcp@0.0.78`, `next@16.2.10` latest [direct registry query; HIGH]
-- [Playwright MCP getting started](https://playwright.dev/docs/getting-started-mcp), [microsoft/playwright-mcp](https://github.com/microsoft/playwright-mcp), [Builder.io Playwright MCP + Claude Code guide](https://www.builder.io/blog/playwright-mcp-server-claude-code) — agent-driving workflow [websearch; LOW]
-- [Vitest projects/exclude guidance](https://vitest.dev/guide/projects), [vitest#3102](https://github.com/vitest-dev/vitest/issues/3102) — e2e-dir exclusion pattern [websearch; LOW]
-- Local ground truth: `package.json`, `vitest.config.ts` (default include — needs the exclude), `app/page.tsx` / `app/study/page.tsx` (`force-dynamic` already present), `next.config.ts` (empty) [HIGH]
+- Direct source inspection (HIGH confidence — first-party): `components/ModeSelector.tsx`, `components/FlashcardMode.tsx`, `components/StudySession.tsx` (line counts), `.planning/PROJECT.md` (v1.7 milestone definition, v1.1/v1.2 zero-new-packages precedent, REFACTOR-01/Pitfall-3 shared-slot rejection)
+- Ecosystem survey via WebSearch (LOW per seam classifier, corroborative only): [awesome-fsrs](https://github.com/open-spaced-repetition/awesome-fsrs), [GitHub spaced-repetition topic](https://github.com/topics/spaced-repetition), [Synapse](https://github.com/Emadab/Synapse) — confirmed no composable React library for self-graded reveal UI; all matches are full applications
+- Self-grading vs typed-answer practice (LOW per seam classifier, consistent with training knowledge of Anki's "Basic (and reversed card)" template): [Anki Forums — reverse cards](https://forums.ankiweb.net/t/reverse-cards-in-random-mode/18533), [Anki spaced-repetition method guide](https://18kenglish.com/spaced-repetition-english-vocabulary-anki/)
 
 ---
-*Stack research for: v1.6 Freshness, Performance & E2E Testing (Korean Study app)*
-*Researched: 2026-07-10*
+*Stack research for: v1.7 Active Recall Study Mode (self-graded production exercise)*
+*Researched: 2026-07-14*

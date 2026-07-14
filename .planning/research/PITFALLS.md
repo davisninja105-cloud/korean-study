@@ -1,268 +1,230 @@
 # Pitfalls Research
 
-**Domain:** Adding cache-freshness fixes + first-time Playwright E2E to an RSC-hydration-optimized Next.js 16 / Prisma / Turso app with cookie auth (v1.6 Freshness, Performance & E2E Testing)
-**Researched:** 2026-07-10
-**Confidence:** MEDIUM-HIGH (Next.js/Playwright behavior cross-checked against official docs = MEDIUM; architecture-specific pitfalls grounded in this repo's actual code and a real prior incident = HIGH)
+**Domain:** Adding an Active Recall (English→Korean production) study mode to an existing sentence-centric FSRS app, while deleting Multiple Choice and standalone Fill-in-the-Blank (v1.7 Active Recall Study Mode)
+**Researched:** 2026-07-13
+**Confidence:** HIGH for code-integration pitfalls (grounded in direct reads of `components/StudySession.tsx`, `lib/sentence-selection.ts`, `lib/sentence-match.ts`, `components/ModeSelector.tsx`, `components/StudyClient.tsx`, `components/FlashcardMode.tsx`, `lib/fsrs.ts`, `lib/extract-cards.ts`, `lib/sync.ts`, `lib/card-style.ts`, `lib/generate-practice.ts`, `e2e/grade-flow.spec.ts`); MEDIUM for FSRS/self-grading domain claims (Anki/FSRS community guidance, cross-checked against how this app actually persists review state)
 
-**Context that shapes everything below:** v1.2 deliberately moved all four main routes to server-side RSC data fetching with `*Client.tsx` shells fed by props, specifically to kill the blank-loading flash. A **prior attempt to fix staleness regressed exactly this win** — the user's words: "it felt like the hydration aspect was completely forgotten about and now all tabs take forever to load even on the first try." Every freshness pitfall below is really the same meta-pitfall: *fixing staleness by destroying the performance architecture instead of invalidating at mutation boundaries.*
+**Phase legend used throughout** (matches the milestone's natural decomposition):
+- **add-active** — build the Active production mode + Passive/Active toggle
+- **remove-modes** — delete MultipleChoiceMode, FillBlankMode, the Exposure/Recall sub-toggle, and all dead session state
+- **cleanup** — retire distractor generation in the extraction pipeline, update tests/e2e/docs
 
-Phase legend used throughout:
-- **freshness** — diagnose & fix stale-data-on-revisit across `/`, `/cards`, `/study`, `/habits` without regressing first-load speed
-- **e2e-setup** — Playwright infrastructure (webServer, auth, test DB, conventions)
-- **e2e-coverage / perf** — flow coverage (sync, study, cards CRUD) + performance regression tests
+## Critical Pitfalls
 
-## Critical Pitfalls — Freshness Fix
-
-### Pitfall 1: Fixing the wrong cache layer (no diagnosis before treatment)
+### Pitfall 1: Active mode silently inverts foundation-first for brand-new cards — it needs its own gate, not `showBareFront`
 
 **What goes wrong:**
-Next.js has four distinct caches (fetch/data cache, full route cache, client-side Router Cache, browser bfcache). The reported symptom — *fresh on hard reload, stale after navigating back* — points specifically at the **client-side Router Cache**, which restores back/forward navigations from cache **regardless of `staleTimes`** (it deliberately mirrors bfcache). Developers who don't pin down which layer is serving stale data reach for the biggest hammer (`export const dynamic = 'force-dynamic'`, `fetchCache = 'force-no-store'`), which operates on the *server-side* layers, slows every request — and can **still leave back/forward navigation stale**, because the Router Cache is client-side. You pay the full cost and don't even fix the symptom.
+The existing bare-word-first gate is hard-scoped to Passive: `showBareFront = mode === 'flashcard' && flashcardSubMode === 'exposure' && isNewCard && (chosenSentence?.unknownCount ?? 0) > 0` (`StudySession.tsx:428`). Active mode doesn't match that gate, so with no new logic a brand-new card (state 0/1) in Active shows "Translate: *I went to school with my friend yesterday*" — asking the learner to **produce a full Korean sentence containing a word they have never seen**, plus context words they may have only *seen once*. That is a direct violation of the project's Core Value ("what you're meant to learn is always learnable in the moment"), and since the milestone makes Active the **default**, every new card hits it.
+
+Two distinct sub-problems hide here:
+1. **The target word itself is unknown** — no amount of sentence selection fixes an unproducible target.
+2. **`unknownCount` is a recognition signal, not a production signal.** The known-word threshold is FSRS state ≥ 1 ("seen at least once", PROJECT.md Key Decisions). One prior *exposure* makes a word readable context; it does not make it producible. Least-unknown ranking is still the right sentence pick for Active, but `unknownCount === 0` must not be interpreted as "the learner can produce this sentence."
 
 **Why it happens:**
-The cache layers are invisible and their interactions are the most-complained-about part of the App Router. `force-dynamic` "feels" like the freshness switch. The prior incident here almost certainly followed this path.
+The bare-word-first machinery looks reusable ("it already handles new cards"), so the natural move is to extend the existing gate with `|| mode === 'active'`. But the gate's *output* is wrong for Active: bare Korean word on the front is an *exposure* treatment; Active's front is English. The analog for Active is a different artifact entirely — e.g. prompt with the card's English gloss (`card.back`) and ask the learner to produce **the word**, or degrade state-0/1 cards to the Passive exposure presentation for that review.
 
 **How to avoid:**
-Make the first task of the freshness phase a **written diagnosis**, not a fix: (1) run `npm run build` and record each route's rendering mode (`○` static vs `ƒ` dynamic) from the build output; (2) reproduce staleness in a production build (`npm run build && npm start`, never `next dev`); (3) distinguish the three navigation paths — `<Link>`/tab tap, browser back/forward, hard reload — and record which are stale. Only then choose the invalidation point. For this app the expected fix shape is **targeted invalidation at mutation boundaries**: `router.refresh()` fired once when a study session completes and when a sync completes (both moments are already explicit events in `StudySession.tsx` / SyncPanel / pull-to-refresh), not global cache disabling.
+Design the Active new-card gate as an explicit, named decision before implementation (this is a product decision, not a code detail — per the user's plan-first preference). Two defensible shapes:
+- **Word-level production prompt:** for `isNewCard`, front = `card.back` (the English gloss) → "produce the Korean word"; sentence-level production only once state ≥ 2. Mirrors the existing bare-word-first philosophy in production form.
+- **Passive degrade:** state 0/1 cards render the Passive exposure face even inside an Active session (precedent: Recall already degrades to Exposure when `recallBlanked === null`).
+Either way, compute it as a new pure derived value (e.g. `activePromptLevel: 'word' | 'sentence'`) next to `showBareFront`, from the same inputs (`isNewCard`, `chosenSentence`), and unit-test it. Note the gate must read state from the **requeued** card (`updatedItem` carries the post-grade review back into the queue), which works automatically only if derived from `queue[0]` in render like `showBareFront` is today.
 
 **Warning signs:**
-- Any diff adding `export const dynamic = 'force-dynamic'`, `fetchCache = 'force-no-store'`, `revalidate = 0`, or `Cache-Control: no-store` to `app/*/page.tsx` or `layout.tsx`
-- A "fix" verified only in `next dev` (dev doesn't exercise the production Router Cache behavior — the repo's own CLAUDE.md gotcha)
-- Staleness "fixed" for tab-tap navigation but nobody tested browser back/forward specifically
+- The Active front renders `chosenSentence.translation` unconditionally with no `isNewCard` branch anywhere in the diff
+- No decision recorded about what a state-0 card shows in Active
+- A dev-session test where a freshly-synced lesson's cards are studied in Active and the first thing shown is a full-sentence translation prompt
 
-**Phase to address:** freshness — as its *first* plan (diagnosis task gating the fix task).
+**Phase to address:** add-active (gate design is the first plan of the phase)
 
 ---
 
-### Pitfall 2: `useState(initialProps)` shells silently ignore refreshed server data
+### Pitfall 2: Wiring Active through the existing `needsBlank`/Recall machinery changes which sentence gets picked
 
 **What goes wrong:**
-This is the pitfall most specific to THIS architecture. `CardsClient` initializes `useState<CardDTO[]>(initialCards)`; `HomeClient`, `HabitsClient`, `StudyClient` follow the same props-to-initial-state pattern. React only reads a `useState` initializer on **first mount**. After a correct `router.refresh()`, the RSC re-renders and passes *fresh props* — but the mounted client shell keeps its *stale state*. The freshness fix "doesn't work," the developer concludes `router.refresh()` is broken, and escalates to `force-dynamic` or re-introducing client-side `useEffect` fetching. This escalation chain plausibly explains the prior regression.
+Active "replaces" Recall and Fill-blank, so the tempting implementation is to reuse their plumbing — set `needsBlank = true` for Active, or model Active as a new `flashcardSubMode`. But blank-safety is **irrelevant** to Active: the entire Korean sentence is hidden, so there is nothing to blank. If Active passes `needsBlank = true`, `selectSentence()` applies the blank-safe override (step 4) and silently picks a *different sentence* than Passive would for the same card — the learner gets prompted with a translation of a sentence chosen for a constraint that doesn't apply, and cards whose best (least-unknown) sentence is "unsafe" get a worse prompt for no reason. Conversely, the `recallBlanked === null → degrade to Exposure` path can misfire if Active is routed through the Recall branch of `FlashcardMode`.
 
 **Why it happens:**
-The v1.2 pattern (`useState(initialProp)`, no sync effect) was *correct* when props never changed after mount. `router.refresh()` changes that contract: props now update in place on a mounted component.
+`needsBlank` currently means "this mode hides the targetForm," and Active also hides things — the semantic looks adjacent. And the Recall sub-mode's front ("hide part of the sentence") looks like a milder version of Active's front ("hide all of it").
 
 **How to avoid:**
-Decide per shell how refreshed props flow in, and write it down as the pattern:
-- **Derive, don't copy:** where the prop is only read (Home/Habits stats, heatmap), render directly from props — delete the state copy entirely.
-- **Where local mutation exists** (CardsClient edits/deletes cards locally): either re-mount the shell via a `key` derived from a server-provided token, or reconcile props→state deliberately — mindful that `react-hooks/set-state-in-effect` forbids synchronous `setState` in effect bodies (use the render-time "previous props" comparison pattern from the React docs, or sync inside async callbacks).
-- **Never** re-sync `StudyClient` mid-session — see Pitfall 3.
+Active passes `needsBlank = false` into `selectSentence()` — same as Exposure. Assert this in a unit test: for a card whose least-unknown sentence is blank-unsafe, Active and Passive must select the **same index**. Bonus correctness property worth encoding: the sentence a learner is asked to produce in Active should be the same sentence they'd have been shown in Passive (least-unknown pick), so the two modes reinforce the same example. Also note the memoized `chosenIdx` has `needsBlank` in its dep array (`StudySession.tsx:395-398`) — once MC/fill-blank are gone and Recall is retired, `needsBlank` should collapse to a constant `false` and eventually disappear rather than linger as a dead parameter.
 
 **Warning signs:**
-- `router.refresh()` visibly re-runs the server (network tab shows the RSC payload) but the UI doesn't change
-- A shell both holds `useState(initialProp)` *and* is expected to receive refreshed props
-- New `useEffect(() => setX(prop), [prop])` blocks added hastily without handling in-flight local edits
+- `needsBlank` computed as `mode === 'active' || …` anywhere
+- Active implemented as a third `FlashcardSubMode` value instead of a top-level mode
+- `blankSentence()`/`recallBlanked` referenced from the Active render path
 
-**Phase to address:** freshness — the props→state reconciliation strategy per shell must be in the PLAN, not improvised.
+**Phase to address:** add-active
 
 ---
 
-### Pitfall 3: Refreshing at the wrong moment — mid-session, per-grade, or on mount
+### Pitfall 3: Self-grading the *sentence* instead of the *card* — corrupting FSRS state for the wrong item
 
 **What goes wrong:**
-`router.refresh()` re-renders the current route's server components. If fired during an active study session it re-runs `getStudyCards()` (a Turso round-trip + selection + sequencing) and pushes a *new* card list at `StudyClient` while the mutable queue, optimistic FSRS state, undo snapshots, and `seenCardIdsRef` are live. Fired per-grade, it also races the fire-and-forget `POST /api/review` (the optimistic write may not have landed yet, so the refreshed server data is *older* than client state — fresh-looking stale data). Fired in a mount effect, it doubles every navigation's server work.
+`Card` is the FSRS review unit (explicitly out of scope to change). In Active, the learner produces a whole sentence and then judges "did I get it right?" If the reveal presents the Korean sentence as an undifferentiated answer, the learner will grade **whole-sentence accuracy** — pressing Again because they fumbled a context particle or word order, even though they produced the card's target item perfectly. Those lapses accumulate on the card's `CardReview` state (stability drops, lapses increment, the card loops in relearning), scheduling the *target word* as forgotten when it wasn't. Multiply across a session and Active quietly degrades the whole deck's scheduling. The inverse failure also exists: grading Good because "the gist was right" when the targetForm itself was wrong.
 
 **Why it happens:**
-"Refresh after mutation" gets interpreted as "refresh after *every* mutation." In this app a grade is a mutation, but the session is designed to be atomic (PROJECT.md: "study sessions are atomic — no real-time updates").
+Nothing in a bare reveal tells the learner *what the grade is about*. Exposure mode already solves this with copy ("Recall the meaning of the highlighted part") plus the `HighlightedSentence` targetForm marker — Active needs the equivalent, and it's easy to omit because the reveal "looks done" without it.
 
 **How to avoid:**
-Refresh only at **session boundaries**: session complete screen, session abandon/navigate-away, sync complete (SyncPanel + pull-to-refresh success). Because review saves are fire-and-forget with bounded retries (~500ms/~1500ms backoff), a session-complete refresh should either await/observe the last pending review POST or explicitly tolerate eventual consistency (the due list is computed from `CardReview.nextReview`, so a lost race shows one already-graded card as still due — decide which is acceptable and document it).
+The Active reveal must render the Korean sentence through `HighlightedSentence` (targetForm marked, tap-to-gloss wired like every other sentence surface) and carry explicit grade-anchoring copy: e.g. "Grade yourself on the **highlighted expression** — different word order or phrasing is fine." Keep `previewIntervalLabels` hints on the grade bar unchanged (they're computed in `handleReveal`, event-handler-safe). Related domain point (MEDIUM confidence, consistent with FSRS community guidance): grading familiarity instead of retrieval is the classic self-grade failure — the production flow actually *helps* here because the learner must commit to an answer before reveal, but only if the UI doesn't offer a reveal-first shortcut; keep the reveal a deliberate tap, exactly like today's Show Answer.
 
 **Warning signs:**
-- `router.refresh()` inside `submitReview`/grade handlers
-- Cards reappearing or the queue resetting mid-session
-- Home hero showing a due count that disagrees with the session just completed (write race)
+- Active reveal renders `chosenSentence.korean` as plain text instead of `HighlightedSentence`
+- No copy near the grade bar explaining the grading criterion
+- User feedback that intervals feel wrong / cards keep coming back after Active sessions
 
-**Phase to address:** freshness — the write-race tolerance decision belongs in the plan's binding truths.
+**Phase to address:** add-active (the reveal design), with copy in the same plan — not deferred to polish
 
 ---
 
-### Pitfall 4: Regressing first-paint by re-introducing client-side fetching or killing prefetch
+### Pitfall 4: Re-adding automatic correctness checking to a mode that exists because automatic checking failed
 
 **What goes wrong:**
-Two "freshness" moves directly undo v1.2: (a) moving data fetching back into `useEffect` in the client shells ("always fresh!") — restores the blank-flash and adds a client round-trip on every visit; (b) slapping `prefetch={false}` on the Nav `<Link>`s or forcing dynamic rendering so every tab tap waits on a full Vercel-function + Turso round-trip with no cached RSC payload. The user's report — "all tabs take forever to load **even on the first try**" — is the signature of (b) combined with lost skeleton coverage: each navigation became an uncached serverless invocation against Turso (cold start + DB latency per tap).
+Fill-blank has `normalizeAnswer()` exact-match comparison and a correct/incorrect verdict; it's being retired partly because typed exact-match is a poor fit. A "translate this sentence" exercise has *many* valid Korean renderings (politeness level, word order, particle choices, synonyms) — any string comparison, fuzzy match, or LLM-judged verdict either rejects correct answers (frustration + dishonest Again grades) or adds an LLM round-trip to every reveal (latency + cost + a new failure mode on the study loop's hot path, which v1.2 worked hard to make instant). The optimistic-grading contract (`submitReview` is synchronous; FSRS computed client-side; save fire-and-forget) leaves no room for an async correctness verdict before grading.
 
 **Why it happens:**
-Each move genuinely does deliver freshness; the cost is just paid on every navigation instead of once per mutation.
+Self-grading feels "soft," and the deleted modes both had objective verdicts (`mcRating`, `fillCorrect`) — there's gravitational pull toward keeping *some* automated check. Also `stats.correct` is currently fed by `isCorrect = rating >= 3`, which tempts someone to want a "real" correctness source.
 
 **How to avoid:**
-Adopt an explicit invariant for the milestone: **first-load and tab-navigation performance are regression-gated.** Concretely: (1) no `useEffect` initial-data fetching returns to any `*Client.tsx`; (2) Nav `<Link>` prefetch stays default; (3) `loading.tsx` skeletons must still render on tab navigation (if the fix makes navigations slower-but-fresher, the skeleton is the floor of acceptability); (4) an E2E check asserts real content in the first server-rendered paint and skeleton-then-content on tab switch *before* the freshness change lands, so any regression is mechanically visible.
+Active is pure self-grade on the existing 4-button FSRS bar, full stop — same as Exposure. `isCorrect = rating >= 3` carries over unchanged. If production-answer feedback is ever wanted, that's a future milestone (and would go through the ephemeral `/api/generate`-style path, never the grading path). Record this as an explicit non-goal in the phase spec so it doesn't creep in at execution (matches the user's confirm-optional-scope preference).
 
 **Warning signs:**
-- `fetch('/api/...')` on mount reappearing in client shells
-- The empty-state flash returning ("No cards yet" blink)
-- Build output flipping previously-fine routes' rendering mode
-- Tab switches showing a blank frame instead of the skeleton
+- A text input appearing in the Active mockup
+- Any `fetch` between reveal and grade in the Active flow
+- `normalizeAnswer` surviving the fill-blank deletion because "Active might use it"
 
-**Phase to address:** freshness defines the invariant; e2e-setup encodes it as a regression test. **Strong ordering recommendation: stand up the E2E baseline (or at minimum the first-load/tab-nav test) *before* merging the freshness fix** — this milestone exists because the last attempt shipped without one.
+**Phase to address:** add-active (as a written non-goal); remove-modes (delete `normalizeAnswer` and `fillCorrect` outright)
 
 ---
 
-### Pitfall 5: Breaking the DTO boundary or the shared-pipeline contract while adding refresh paths
+### Pitfall 5: Deleting modes by removing files instead of narrowing the type — the dispatch's `else` branch and a graveyard of dead session state
 
 **What goes wrong:**
-New refresh paths (a server action calling `revalidatePath`, a new re-fetch endpoint, an RSC returning extra fields) leak raw Prisma `Date` objects across the server→client boundary, violating RSC-05 — which either throws at serialization or silently produces wrong client behavior. Similarly, adding a freshness-specific data path that *bypasses* `lib/study-cards.ts` / `lib/dashboard.ts` forks the single-source-of-truth pipeline that the RSC pages and API routes share — RSC render and client re-fetch start disagreeing about what "the data" is.
+`StudySession`'s mode dispatch is a ternary chain whose **final `else` is `FillBlankMode`** (`StudySession.tsx:786-834`). Delete MC first while keeping the ternary shape and any non-flashcard mode value silently renders fill-blank. Worse, the mode-specific state is woven through the 837-line parent, not the sub-components: `mcOptions` useMemo, the `seed` useMemo (used **only** by `mcOptions`), `seededShuffle` (only caller: `mcOptions`), `MC_ADVANCE_MS`, `advanceTimer` + its cleanup effect, `mcSelected`/`fillInput` state (both reset in `submitReview`'s advance block), `advanceMc`, `handleMcSelect`, `mcRating`, `normalizeAnswer`, `fillSentence`/`fillTranslation`/`fillAnswer`/`fillCorrect`/`useChosenForFill`/`chosenMatch`, and three per-mode branches in `handleKeyDown` (MC's 1–4 option select, fill-blank's 1/3-only grading, MC's Enter-to-advance). Leaving any of these behind is not just clutter — `advanceTimer` is a live `setTimeout` lifecycle, and orphaned reset calls in `submitReview` reference deleted state setters.
 
 **Why it happens:**
-Freshness work touches every server→client seam at once; it's the highest-traffic moment for boundary violations since v1.2 itself.
+The v1.3 refactor deliberately kept all session state in the parent (mode components are presentational), so "delete the component file" removes ~100 lines of a mode that actually occupies ~250 lines across the parent.
 
 **How to avoid:**
-Any new data crossing the boundary goes through `lib/dto.ts` types; any new fetch path calls the existing `lib/study-cards.ts`/`lib/dashboard.ts` functions. If a server action is introduced, its return value is DTO-typed too. Code-review check: grep changed prop interfaces for `Date` types.
+Narrow the type **first**: change `StudyMode` in `ModeSelector.tsx` to the new union (whatever it becomes — e.g. `'passive' | 'active'`) and let `tsc`/ESLint enumerate every stale reference — the compiler becomes the deletion checklist. Then delete in one atomic commit per mode: component file + parent state + derived values + keyboard branch + reset calls. After deletion, grep for the dead identifiers (`mcOptions`, `seededShuffle`, `MC_ADVANCE_MS`, `fillInput`, `normalizeAnswer`, `advanceTimer`) — zero hits expected in `components/`. The queue/undo/requeue pipeline (`submitReview`, `handleUndo`, `REQUEUE_GAP`, `postReviewWithRetry`) is mode-agnostic and must be verifiably untouched — the grade-flow e2e spec is the regression net for exactly this.
 
 **Warning signs:**
-- A changed `*Client.tsx` prop interface with a `Date` type
-- A new `app/api/*` route duplicating a `lib/` query inline
+- `npm run build` passes but grep still finds `seededShuffle` or `MC_ADVANCE_MS`
+- A ternary dispatch surviving with an `else` branch after only two modes exist
+- `submitReview`'s advance block still calling `setFillInput('')`/`setMcSelected(null)` for deleted state
 
-**Phase to address:** freshness (code-review checklist item).
+**Phase to address:** remove-modes
 
 ---
 
-### Pitfall 6: Adopting `unstable_cache` / Cache Components / `staleTimes` tuning as the fix
+### Pitfall 6: Grep-deleting "fill-blank" nukes a *different* fill-blank — the AI-practice card type
 
 **What goes wrong:**
-Current ecosystem advice gravitates toward Next 16 Cache Components (`"use cache"`, `cacheLife`, `updateTag`) or the experimental `staleTimes` config. For this app: cross-request DB caching was **already evaluated and rejected in v1.2** ("staleness risk outweighed gain for a single-user app" — it's in PROJECT.md Out of Scope), and this milestone's problem is *too much* caching, not too little. Adding a new cache layer to fix staleness inverts the problem. `staleTimes` tuning is also a red herring here because back/forward restoration ignores it.
+The string `'fill-blank'` names **two unrelated concepts** in this codebase: (a) the study mode being deleted, and (b) an AI-practice card *type* generated by `lib/generate-practice.ts` (`type: 'example-sentence' | 'fill-blank' | 'transformation'`) and styled by `lib/card-style.ts`'s `TYPE_BADGE_CLASS['fill-blank']` (orange badge). A search-and-destroy pass on "fill-blank" deletes the badge entry and/or mangles the practice-generation prompt, breaking AI practice rendering — a feature that is *not* in this milestone's scope. Similarly, "multiple-choice" appears in `lib/audit-checks.ts` comments/test rationale about distractor anomalies (legacy-data checks that should survive).
 
 **Why it happens:**
-Searching "Next.js stale data" in 2026 surfaces Cache Components migration content; it looks like The Modern Answer.
+Identical string, different domain. The mode and the practice-card type were named independently.
 
 **How to avoid:**
-Treat the v1.2 Out-of-Scope decision as binding unless the Pitfall-1 diagnosis proves a server-side cache layer is actually the stale source. The fix budget for this milestone is invalidation calls + client-shell prop reconciliation, not new caching architecture.
+Scope deletions by *symbol*, not string: the mode lives in `StudyMode`, `ModeSelector`, `StudySession`, `FillBlankMode.tsx`. Explicitly list the survivors in the removal plan: `lib/generate-practice.ts` (untouched), `lib/card-style.ts` badge entries (untouched), `lib/audit-checks.ts` distractor checks (untouched — the column still holds legacy data worth auditing). Separately, decide how `PracticeCard`s render in Active: they have no sentences and no FSRS state; today they flow through the flashcard faces via the no-sentence fallback. Simplest correct answer: practice items always render the Passive face regardless of session mode (they're ungraded-into-FSRS extras; `undoRef` is already nulled for them).
 
-**Warning signs:** `"use cache"` directives, `unstable_cache` imports, `cacheComponents`/`staleTimes` config changes appearing in the diff.
+**Warning signs:**
+- `lib/card-style.ts` or `lib/generate-practice.ts` appearing in the remove-modes diff
+- AI practice cards rendering with the gray default badge after the milestone
+- Distractor audit tests deleted "because multiple choice is gone"
 
-**Phase to address:** freshness (scope guard in the plan).
+**Phase to address:** remove-modes (survivor list in the plan); cleanup (verify)
 
 ---
 
-## Critical Pitfalls — Playwright E2E
-
-### Pitfall 7: E2E runs pointed at production Turso (real deck, real Claude spend)
+### Pitfall 7: The e2e suite and its seed assumptions break the moment ModeSelector changes
 
 **What goes wrong:**
-`.env` in this repo contains the **production** `libsql://` `DATABASE_URL`. Next.js and Prisma auto-load it. A Playwright `webServer` that starts the app without overriding env will run E2E card-CRUD and sync flows against the live deck — deleting real cards with real FSRS history (violating the standing "never destroy FSRS state" rule), polluting `StudyDay`/`ReviewLog`, and a sync test would hit the real Google Doc + Claude Opus (cost + 60s-scale latency + nondeterminism).
+`e2e/grade-flow.spec.ts` clicks `page.getByTestId('mode-flashcard')` and its whole loop design encodes Exposure-mode behavior ("Exposure is the default sub-mode (D-03)"); the milestone replaces the 3-mode grid + sub-toggle with a Passive/Active toggle, so that testid and flow disappear. Additionally, the e2e seed creates **brand-new cards** (first grade treated as new — see the spec's own header comment), which is precisely the population Pitfall 1's gate treats specially: if Active becomes the default and the spec is naively updated to "click through the default mode," it now exercises the new-card Active gate, and its reveal/grade assertions (`reveal-btn`, `grade-good` testids) may not match the new face. The freshness-gate specs also assert against `/study`'s select-mode surface (`due-count`, `start-studying-btn`) — lower risk, but the mode sheet flow is in the path.
 
 **Why it happens:**
-Single-tenant apps have no staging habit; env loading is implicit; the first E2E run "just works" because it found real data — which is exactly the trap.
+The e2e suite is one milestone old; this is the first UI change since it was written, so there's no habit yet of treating `data-testid` contracts as part of the change surface.
 
 **How to avoid:**
-- Test env is **explicit and local**: `DATABASE_URL=file:./e2e-test.db`. Note: `prisma db push` **works** against `file:` URLs — the Turso DDL gotcha does not apply to the test DB, so schema setup is one command in global setup.
-- Reuse the project's own Phase-22 pattern: **print the resolved DB host before the suite runs and hard-fail if it starts with `libsql://`**. A 5-line guard in Playwright global setup.
-- Seed deterministic fixture data via a Prisma script (cards + sentences + reviews + dependency edges), not via the UI and never via real sync.
-- Sync E2E never calls the real pipeline: seed `Lesson` rows directly and scope sync coverage to route auth + error surfacing with fixtures.
+Treat testids as an API: inventory every `data-testid` the specs consume (`mode-flashcard`, `reveal-btn`, `grade-*`, `start-studying-btn`, `due-count`, `session-complete-heading`, `card-front-word`, `study-more-btn`) and decide per-id: keep, rename, or replace. Update `grade-flow.spec.ts` in the **same phase** as the ModeSelector rewrite — an intentionally-red intermediate state is fine within a phase but the phase can't close red. Add one new Active-flow spec (prompt shown in English → reveal shows Korean → grade) since Active is now the default path real usage takes; reuse the existing bounded loop-until-complete pattern (never a fixed grade count — the FSRS learning-step nondeterminism lesson from Phase 27).
 
 **Warning signs:**
-- E2E "passes" with data you recognize from your actual deck
-- `ReviewLog`/`StudyDay` rows in production with timestamps matching test runs
-- Anthropic API usage spikes during test runs
+- `npx playwright test` not run after the ModeSelector rewrite
+- A "temporary" `test.skip` on grade-flow that survives the milestone
+- New Active UI shipping with zero e2e coverage while the deleted modes' coverage was the only session coverage
 
-**Phase to address:** e2e-setup — the very first task (guard exists before any test does).
+**Phase to address:** remove-modes (grade-flow update travels with the ModeSelector change); add-active (new Active spec)
 
 ---
 
-### Pitfall 8: Per-test UI login instead of storageState / direct cookie injection
+### Pitfall 8: Half-retiring distractors — the four-site pipeline change that looks like a one-liner
 
 **What goes wrong:**
-Every test navigating to `/login`, typing the password, and submitting adds seconds per test, and makes *every* test fail when the login page has any issue (one bug = 100% red suite, zero signal). Conversely, naive storageState handling commits the state file — which contains the auth cookie, a real secret with **no expiry** in this app's stateless HMAC scheme.
+"`Card.distractors` no longer written" touches a coordinated chain, and partial edits each fail differently:
+1. **`lib/extract-cards.ts` prompt** demands "EXACTLY 3 plausible-but-wrong English meanings" per card — leave it and every sync keeps paying Opus tokens (and adaptive-thinking time) to generate data nobody reads, on a route already squeezed under the 60s Vercel limit.
+2. **`ExtractionSchema` (zod)** has `distractors: z.array(z.string())` as a required field feeding native structured outputs — remove it from the prompt but not the schema and the model is *forced* by the output format to fabricate distractors anyway (structured outputs constrain generation to the schema); remove it from the schema but not `normalizeExtractedCards` and the warn-on-`<3` check (`extract-cards.ts:425-427`) fires on every card.
+3. **`lib/sync.ts`** builds `distractorsJson` and writes it in both the create and update branches (lines 165–219) — the actual "stop writing" site.
+4. **`tests/extract-cards.test.ts`** encodes the current shape and will go red on any of the above.
+Also: the truncation-salvage path (`parseExtractionResponse`) parses whatever raw shape the model emitted — it must tolerate cards *with or without* a distractors key during the transition.
 
 **Why it happens:**
-The login flow is the first thing that works, so it becomes the implicit setup for everything.
+The milestone phrasing ("column left in place, not written") sounds like deleting one `distractors:` line in sync.ts. The precedent (`clozeSentence`/`clozeAnswer` deprecation) predates structured outputs, so there's no prior example of retiring a *schema* field.
 
 **How to avoid:**
-This app's auth makes this unusually easy — exploit it. `lib/auth.ts` computes a **deterministic HMAC token from `AUTH_SECRET`** (no session table, no expiry). Two good options:
-1. **Setup project** (Playwright's documented pattern): one `auth.setup.ts` logs in via `/login` once, saves `storageState` to `playwright/.auth/user.json` (gitignored / under `outputDir`); all test projects declare the dependency and set `storageState`. This also makes the login flow itself covered by exactly one test.
-2. **Direct injection** for speed: compute the token with the same `computeAuthToken()` code and `context.addCookies([{ name: 'ks_auth', ... }])` — zero UI dependency.
-Either way `APP_PASSWORD`/`AUTH_SECRET` must be set in `webServer.env`, and remember `middleware.ts` guards **API routes too** — any test using Playwright's `request.*` for seeding/assertions needs the cookie on the request context, not just the page.
+One cleanup plan owning all four sites atomically: drop the field from prompt + zod schema + `normalizeExtractedCards` + sync writes + tests in a single commit; mark `Card.distractors` with the same `@deprecated`-style doc comment pattern as the cloze columns in `prisma/schema.prisma` and `lib/dto.ts` (`CardDTO.distractors` stays — the column is still selected by `lib/cards-list.ts`; its comment there already anticipates this). Validate with the existing non-persisting eval script pattern (`scripts/prompt-eval.mts`) before trusting the changed extraction schema against a real lesson — schema changes to structured outputs are exactly what that script exists for. Keep `lib/audit-checks.ts`'s distractor anomaly class (it audits legacy rows) but downgrade its findings to informational in the report copy.
 
 **Warning signs:**
-- Suite runtime dominated by `/login` navigations
-- `playwright/.auth/*.json` showing up in `git status`
-- API-level calls returning 401 or `/login` redirects
+- Sync logs full of "has N distractor(s), expected 3" warnings post-change
+- Extraction latency unchanged after "removing" distractors (prompt still asks for them)
+- A red `extract-cards.test.ts` "fixed" by re-adding the schema field instead of updating the test
 
-**Phase to address:** e2e-setup.
+**Phase to address:** cleanup
 
 ---
 
-### Pitfall 9: Testing against `next dev` — flaky AND invalid for this milestone
+### Pitfall 9: Lint traps specific to the new reveal UI (`react-hooks/purity`, `set-state-in-effect`, and the parent-owned refs contract)
 
 **What goes wrong:**
-Two distinct failures. (a) Generic flakiness: dev-mode on-demand compilation makes the *first* navigation to each route take 5–30s (timeout storms), and HMR/overlays interfere with selectors. (b) **Milestone-specific invalidity:** the exact behavior under test — Router Cache, `loading.tsx`, RSC payload reuse — differs between dev and production builds. The repo's own CLAUDE.md already warns: "Test RSC first-paint behavior with `npm run build && npm start`, not `next dev`." An E2E suite that green-lights the freshness fix in dev proves nothing about the production behavior the user actually experiences.
+Three concrete traps for a new `ActiveMode` (or extended `FlashcardMode`):
+1. **Purity:** `previewIntervalLabels()` calls `new Date()` — it is documented "must be called from event handlers, not during render" and today runs only inside `handleReveal`. Any new "compute hints for the Active grade bar" code that lifts it into render or a `useMemo` violates `react-hooks/purity`. Same for any per-card prompt variety: must use the existing `hashStr(cardId) + reps` seeded pattern, never `Math.random()`.
+2. **set-state-in-effect:** the natural "auto-play the sentence audio when revealed" feature written as `useEffect(() => { if (revealed) play() }, [revealed])` combines a side effect keyed on state with (typically) a `setPlaying` call — the exact shape the lint rule and this codebase's conventions forbid. Audio start belongs in `handleReveal` (event handler), or is simply omitted — `AudioButton` is already tap-to-play and mounted next to every Korean sentence.
+3. **The measurement-refs contract:** the parent's `useLayoutEffect` measures `frontRef`/`backRef` to drive the 3D flip's dynamic height (`StudySession.tsx:363-366`). If the Active face doesn't attach the threaded `frontRef`/`backRef` (or a new mode component doesn't accept them), `cardHeight` sticks at the 220px default and long prompts/answers clip — a visual bug that only shows on real multi-line content, not short test cards. Similarly `againBtnRef` must land on the Again button or the reveal-focus a11y behavior (WR-02) silently dies. Mode components own **no session state** (REFACTOR-01 contract) — the only hook allowed is `useWordTap()`.
 
 **Why it happens:**
-`next dev` is the muscle-memory command, and most Playwright examples show `command: 'npm run dev'`.
+All three constraints are invisible in the sub-component's own file — they're contracts with the parent, documented in comments a new file won't inherit.
 
 **How to avoid:**
-`webServer: { command: 'npm run build && npm start -- -p 3100', port: 3100, reuseExistingServer: !process.env.CI, timeout: 180_000, env: { DATABASE_URL: 'file:./e2e-test.db', APP_PASSWORD: ..., AUTH_SECRET: ... } }`. Use a **dedicated port** (3100, not 3000) so `reuseExistingServer` can never silently attach to your dev server running with production env. The ~1–2 min build is a fixed per-suite cost; `reuseExistingServer` on the dedicated port amortizes it during local iteration.
+Start the new mode component from `FlashcardMode.tsx` as the template (it threads all three refs and demonstrates the `useWordTap`-only hook rule). Run `npm run lint` before UAT, not after. Verify dynamic height with a real long-translation card in the dev DB, not the e2e fixture.
 
 **Warning signs:**
-- First-navigation timeouts that vanish on retry (dev compile-on-demand signature)
-- Freshness tests passing locally while the user still sees stale data in production
-- E2E hitting `localhost:3000` while a dev server is also on 3000
+- `previewIntervalLabels` appearing outside `handleReveal`
+- Any `useEffect` in the new mode component
+- Cards visually clipping on long sentences in Active only
 
-**Phase to address:** e2e-setup (webServer config); all freshness E2E tests inherit it.
+**Phase to address:** add-active
 
 ---
 
-### Pitfall 10: Parallel workers sharing one SQLite file — cross-test data races
+### Pitfall 10: Prompt/answer mismatch — the reveal must pin `chosenSentence`, and zero-sentence cards need a defined prompt
 
 **What goes wrong:**
-Playwright's per-test browser-context isolation covers cookies/localStorage — **not the database**. Playwright defaults to N parallel workers; all hit the same `file:./e2e-test.db`. Card-CRUD tests race study tests (a card deleted mid-session), due-count assertions see other tests' reviews, and SQLite file-level write locking adds spurious busy/locked failures. Tests pass alone, fail in the suite, in random combinations.
+Two edge paths inherited from the flashcard back-face:
+1. **Example cycling:** the revealed back renders `displayedSentence` (which "See another example →" advances via `exampleOffset`), while the Active *prompt* was `chosenSentence.translation`. If Active reuses the back-face as-is, one tap of the cycle button makes the displayed Korean answer a *different sentence* than the English the learner just translated — actively confusing in a production mode. Either hide the cycle button in Active or make cycling advance the prompt for the *next* presentation only.
+2. **No sentences:** `chosenSentence` is null for sentence-less cards (`chosenIdx === -1`) and for all `PracticeCard`s. Passive falls back to the bare-word face; Active has no defined fallback — `chosenSentence.translation` is a null-deref or a blank front. The natural fallback is the word-level production prompt from Pitfall 1 (`card.back` → produce the word), which conveniently makes the zero-sentence case and the new-card case the same code path.
 
 **Why it happens:**
-Parallelism is the default; DB sharing is invisible until two tests touch the same rows.
+These paths are invisible in the happy-path design ("show translation, reveal sentence") and the current deck mostly has 1–3 sentences per card — but the extraction pipeline only *code-enforces* ≥1 blank-safe sentence for persisted cards, practice cards have zero, and one zero-sentence card already existed once (fixed in v1.5).
 
 **How to avoid:**
-For this app's scale, **start with `workers: 1` and `fullyParallel: false`** — the suite will be small (single-user app, a handful of flows) and serial execution eliminates the whole class. If parallelism is ever needed, per-worker DB files + server instances via `testInfo.workerIndex` is the documented pattern — but that's over-engineering at v1.6. Also make seeding idempotent and order-independent (reset + reseed in global setup or per test file), so test order never matters.
+Make the Active prompt derivation total: a pure function from `(card, chosenSentence, isNewCard)` → prompt descriptor, unit-tested for null-sentence, new-card, and practice-card inputs. Pin the revealed answer to `chosenSentence` (not `displayedSentence`) in Active.
 
 **Warning signs:**
-- Tests green in isolation (`--grep`), red in full runs
-- Count assertions (due cards, streaks) off by small amounts
-- Intermittent database-locked errors
+- `displayedSentence` referenced in the Active reveal
+- No test for `sentences: []` in the new prompt-selection helper
+- "See another example →" visible under an Active reveal
 
-**Phase to address:** e2e-setup (config default); revisit only if suite runtime becomes a problem.
-
----
-
-### Pitfall 11: Timing assumptions vs this app's animations and fire-and-forget writes
-
-**What goes wrong:**
-Three app-specific flake sources: (a) **animations** — 3D card flip with measured dynamic height, Sheet spring slide-up, confetti, inter-card fades — mid-animation clicks miss or hit the wrong element; (b) **optimistic grading** — the UI advances to the next card *before* `POST /api/review` completes (fire-and-forget with bounded background retries), so any test that grades a card and then asserts server-derived state (due counts after refresh, ReviewLog rows) races a write that may be ~2s behind — or lost; (c) **TTS/audio** — `/api/tts` 503s without a Blob token and `AudioButton` falls back to `speechSynthesis`, so audio behavior is environment-dependent.
-
-**Why it happens:**
-Web-first assertions auto-wait for *rendering*, but nothing waits for a fire-and-forget background POST by default.
-
-**How to avoid:**
-- Set `reducedMotion: 'reduce'` globally (context option / `use` block) — the app already gates every animation on `prefers-reduced-motion` (a v1.1 invariant), so this simultaneously stabilizes tests and exercises the reduced-motion path. A rare freebie: the app was built for this.
-- For grade→server assertions, wait on the network: `page.waitForResponse(r => r.url().includes('/api/review') && r.ok())` before asserting DB-derived UI, or `expect.poll()` an API read. Never `waitForTimeout`.
-- Ban `waitForTimeout` in review; rely on web-first `expect(locator)` auto-waiting everywhere else.
-- Don't assert audio playback; at most assert the button's state transitions.
-
-**Warning signs:**
-- Flakes clustered on tests that grade cards then check counts
-- Failures only on slower machines
-- Failure screenshots showing mid-flip/mid-slide states
-
-**Phase to address:** e2e-setup establishes the conventions (reducedMotion default, no-waitForTimeout rule); e2e-coverage applies them.
-
----
-
-### Pitfall 12: Browser-timing "performance regression tests" that flake instead of gate
-
-**What goes wrong:**
-Naive perf tests assert absolute wall-clock numbers (`expect(loadTime).toBeLessThan(500)`) measured in a browser on shared hardware. Run-to-run variance (±30–50% with cold starts and CPU contention) makes them either flaky (tight threshold) or useless (loose threshold). The milestone then can't distinguish "the freshness fix regressed navigation" from "the laptop was busy" — and a flaky gate erodes trust in the entire new suite.
-
-**Why it happens:**
-The obvious way to test "pages are fast" is to time them once and assert.
-
-**How to avoid:**
-Layer measurements by stability:
-1. **Most stable — behavioral proxies, not clocks:** assert the *mechanism*, e.g. "the first server-rendered HTML already contains real card text" (no empty-state flash; content visible without any client fetch) and "tab navigation shows the `loading.tsx` skeleton then content." These encode the v1.2 win as boolean facts, immune to hardware variance.
-2. **Medium — server-side query timing** in Vitest (not Playwright): time `getStudyCards()`/`getStats()` against the seeded test DB with a generous bound; query cost is far less noisy than browser paint metrics.
-3. **Least stable — browser timings** (TTFB/FCP via the Performance API): if kept, use median-of-N, generous thresholds (+50% headroom), and treat as recorded trend data rather than a hard gate initially.
-
-**Warning signs:**
-- Perf pass/fail flipping with no code change
-- Threshold bumps appearing in commits to "fix CI"
-
-**Phase to address:** perf phase (after e2e-setup). Define which layer each perf requirement uses before writing tests.
+**Phase to address:** add-active
 
 ---
 
@@ -270,107 +232,101 @@ Layer measurements by stability:
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
 |----------|-------------------|----------------|-----------------|
-| `force-dynamic` / disable caching globally | Staleness "fixed" everywhere at once | Every navigation pays serverless+Turso round-trip; the exact prior regression | Never for this app — this is the incident being repaired |
-| `useEffect` prop→state sync without guards | Refreshed props flow into shells | Clobbers in-flight local edits (CardsClient); fights `set-state-in-effect` lint | Only with explicit per-shell reconciliation logic |
-| `workers: 1` for all E2E | Zero DB-race class | Suite runtime grows linearly with coverage | Fine at v1.6 scale; revisit past ~5 min runtime |
-| Seeding test data through the UI | No seed script to write | Slow, brittle, couples every test to the CRUD UI | Only for the one test *covering* the CRUD UI |
-| `reuseExistingServer: true` on port 3000 | Fast local iteration | Silently tests against the dev server + prod env | Only with a dedicated E2E port |
-| Hard-gating browser perf timings from day one | Feels rigorous | Flaky gate erodes trust in the whole suite | Start as recorded trend; promote to gate once variance is known |
-| `retries: 2` to mask flakes | Suite goes green | Real races (Pitfalls 10–11) hide until they bite in prod | Never as the *fix*; acceptable as CI belt-and-braces after root-causing |
+| Leave `Card.distractors` column + `CardDTO.distractors` in place, unwritten | No Turso DDL (painful here — no `prisma migrate`), matches cloze-column precedent | Trivial — dead column, documented deprecation | Always (this is the plan; document it in schema comment) |
+| Keep extraction generating distractors "for now", only stop the sync write | Smaller diff, no zod/prompt/eval work | Opus tokens + latency on every sync forever; structured outputs *force* generation of schema fields | Never — retire the whole chain in cleanup (Pitfall 8) |
+| Keep `StudyMode` as a 3-value union with dead branches "until Active stabilizes" | Avoids type-ripple during add-active | Silent `else`-branch dispatch to FillBlank (Pitfall 5); every future reader re-learns which modes are real | Never past the remove-modes phase |
+| Keep `needsBlank`/`selectSentence`'s blank-override parameter after Recall/fill-blank are gone | `lib/sentence-selection.ts` and its tests untouched | A dead parameter in the single source of truth for sentence picking; future callers guess wrong | Acceptable within the milestone; remove in cleanup with its tests updated |
+| Reuse `FlashcardMode.tsx` with more conditional props instead of a dedicated Active face | One less file | The component already has 4-way front-face branching; +Active makes it unreadable and re-entangles what v1.3 decoupled | Acceptable only if the Active face shares >70% of the flip/measure/grade-bar structure — decide in add-active planning, don't drift into it |
+| Skip a new Active e2e spec ("grade-flow covers the session machinery") | Faster phase close | The default study path of the app has zero automated coverage; grade-flow now covers the *non-default* mode | Never — Active is the new default |
 
 ## Integration Gotchas
 
+Internal seams this milestone crosses (no new external services):
+
 | Integration | Common Mistake | Correct Approach |
 |-------------|----------------|------------------|
-| Freshness fix × E2E | Landing the fix with no automated regression test (the prior incident), or writing staleness tests before infra exists | e2e-setup (or at least the nav/staleness + first-paint tests) lands first; the fix's UAT is "navigate back after study/sync shows fresh counts" in a **production build** |
-| `router.refresh()` × E2E | Asserting fresh UI immediately after the refresh call | Wait for the RSC re-fetch (response/content-based `expect`) — refresh is async |
-| Optimistic review POST × freshness refresh | Session-complete refresh racing the last fire-and-forget review write | Await/observe the final `/api/review` response before refreshing, or accept and document one-card eventual consistency |
-| middleware auth × Playwright request context | Cookie set on the page context only; `request.*` API calls get 401/redirects | Share `storageState` with the request context, or add the `ks_auth` cookie there too |
-| Prisma × test DB | Assuming the Turso DDL gotcha applies to tests | `prisma db push` works against `file:` URLs — one-command schema setup in global setup |
-| Cron route (`/api/cron/sync`) × E2E | Letting a test trigger real sync (Google Docs + Opus) | Test auth behavior only (401 without bearer); never the real pipeline |
-| Vercel deploy × E2E | Assuming local E2E covers Vercel-specific behavior (cold starts, 60s limit) | E2E covers app logic; keep the existing manual prod smoke habits for platform behavior |
+| `lib/sentence-selection.ts` (`selectSentence`) | Passing `needsBlank: true` for Active; or bypassing `selectSentence` with ad-hoc pick logic in the new mode | Active = `needsBlank: false`; same least-unknown pick as Passive; keep the memoized `chosenIdx` as the single call site |
+| `StudySession` queue/undo pipeline | Touching `submitReview`/`handleUndo`/`postReviewWithRetry` while deleting modes (they reference `setFillInput`/`setMcSelected` in the advance block) | Delete the mode-state resets surgically; queue/requeue/undo/idempotency-key logic is mode-agnostic and must diff-out clean except those reset lines |
+| `ModeSelector` → `StudyClient` → `StudySession` prop chain | Renaming the mode union in one file and adapting the others "later"; leaving `flashcardSubMode` threading half-removed | One atomic type change; `handleModeSelect` signature, `StudyClient` state, `StudySession` Props, and `FlashcardMode` props all in the same commit |
+| `FreshnessWatcher` gated prop adoption in `StudyClient` | Assuming the adoption gates care about mode (they gate on `phase === 'select-mode'`) and "fixing" them during the refactor | Leave both gate blocks (`prevInitialCards`, `prevFreshStudy`) byte-identical — they're phase-gated, not mode-gated, and were hard-won in v1.6 |
+| `e2e/grade-flow.spec.ts` + seed fixture | Updating the spec's clicks but not its assumptions (seed cards are state-0 new cards → they hit the Active new-card gate if Active is default) | Decide which mode the spec drives explicitly; add an Active spec against known-state fixture cards |
+| Anthropic structured outputs (`ExtractionSchema`) | Removing distractors from the prompt but not the zod schema (model still forced to emit them) or vice versa (warn spam) | Prompt + schema + normalizer + sync write + tests in one commit; validate with `scripts/prompt-eval.mts` before trusting it (Pitfall 8) |
+| TTS / `AudioButton` | Auto-playing the answer audio via an effect on `revealed` (lint + convention violation) | Reuse tap-to-play `AudioButton` next to the revealed sentence; if auto-play is wanted, trigger inside `handleReveal` |
 
 ## Performance Traps
 
 | Trap | Symptoms | Prevention | When It Breaks |
 |------|----------|------------|----------------|
-| Per-navigation dynamic render against Turso | Every tab tap waits on serverless + DB RTT; "tabs take forever" | Invalidate at mutation boundaries only; keep prefetch + Router Cache for untouched routes | Immediately — Turso RTT from a Vercel function is per-request |
-| `router.refresh()` on every grade | 20+ extra `getStudyCards` runs per session; grade jitter returns (undoing UX-01) | Session-boundary refresh only | First session |
-| E2E doing a full `next build` per local iteration | 2+ min fixed overhead each run | `reuseExistingServer` on the dedicated port | Developer patience, day one |
-| Seeding a large deck per test | Suite runtime balloons | One global seed + targeted per-test rows | ~20 tests |
+| Adding an LLM/translation-check call between reveal and grade | Grade bar feels laggy; violates the v1.2 optimistic-grading win | Pitfall 4 — Active is pure self-grade, zero network on the grade path | Immediately, on every card |
+| Recomputing prompt selection every render instead of extending the existing memo pattern | No visible symptom at 20-card sessions; wasted `sentenceMatch` scans | Derive the Active prompt from the already-memoized `chosenIdx`; any new selection logic goes in the pure lib + `useMemo` | Only at pathological deck sizes — but the memo pattern is a codebase convention regardless (PERF-03) |
+| e2e perf budgets tripping after ModeSelector rewrite | `e2e/perf.spec.ts` reds that look unrelated to the milestone | Run the full e2e suite (not just grade-flow) at each phase close; budgets are median-of-5 and generous | Unlikely — but a red budget is signal, not noise, per Phase 27's falsifiability discipline |
 
 ## Security Mistakes
 
+Nothing in this milestone adds attack surface (no new routes, no new inputs, no new env). One hygiene item:
+
 | Mistake | Risk | Prevention |
 |---------|------|------------|
-| Committing `playwright/.auth/*.json` storageState | Leaks the deterministic `ks_auth` HMAC cookie — a **permanent** auth bypass (stateless HMAC, no expiry, no revocation short of rotating `AUTH_SECRET`) | Write under `outputDir` or gitignore `playwright/.auth/`; never commit |
-| Real `AUTH_SECRET`/`APP_PASSWORD` in `playwright.config.ts` | Secrets in source | Test-only values via `webServer.env` from a gitignored `.env.test` |
-| E2E env falling through to production `DATABASE_URL` | Test writes destroy real FSRS/ReviewLog history | Fail-fast host guard in global setup (reuse the Phase-22 print-before-write pattern) |
-| Loosening `middleware.ts` allowlist "for testability" | Auth bypass shipped to production | Tests authenticate properly (storageState/cookie injection); zero middleware changes for tests |
+| Deleting the `distractors` JSON.parse try/catch guard patterns while removing `mcOptions`, then later re-reading the column elsewhere unguarded | Corrupt legacy JSON row crashes a render | The column keeps legacy data; if anything ever re-reads it, it must re-wrap in try/catch (existing convention). Cleanup should leave `lib/audit-checks.ts`'s hardened parser as the only reader |
 
 ## UX Pitfalls
 
 | Pitfall | User Impact | Better Approach |
 |---------|-------------|-----------------|
-| Freshness via slow navigation | The instant app becomes sluggish everywhere — the reported incident | Mutation-boundary invalidation; skeleton floor for any unavoidably-dynamic path |
-| Refresh mid-session | Queue resets, cards repeat, undo breaks | Session-boundary refresh only |
-| Refresh visual jank | Content flashes/reflows while the user is looking at the page | `router.refresh()` preserves client state per docs; verify no layout jump on Home after session-complete |
-| Stale-but-fresh race | Home shows one more due card than reality right after a session | Await the last review write before refresh, or accept + document |
+| Full-sentence production prompt on a never-seen word (Pitfall 1) | Un-answerable card; violates the app's core promise; trains dishonest "Good" grades | Word-level prompt or Passive degrade for state 0/1 cards — explicit gate |
+| No grading criterion on the Active reveal (Pitfall 3) | Learner grades whole-sentence perfection → over-lapsing → deck feels punishing | Highlight targetForm + "grade the highlighted expression" copy |
+| Grading copy that implies exact-match ("Was your answer correct?") | Learner pressing Again for valid alternative phrasings | Copy acknowledging production variance: "different phrasing is fine" |
+| Losing the Exposure/Recall mental model without explanation | Existing single user has habits around the sub-toggle; Recall's word-blank drill disappears | The Passive/Active toggle descriptions should do the work the old mode grid's `desc` lines did ("word shown, tap to reveal" vs "translate from English"); one-line framing, not a tutorial |
+| English prompt rendered in Korean-optimized typography | Subtle: `hangul-sentence` class (line-height 1.7, Korean font stack) applied to English text looks off | Active front is English — use the app's standard text styles, keep `hangul`/`hangul-sentence` classes for the revealed Korean only |
+| "See another example →" visible in Active reveal (Pitfall 10) | Answer no longer matches the prompt just translated | Pin reveal to `chosenSentence`; hide cycling in Active |
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **Freshness fix:** verified in `npm run build && npm start`, not just dev — dev doesn't reproduce production Router Cache behavior
-- [ ] **Freshness fix:** browser **back/forward** specifically tested (not just tab taps) — back/forward ignores `staleTimes`
-- [ ] **Freshness fix:** first-load HTML still contains real data (RSC-01..04 intact) — view-source or E2E content assertion; no empty-state flash
-- [ ] **Freshness fix:** every `*Client.tsx` receiving refreshed props actually *uses* them (Pitfall-2 audit per shell)
-- [ ] **E2E:** suite fails fast on a `libsql://` `DATABASE_URL` — prove it once by deliberately running with prod env
-- [ ] **E2E:** storageState file gitignored and regenerated per run
-- [ ] **E2E:** full suite green **twice consecutively** — catches order/race flakes before they're baked in
-- [ ] **E2E:** zero `waitForTimeout`; `reducedMotion: 'reduce'` set globally
-- [ ] **Perf tests:** thresholds validated against ≥5 runs' variance before becoming a gate
-- [ ] **Sync coverage:** no test path reaches the real Google Doc or Claude API (check Anthropic usage after a suite run)
+- [ ] **Active new-card gate:** demo works on matured cards — verify with a **freshly-synced, never-reviewed** card that the prompt degrades per the recorded decision (Pitfall 1)
+- [ ] **Sentence pick parity:** for a card whose least-unknown sentence is blank-unsafe, Active picks the same sentence as Passive — unit test exists (Pitfall 2)
+- [ ] **Reveal anchoring:** revealed Korean goes through `HighlightedSentence` with grade-criterion copy, and `againBtnRef` focus + `frontRef`/`backRef` measurement still work (Pitfalls 3, 9)
+- [ ] **Requeued cards:** grade a new card Again in Active → it returns ~4 cards later → its prompt reflects the **updated** review state, not the pre-grade snapshot
+- [ ] **Undo in Active:** undo after an Active grade restores the un-revealed front (the `revealed=false` snapshot behavior) — exercised manually, since HIST-03-style coverage is thin here
+- [ ] **Dead-symbol sweep:** grep for `mcOptions`, `seededShuffle`, `MC_ADVANCE_MS`, `mcSelected`, `fillInput`, `normalizeAnswer`, `advanceTimer`, `FlashcardSubMode`, `recallBlanked` → zero hits in `components/` post-removal (Pitfall 5)
+- [ ] **Survivors intact:** `lib/generate-practice.ts`, `lib/card-style.ts` badge map, `lib/audit-checks.ts` distractor checks unchanged (Pitfall 6)
+- [ ] **Distractor chain:** prompt, zod schema, `normalizeExtractedCards`, `sync.ts` writes, and `tests/extract-cards.test.ts` all changed together; `scripts/prompt-eval.mts` run against a real lesson (Pitfall 8)
+- [ ] **Full e2e suite green** (smoke + freshness + grade-flow + perf), not just the specs that were edited (Pitfall 7)
+- [ ] **Docs refreshed:** `CLAUDE.md` and `.planning/codebase/*.md` describe three modes + Exposure/Recall in ~15 places — milestone-close doc refresh is load-bearing this time, not cosmetic
+- [ ] **Zero-sentence + practice cards render in Active** without null-deref (Pitfall 10)
 
 ## Recovery Strategies
 
 | Pitfall | Recovery Cost | Recovery Steps |
 |---------|---------------|----------------|
-| Freshness fix regresses navigation speed again | LOW if caught by the E2E baseline pre-merge; MEDIUM post-deploy | Revert the caching-mode changes (config-level); re-diagnose per Pitfall 1; the E2E baseline is the tripwire this milestone must install |
-| E2E ran against production Turso | HIGH | Turso point-in-time restore / snapshot if available; audit `ReviewLog`/`StudyDay`/`Card` rows by test-run timestamp window; this is why the host guard is task #1 |
-| Flaky suite erodes trust | MEDIUM | Quarantine (`test.fixme`), root-cause timing/DB races, then restore; never retry-mask as the fix |
-| `useState(initialProps)` desync shipped | LOW | Per-shell fix (derive or reconcile); add the back-nav E2E assertion that would have caught it |
+| FSRS state polluted by mis-graded Active reviews (Pitfall 3 shipped) | MEDIUM | `ReviewLog` is append-only with per-review state — identify affected cards by date range; no automated rollback exists, but low volume (single user) allows manual re-grading or accepting FSRS's self-correction over subsequent reviews. Fix the copy/highlight first |
+| Deleted a survivor (badge entry / practice prompt / audit check) | LOW | Git revert of the specific hunk; all three are pure code with tests |
+| Structured-outputs schema change breaks extraction | LOW-MEDIUM | Extraction is sync-time only (daily cron + manual); revert the schema commit; `parseExtractionResponse` salvage path and per-lesson failure reporting already contain the blast radius; `contentHash` idempotency means re-sync is safe |
+| Active default frustrates real study (new-card gate wrong) | LOW | The toggle keeps Passive one tap away; adjust the gate constant (state threshold) — it's a pure derived value by design |
+| e2e suite red at phase close | LOW | Specs and UI changed in the same phase (Pitfall 7 prevention); worst case, the diff that broke them is the same phase's diff — no archaeology |
 
 ## Pitfall-to-Phase Mapping
 
+Recommended phase order: **remove-modes → add-active → cleanup.** Deleting first shrinks the 837-line `StudySession` integration surface Active must land in (no `mcOptions`/`seed`/fill state to work around), and the type-narrowing pass (Pitfall 5) produces the definitive stale-reference inventory before new code is written. The e2e suite stays meaningful throughout: grade-flow is updated with the ModeSelector change, the Active spec lands with Active. If the roadmap instead adds Active first, Pitfalls 2 and 5 get strictly harder (Active must coexist with the machinery it replaces).
+
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| 1. Wrong cache layer / blanket force-dynamic | freshness (diagnosis-first plan) | Written diagnosis artifact; diff contains no `force-dynamic`/`no-store`; build-output rendering modes unchanged |
-| 2. `useState(initialProps)` ignores refresh | freshness | Per-shell reconciliation decision in PLAN; E2E: back-nav shows post-mutation data |
-| 3. Refresh at wrong moment | freshness | Grep: no `router.refresh` in grade handlers; manual UAT of mid-session stability |
-| 4. First-paint regression | freshness (invariant) + e2e-setup (test lands **first**) | E2E asserts server-rendered content on first load + skeleton on tab nav |
-| 5. DTO/pipeline boundary breaks | freshness | Code review: no `Date` in changed prop interfaces; new paths call existing `lib/` functions |
-| 6. New cache layers as "fix" | freshness (scope guard) | Diff contains no `use cache`/`unstable_cache`/`staleTimes` |
-| 7. E2E against production Turso | e2e-setup, first task | Host guard exists and demonstrably fails on `libsql://` |
-| 8. Per-test login | e2e-setup | Setup project + storageState in config; suite runtime sane |
-| 9. Testing against `next dev` | e2e-setup | `webServer.command` is build+start on a dedicated port |
-| 10. Parallel DB races | e2e-setup | `workers: 1` in config; suite green twice consecutively |
-| 11. Timing flakes (animations, fire-and-forget writes) | e2e-setup (conventions) + e2e-coverage | `reducedMotion` set; zero `waitForTimeout`; grade tests wait on `/api/review` responses |
-| 12. Flaky perf gates | perf phase | Behavioral proxies preferred; browser timings median-of-N with recorded variance |
+| 1 — Active inverts foundation-first for new cards | add-active | Unit test on the gate + manual UAT with a never-reviewed card |
+| 2 — Active wired through `needsBlank`/Recall | add-active | Sentence-pick parity unit test (Active idx === Passive idx) |
+| 3 — Grading the sentence, not the card | add-active | Reveal renders `HighlightedSentence` + criterion copy; UAT check |
+| 4 — Auto-correctness creep | add-active | Written non-goal in SPEC; no fetch between reveal and grade in the diff |
+| 5 — File-deletion instead of type-narrowing | remove-modes | tsc-driven inventory; dead-symbol grep = 0 hits |
+| 6 — Grep-delete hits AI-practice "fill-blank" | remove-modes | Survivor files absent from diff; AI practice badge renders |
+| 7 — e2e breaks with ModeSelector | remove-modes + add-active | Full Playwright suite green at each phase close |
+| 8 — Half-retired distractor chain | cleanup | Single atomic commit across 4 sites; `prompt-eval.mts` run; sync logs clean |
+| 9 — Purity / set-state-in-effect / refs contract | add-active | `npm run lint` clean; long-sentence height check in dev |
+| 10 — Prompt/answer mismatch + null sentence | add-active | Total-function unit tests (null sentence, practice card, new card) |
 
 ## Sources
 
-- [Next.js docs — useRouter / router.refresh](https://nextjs.org/docs/app/api-reference/functions/use-router) — refresh semantics, client-state preservation (MEDIUM, official)
-- [Next.js docs — Caching guide](https://nextjs.org/docs/app/guides/caching) — four cache layers, force-dynamic ≡ no-store on every fetch (MEDIUM, official)
-- [vercel/next.js #69979 — Stale data after navigation with SSR (App Router)](https://github.com/vercel/next.js/issues/69979) (MEDIUM)
-- [vercel/next.js discussion #54075 — Deep Dive: Caching and Revalidating](https://github.com/vercel/next.js/discussions/54075) — back/forward restores from Router Cache regardless of staleTimes (MEDIUM)
-- [vercel/next.js #43650](https://github.com/vercel/next.js/issues/43650) / [discussion #44056](https://github.com/vercel/next.js/discussions/44056) — router.refresh state-loss edge cases (MEDIUM)
-- [joulev.dev — Yes, the Next.js Router Cache is Actually Good](https://joulev.dev/blogs/yes-nextjs-router-cache-is-actually-good) (LOW, community)
-- [Playwright docs — Authentication (setup project + storageState)](https://playwright.dev/docs/auth) (MEDIUM, official)
-- [Playwright docs — Parallelism / worker isolation](https://playwright.dev/docs/test-parallel) (MEDIUM, official)
-- [microsoft/playwright #33699 — isolated tests against a real database](https://github.com/microsoft/playwright/issues/33699) (MEDIUM)
-- [Checkly — Measuring page performance with Playwright](https://www.checklyhq.com/docs/learn/playwright/performance/) — noise, medians, threshold margins (MEDIUM)
-- Community guides on Next.js+Prisma E2E (dev-vs-build flakiness, DB isolation): Makerkit, dev.to, TestDino (LOW individually, cross-consistent)
-- **This repo (HIGH, primary):** `.planning/PROJECT.md` (v1.2 RSC/DTO decisions; Out-of-Scope `unstable_cache` ruling; UX-01 optimistic grading), `CLAUDE.md` (dev-vs-build RSC testing gotcha; fire-and-forget review saves; Turso DDL constraint; middleware/`ks_auth` auth shape; Phase-22 dry-run/host-print pattern), and the user-reported prior staleness-fix regression ("all tabs take forever to load even on the first try")
+- Direct code reads (HIGH confidence): `components/StudySession.tsx`, `components/StudyClient.tsx`, `components/ModeSelector.tsx`, `components/FlashcardMode.tsx`, `components/MultipleChoiceMode.tsx`, `components/FillBlankMode.tsx`, `lib/sentence-selection.ts`, `lib/sentence-match.ts`, `lib/fsrs.ts`, `lib/extract-cards.ts`, `lib/sync.ts`, `lib/card-style.ts`, `lib/generate-practice.ts`, `lib/audit-checks.ts`, `lib/cards-list.ts`, `lib/dto.ts`, `e2e/grade-flow.spec.ts` — all claims about gates, memo deps, dispatch shape, testids, and the distractor pipeline verified against source on 2026-07-13
+- `.planning/PROJECT.md` (HIGH): Core Value, known-threshold decision (state ≥ 1), v1.7 milestone scope, `Card` = review unit out-of-scope boundary, optimistic-grading and REFACTOR-01 decisions
+- FSRS/Anki self-grading guidance (MEDIUM): [Anki FSRS FAQ](https://faqs.ankiweb.net/frequently-asked-questions-about-fsrs.html) (dishonest grades → mis-scheduling; Hard is a passing grade), [fsrs4anki tutorial](https://github.com/open-spaced-repetition/fsrs4anki/blob/main/docs/tutorial.md), [Migaku — Spaced Repetition in 2026](https://migaku.com/blog/language-fun/spaced-repetition-in-2026-how-it-actually-works) (grading familiarity vs. retrieval — commit to an answer before reveal)
 
 ---
-*Pitfalls research for: v1.6 Freshness, Performance & E2E Testing (Korean Study app)*
-*Researched: 2026-07-10*
+*Pitfalls research for: v1.7 Active Recall Study Mode (add production mode, remove Multiple Choice + Fill-in-the-Blank)*
+*Researched: 2026-07-13*
