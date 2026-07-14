@@ -104,26 +104,36 @@ See `.planning/milestones/v1.6-ROADMAP.md` for full phase details.
 ## Phase Details
 
 ### Phase 28: Active Recall Study Mode
+
 **Goal**: Replace the /study 3-mode grid (Flashcards / Multiple Choice / Fill-in-the-Blank) and the Exposure/Recall sub-toggle with a single Passive/Active toggle (Passive default), retire Multiple Choice and standalone Fill-in-the-Blank entirely, and add the Active production mode (English sentence prompt → tap-to-reveal Korean + audio → self-grade). Remove the old modes first via a `StudyMode` type-narrowing pass so the compiler enumerates stale references, then extend `FlashcardMode` with the Active front-face branch into the smaller surface.
 **Depends on**: Nothing (first phase of v1.7)
 **Requirements**: MODE-01, MODE-02, ACTIVE-01, ACTIVE-02, ACTIVE-03, ACTIVE-04, ACTIVE-05, CLEANUP-01, CLEANUP-02, CLEANUP-04
 **Success Criteria** (what must be TRUE):
+
   1. On /study, the user sees one Passive/Active toggle — no 3-mode grid, no Multiple Choice, no standalone Fill-in-the-Blank, no Exposure/Recall sub-toggle — and it opens on Passive by default.
   2. In Active mode the card front shows the selected sentence's English translation; tapping the main reveal flips to the full Korean sentence with the target expression highlighted, plus audio playback and tap-to-gloss.
   3. An optional "tap to reveal hint" control (hidden until tapped) surfaces the card's English back gloss, separate from and preceding the main answer reveal.
   4. After revealing, the user self-grades on the existing Again/Hard/Good/Easy bar, with reveal copy anchoring the grade to the highlighted target expression rather than the whole sentence.
   5. A brand-new card (FSRS state 0/1) selected in Active mode falls back to the Passive/exposure experience (bare word / sentence shown) and graduates to full Active production once state ≥ 1; the existing Passive flow (grade, undo, requeue, audio, tap-to-gloss) shows no regressions and the e2e grade-flow suite stays green.
-**Plans**: TBD
+
+**Plans**: 1/2 plans executed
+
+- [x] 28-01-PLAN.md
+- [ ] 28-02-PLAN.md
+
 **UI hint**: yes
 
 ### Phase 29: Distractor Write-Side Retirement
+
 **Goal**: Now that no study mode consumes distractors, stop requesting and writing them across the extraction/write pipeline and its checks — atomically across all sites in one pass — leaving the `Card.distractors` DB column in place but unused (deprecated like `clozeSentence`/`clozeAnswer`). Refresh the project docs to describe the two-mode study model.
 **Depends on**: Phase 28
 **Requirements**: CLEANUP-03
 **Success Criteria** (what must be TRUE):
+
   1. A fresh sync/extraction produces cards with no distractor data — the extraction prompt and zod schema no longer request distractors, validated non-persistently via `scripts/prompt-eval.mts`.
   2. No code path writes `Card.distractors`; the column remains in the DB unused, and distractor references are removed across the write side (`CardDTO` drops `distractors`, `lib/audit-checks.ts` drops the distractor check class, `extract-cards` tests drop distractor assertions) with the full test suite green.
   3. `CLAUDE.md` and `.planning/codebase/*.md` accurately describe the retired distractor pipeline and the two-mode (Passive/Active) study model.
+
 **Plans**: TBD
 
 ## Progress
@@ -161,7 +171,7 @@ Phases execute in numeric order: 1 → 2 → ... → 27 (all complete) → 28 �
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 3/3 | Complete | 2026-07-12 |
 | 26. Freshness Fix | v1.6 | 6/6 | Complete | 2026-07-13 |
 | 27. E2E Coverage & Performance Validation | v1.6 | 3/3 | Complete | 2026-07-13 |
-| 28. Active Recall Study Mode | v1.7 | 0/TBD | Not started | - |
+| 28. Active Recall Study Mode | v1.7 | 1/2 | In Progress|  |
 | 29. Distractor Write-Side Retirement | v1.7 | 0/TBD | Not started | - |
 
 ---
