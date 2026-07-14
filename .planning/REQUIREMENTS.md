@@ -46,27 +46,31 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ## Traceability
 
-Populated during roadmap creation.
+Every v1 requirement maps to exactly one phase. Coarse granularity: 2 phases (28–29).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MODE-01 | TBD | Pending |
-| MODE-02 | TBD | Pending |
-| ACTIVE-01 | TBD | Pending |
-| ACTIVE-02 | TBD | Pending |
-| ACTIVE-03 | TBD | Pending |
-| ACTIVE-04 | TBD | Pending |
-| ACTIVE-05 | TBD | Pending |
-| CLEANUP-01 | TBD | Pending |
-| CLEANUP-02 | TBD | Pending |
-| CLEANUP-03 | TBD | Pending |
-| CLEANUP-04 | TBD | Pending |
+| MODE-01 | Phase 28 | Pending |
+| MODE-02 | Phase 28 | Pending |
+| ACTIVE-01 | Phase 28 | Pending |
+| ACTIVE-02 | Phase 28 | Pending |
+| ACTIVE-03 | Phase 28 | Pending |
+| ACTIVE-04 | Phase 28 | Pending |
+| ACTIVE-05 | Phase 28 | Pending |
+| CLEANUP-01 | Phase 28 | Pending |
+| CLEANUP-02 | Phase 28 | Pending |
+| CLEANUP-03 | Phase 29 | Pending |
+| CLEANUP-04 | Phase 28 | Pending |
 
 **Coverage:**
 - v1 requirements: 11 total
-- Mapped to phases: 0
-- Unmapped: 11 ⚠️ (roadmap not yet created)
+- Mapped to phases: 11 ✓
+- Unmapped: 0
+
+**Per-phase distribution:**
+- Phase 28 (Active Recall Study Mode): MODE-01, MODE-02, ACTIVE-01, ACTIVE-02, ACTIVE-03, ACTIVE-04, ACTIVE-05, CLEANUP-01, CLEANUP-02, CLEANUP-04 (10)
+- Phase 29 (Distractor Write-Side Retirement): CLEANUP-03 (1)
 
 ---
 *Requirements defined: 2026-07-13*
-*Last updated: 2026-07-13 after initial definition*
+*Last updated: 2026-07-14 after roadmap creation (Phases 28–29 mapped)*
