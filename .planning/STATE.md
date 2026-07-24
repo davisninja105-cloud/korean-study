@@ -2,38 +2,38 @@
 gsd_state_version: 1.0
 milestone: v1.7
 milestone_name: Active Recall Study Mode
-current_phase: 28
-current_phase_name: active-recall-study-mode
-status: executing
-stopped_at: Phase 28 UI-SPEC approved
-last_updated: "2026-07-14T15:05:12.836Z"
-last_activity: 2026-07-14
-last_activity_desc: Phase 28 execution started
+current_phase: 29
+current_phase_name: Distractor Write-Side Retirement
+status: ready_to_plan
+stopped_at: Phase 28 complete, ready to plan Phase 29
+last_updated: "2026-07-24T06:04:48.267Z"
+last_activity: 2026-07-24
+last_activity_desc: Phase 28 complete, transitioned to Phase 29
 progress:
   total_phases: 2
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 0
-  percent: 0
+  completed_plans: 2
+  percent: 50
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-14)
+See: .planning/PROJECT.md (updated 2026-07-24)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 28 — active-recall-study-mode
+**Current focus:** Phase 29 — Distractor Write-Side Retirement
 
 ## Current Position
 
-Phase: 28 (active-recall-study-mode) — EXECUTING
-Plan: 1 of 2
-Status: Executing Phase 28
-Last activity: 2026-07-14 — Phase 28 execution started
+Phase: 29 — Distractor Write-Side Retirement
+Plan: Not started
+Status: Ready to plan Phase 29
+Last activity: 2026-07-24 — Phase 28 complete, transitioned to Phase 29
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████░░░░░░░░░░] 50%
 
 ## Performance Metrics
 
@@ -59,14 +59,14 @@ v1.7 roadmap shaping decisions (2026-07-14):
 - Product decisions baked into Phase 28 scope: Passive is the default toggle position (MODE-02, reversed from research's Active-default suggestion during requirements); the Active hint control is tap-to-reveal / hidden-by-default (ACTIVE-02, reversed from research's always-visible suggestion).
 - New-card gate (ACTIVE-05): state 0/1 cards in Active mode degrade to the Passive/exposure experience (not a full-sentence production prompt) — protects Core Value; gate design to be finalized in Phase 28 discuss-phase (research Pitfall 1).
 
+Phase 28 close (2026-07-24): MODE-01/02, ACTIVE-01..05, CLEANUP-01/02/04 all shipped and UAT-verified (2/2 passed); `activeFace` derived fresh in render scope so mid-session state graduation (1→2) flips faces live with no reload; security review closed 4 threats at ASVS L1 with zero open. Full detail in PROJECT.md Key Decisions.
+
 ### Pending Todos
 
 None open.
 
 ### Blockers/Concerns
 
-- [Phase 28 flag from research — Pitfall 2] Active mode must pass `needsBlank: false` to sentence selection (blank-safety doesn't apply when the whole sentence is hidden); passing `true` silently picks the wrong sentence. Verify parity with Passive selection.
-- [Phase 28 flag from research — Pitfall 5] Delete modes by narrowing the `StudyMode` type first and letting `tsc` enumerate stale refs (mcOptions, seed, fillInput, advanceTimer, keyboard branches); avoid manual grep-deletion. Delete per mode atomically.
 - [Phase 29 flag from research — Pitfall 8] Retire the distractor chain atomically across prompt/schema/DTO/audit/tests in one pass; a half-retired chain leaves warn spam / extraction overhead.
 - [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch — out of scope; deferred candidate.
 - [carried from v1.5] 거/게 romanization-flagged card fronts (post-audit cron arrivals) — out of scope; open for a future audit/fix pass.
@@ -86,10 +86,10 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-07-14T05:01:41.791Z
-Stopped at: Phase 28 UI-SPEC approved
-Resume file: .planning/phases/28-active-recall-study-mode/28-UI-SPEC.md
+Last session: 2026-07-24T06:04:48.267Z
+Stopped at: Phase 28 complete, ready to plan Phase 29
+Resume file: None
 
 ## Operator Next Steps
 
-- Plan Phase 28 with `/gsd-plan-phase 28` (discuss-phase first to finalize the ACTIVE-05 new-card gate design)
+- Plan Phase 29 with `/gsd-plan-phase 29` (Distractor Write-Side Retirement — CLEANUP-03)

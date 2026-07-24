@@ -7,23 +7,23 @@
 
 ### Mode Toggle
 
-- [ ] **MODE-01**: User can toggle between Passive and Active on the /study mode-select screen — a single control replacing today's 3-mode grid (Flashcards/Multiple Choice/Fill-blank) and the Exposure/Recall sub-toggle
-- [ ] **MODE-02**: Passive is the default toggle position when the mode-select screen loads
+- [x] **MODE-01**: User can toggle between Passive and Active on the /study mode-select screen — a single control replacing today's 3-mode grid (Flashcards/Multiple Choice/Fill-blank) and the Exposure/Recall sub-toggle
+- [x] **MODE-02**: Passive is the default toggle position when the mode-select screen loads
 
 ### Active Recall
 
-- [ ] **ACTIVE-01**: In Active mode, a card's front shows the English translation of the selected sentence
-- [ ] **ACTIVE-02**: A separate, optional "tap to reveal hint" control shows the card's English "back" gloss (e.g. "using: ~(으)려고") — hidden by default, revealed only on tap, distinct from the main answer reveal
-- [ ] **ACTIVE-03**: Tapping the main reveal shows the full Korean sentence with the target expression highlighted, plus audio playback and tap-to-gloss
-- [ ] **ACTIVE-04**: User self-grades on the existing FSRS bar (Again/Hard/Good/Easy) after reveal; reveal copy anchors grading to the highlighted target expression, not the whole sentence
-- [ ] **ACTIVE-05**: Brand-new cards (FSRS state 0/1) in Active mode degrade to the Passive/exposure experience instead of a full-sentence production prompt; they graduate to full Active production once state ≥ 1
+- [x] **ACTIVE-01**: In Active mode, a card's front shows the English translation of the selected sentence
+- [x] **ACTIVE-02**: A separate, optional "tap to reveal hint" control shows the card's English "back" gloss (e.g. "using: ~(으)려고") — hidden by default, revealed only on tap, distinct from the main answer reveal
+- [x] **ACTIVE-03**: Tapping the main reveal shows the full Korean sentence with the target expression highlighted, plus audio playback and tap-to-gloss
+- [x] **ACTIVE-04**: User self-grades on the existing FSRS bar (Again/Hard/Good/Easy) after reveal; reveal copy anchors grading to the highlighted target expression, not the whole sentence
+- [x] **ACTIVE-05**: Brand-new cards (FSRS state 0/1) in Active mode degrade to the Passive/exposure experience instead of a full-sentence production prompt; they graduate to full Active production once state ≥ 1
 
 ### Cleanup
 
-- [ ] **CLEANUP-01**: Multiple Choice mode fully removed — ModeSelector option, `MultipleChoiceMode.tsx`, distractor-selection logic in `StudySession.tsx`, related tests/e2e locators
-- [ ] **CLEANUP-02**: Fill-in-the-Blank retired as a standalone mode — `FillBlankMode.tsx` removed, Exposure/Recall sub-toggle removed, related tests/e2e locators updated
+- [x] **CLEANUP-01**: Multiple Choice mode fully removed — ModeSelector option, `MultipleChoiceMode.tsx`, distractor-selection logic in `StudySession.tsx`, related tests/e2e locators
+- [x] **CLEANUP-02**: Fill-in-the-Blank retired as a standalone mode — `FillBlankMode.tsx` removed, Exposure/Recall sub-toggle removed, related tests/e2e locators updated
 - [ ] **CLEANUP-03**: `Card.distractors` DB column left in place but no longer written — extraction prompt/schema stops requesting distractors (deprecated, like `clozeSentence`/`clozeAnswer`)
-- [ ] **CLEANUP-04**: Existing Passive study flow (grading, undo, requeue, audio, tap-to-gloss) has no regressions — full e2e grade-flow suite stays green
+- [x] **CLEANUP-04**: Existing Passive study flow (grading, undo, requeue, audio, tap-to-gloss) has no regressions — full e2e grade-flow suite stays green
 
 ## v2 Requirements
 
@@ -50,24 +50,26 @@ Every v1 requirement maps to exactly one phase. Coarse granularity: 2 phases (28
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MODE-01 | Phase 28 | Pending |
-| MODE-02 | Phase 28 | Pending |
-| ACTIVE-01 | Phase 28 | Pending |
-| ACTIVE-02 | Phase 28 | Pending |
-| ACTIVE-03 | Phase 28 | Pending |
-| ACTIVE-04 | Phase 28 | Pending |
-| ACTIVE-05 | Phase 28 | Pending |
-| CLEANUP-01 | Phase 28 | Pending |
-| CLEANUP-02 | Phase 28 | Pending |
+| MODE-01 | Phase 28 | Complete |
+| MODE-02 | Phase 28 | Complete |
+| ACTIVE-01 | Phase 28 | Complete |
+| ACTIVE-02 | Phase 28 | Complete |
+| ACTIVE-03 | Phase 28 | Complete |
+| ACTIVE-04 | Phase 28 | Complete |
+| ACTIVE-05 | Phase 28 | Complete |
+| CLEANUP-01 | Phase 28 | Complete |
+| CLEANUP-02 | Phase 28 | Complete |
 | CLEANUP-03 | Phase 29 | Pending |
-| CLEANUP-04 | Phase 28 | Pending |
+| CLEANUP-04 | Phase 28 | Complete |
 
 **Coverage:**
+
 - v1 requirements: 11 total
 - Mapped to phases: 11 ✓
 - Unmapped: 0
 
 **Per-phase distribution:**
+
 - Phase 28 (Active Recall Study Mode): MODE-01, MODE-02, ACTIVE-01, ACTIVE-02, ACTIVE-03, ACTIVE-04, ACTIVE-05, CLEANUP-01, CLEANUP-02, CLEANUP-04 (10)
 - Phase 29 (Distractor Write-Side Retirement): CLEANUP-03 (1)
 

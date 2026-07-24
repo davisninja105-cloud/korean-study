@@ -171,7 +171,7 @@ Phases execute in numeric order: 1 → 2 → ... → 27 (all complete) → 28 �
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 3/3 | Complete | 2026-07-12 |
 | 26. Freshness Fix | v1.6 | 6/6 | Complete | 2026-07-13 |
 | 27. E2E Coverage & Performance Validation | v1.6 | 3/3 | Complete | 2026-07-13 |
-| 28. Active Recall Study Mode | v1.7 | 2/2 | Complete   | 2026-07-14 |
+| 28. Active Recall Study Mode | v1.7 | 2/2 | Complete    | 2026-07-14 |
 | 29. Distractor Write-Side Retirement | v1.7 | 0/TBD | Not started | - |
 
 ---

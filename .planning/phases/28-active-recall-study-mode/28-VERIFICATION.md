@@ -1,14 +1,16 @@
 ---
 phase: 28-active-recall-study-mode
 verified: 2026-07-14T16:25:59Z
-status: human_needed
+status: passed
 score: 10/10 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
 human_verification:
+
   - test: "In dev (npm run dev), start an Active-mode session and grade a state-1 card Good/Easy repeatedly until FSRS requeues it at state >= 2. Confirm the re-shown card visibly flips from the silent Passive/exposure face to the English-prompt production face on its next appearance (no page reload)."
     expected: "The same card, on a later appearance in the same session, renders the Active production front (English prompt + hint pill) instead of the Passive/exposure face it showed earlier — proving activeFace re-derives per render from live queue state rather than a stale snapshot."
     why_human: "This is a live, in-session visual state transition (mid-session face graduation). e2e/active-flow.spec.ts proves productionSeen >= 1 and degradeSeen >= 1 within one session and unit tests prove deriveActiveFace's precedence in isolation, but neither pins the SAME card visibly changing face across two appearances in one run — that specific perceptual moment is what the plan's own Task 2 human-check calls out as needing eyes-on confirmation."
+
   - test: "In dev, tap through the hint control ('Show hint' -> 'Hint: {card.back}') on a sentence-production card."
     expected: "The hint pill sits above the reveal button, expands inline without layout jank, reads 'Hint: {gloss}' in italic muted text, and visibly goes inert (disabled, dimmed) after the first tap."
     why_human: "Micro-interaction feel (placement, animation smoothness, disabled-state legibility) is a UI-SPEC/visual quality judgment, not something grep or an accessibility-tree assertion can rate."

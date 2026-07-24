@@ -135,10 +135,14 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 - ✓ Browser back/forward navigation to a previously-visited route shows fresh data, not a stale cached RSC payload (FRESH-04) — Phase 26; reliability closed in gap closure via a JSON re-fetch backstop
 - ✓ Resuming the app after backgrounding (tab/PWA focus) refreshes stale data, including the overnight-cron-sync case (FRESH-05) — Phase 26; `/study resume` went from 0/7 to 5/5 after the gap-closure backstop fix
 - ✓ First-load render speed unchanged, no loading-state flash reintroduced on any of the 4 main routes (FRESH-06) — Phase 26
+- ✓ Single Passive/Active toggle replaces the 3-mode grid and Exposure/Recall sub-toggle; Passive is the default position on mode-select load (MODE-01/02) — Phase 28
+- ✓ Active mode shows the English translation as the front prompt, an optional tap-to-reveal back-gloss hint, full Korean sentence + audio + tap-to-gloss on reveal, and self-grading on the existing FSRS bar with reveal copy anchored to the target expression (ACTIVE-01/02/03/04) — Phase 28
+- ✓ Brand-new cards (FSRS state 0/1) in Active mode degrade to the Passive/exposure experience instead of a production prompt (ACTIVE-05) — Phase 28
+- ✓ Multiple Choice mode and the standalone Fill-in-the-Blank mode fully removed (components, session logic, tests/e2e locators); existing Passive flow (grading, undo, requeue, audio, tap-to-gloss) has zero regressions (CLEANUP-01/02/04) — Phase 28
 
 ### Active
 
-(v1.7 requirements being defined — see `.planning/REQUIREMENTS.md` once written.)
+- [ ] `Card.distractors` DB column left in place but no longer written — extraction prompt/schema stops requesting distractors (CLEANUP-03) — Phase 29
 
 **Deferred candidates** (raised during v1.2/v1.3/v1.4/v1.5/v1.6, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
@@ -241,6 +245,11 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 | PERF-04's pass/fail gate is median DCL (`domContentLoadedEventEnd`), not median TTFB; TTFB still logged per sample for diagnostics | DCL is the user-facing "page usable" milestone; the roadmap's "TTFB / domContentLoaded" wording was ambiguous and DCL was the correct resolution | ✓ Phase 27-02 |
 | Performance budget falsifiability proven live (budgets temporarily dropped to 1ms, full spec run to confirm 7/7 red, then restored and re-verified green) rather than asserted by inspection | Proves the assertions can actually fail, not just decorative always-green checks | ✓ Phase 27-02 |
 | Playwright MCP server registered unpinned (`@latest`) after a blocking human legitimacy checkpoint, not pinned to the offered `@0.0.78` | The `[SUS]` flag was judged a version-recency artifact only (official microsoft/playwright-mcp repo, 6.4M downloads/week, no postinstall scripts) — a human explicitly weighed the supply-chain trust signal per this project's package-legitimacy gate | ✓ Phase 27-03 (TOOL-01); human-verified live exploratory smoke against the real dev server matched the documented CLAUDE.md workflow exactly |
+| Mode removal sequenced by narrowing `StudyMode` to `'passive' \| 'active'` first, then iterating `tsc --noEmit` to find every stale MC/fill-blank reference, rather than grep-deleting ahead of the compiler | The compiler enumerates every stale reference exhaustively (state, handlers, keyboard branches, dispatch arms); a manual grep-first pass risks missing call sites | ✓ Phase 28-01 (D-14); `StudySession.tsx` shrank 837 → 654 lines with zero stale refs left |
+| Active mode's new-card gate reuses the existing `isNewCard` semantics (state ≤ 1 degrades, state ≥ 2 produces) rather than the requirement text's literal "graduate once state ≥ 1" | The requirement's graduation clause was a wording slip against its own "state 0/1 degrade" opening sentence; the existing semantics already protect Core Value correctly | ✓ Phase 28-02 (ACTIVE-05) |
+| `activeFace` is derived fresh in render scope from `queue[0]` on every render, not cached in state | A card requeued mid-session (graded up from state 1 to state ≥ 2) must visibly flip from degrade-face to production-face on its next appearance without a page reload | ✓ Phase 28-02; verified live in UAT (Test 1, state 1→2 mid-session graduation) |
+| Active production back-face drops the redundant sentence-translation line but keeps the `card.front`/`card.back` word-gloss block | e2e content-anchoring (`card-front-word` testid) depends on the word-gloss block surviving; the sentence translation is redundant once the English prompt has already been shown on the front | ✓ Phase 28-02 |
+| Hint control is hidden-by-default, tap-to-reveal, and goes inert (disabled, dimmed) after first tap — never always-visible | Reversed from research's always-visible suggestion during requirements (ACTIVE-02); an always-visible hint would give away the answer before the learner attempts production | ✓ Phase 28-02; UAT Test 2 confirmed placement/animation/legibility match UI-SPEC intent |
 
 ## Evolution
 
@@ -261,4 +270,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-14 after v1.6 milestone*
+*Last updated: 2026-07-24 after Phase 28*
