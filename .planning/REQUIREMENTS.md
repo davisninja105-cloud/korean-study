@@ -1,78 +1,108 @@
-# Requirements: Korean Study — v1.7 Active Recall Study Mode
+# Requirements: Korean Study — v1.8 Perceived & Real Performance
 
-**Defined:** 2026-07-13
+**Defined:** 2026-08-05
 **Core Value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
+
+**Source:** Adapted from `/Users/main/Documents/travel-fun/lag_remediation_plan.md` ("P3 — Performance"), tiers P3.0–P3.7. P3.8 (TTS prefetch) explicitly excluded — see Out of Scope.
 
 ## v1 Requirements
 
-### Mode Toggle
+### Perceived Loading (P3.0)
 
-- [x] **MODE-01**: User can toggle between Passive and Active on the /study mode-select screen — a single control replacing today's 3-mode grid (Flashcards/Multiple Choice/Fill-blank) and the Exposure/Recall sub-toggle
-- [x] **MODE-02**: Passive is the default toggle position when the mode-select screen loads
+- [ ] **PERCEPT-01**: Dark-mode skeleton screens (`/study`, `/cards`, `/habits`, `/history`) are visibly distinct from the background, not the same color as `--background`
+- [ ] **PERCEPT-02**: PWA cold launch shows no white flash — `app/manifest.ts` `background_color`/`theme_color` match the dark theme
+- [ ] **PERCEPT-03**: Applying a lesson-range filter on `/study` shows a content-shaped skeleton instead of a bare spinner, with no layout shift when data lands
 
-### Active Recall
+### Root Layout (P3.1)
 
-- [x] **ACTIVE-01**: In Active mode, a card's front shows the English translation of the selected sentence
-- [x] **ACTIVE-02**: A separate, optional "tap to reveal hint" control shows the card's English "back" gloss (e.g. "using: ~(으)려고") — hidden by default, revealed only on tap, distinct from the main answer reveal
-- [x] **ACTIVE-03**: Tapping the main reveal shows the full Korean sentence with the target expression highlighted, plus audio playback and tap-to-gloss
-- [x] **ACTIVE-04**: User self-grades on the existing FSRS bar (Again/Hard/Good/Easy) after reveal; reveal copy anchors grading to the highlighted target expression, not the whole sentence
-- [x] **ACTIVE-05**: Brand-new cards (FSRS state 0/1) in Active mode degrade to the Passive/exposure experience instead of a full-sentence production prompt; they graduate to full Active production once state ≥ 1
+- [ ] **LAYOUT-01**: `RootLayout` renders synchronously — no `await` DB read blocks the initial HTML response; settings changes still apply on next navigation
 
-### Cleanup
+### Cards List Performance (P3.2)
 
-- [x] **CLEANUP-01**: Multiple Choice mode fully removed — ModeSelector option, `MultipleChoiceMode.tsx`, distractor-selection logic in `StudySession.tsx`, related tests/e2e locators
-- [x] **CLEANUP-02**: Fill-in-the-Blank retired as a standalone mode — `FillBlankMode.tsx` removed, Exposure/Recall sub-toggle removed, related tests/e2e locators updated
-- [ ] **CLEANUP-03**: `Card.distractors` DB column left in place but no longer written — extraction prompt/schema stops requesting distractors (deprecated, like `clozeSentence`/`clozeAnswer`)
-- [x] **CLEANUP-04**: Existing Passive study flow (grading, undo, requeue, audio, tap-to-gloss) has no regressions — full e2e grade-flow suite stays green
+- [ ] **CARDS-01**: `/cards` initial load queries a capped page of cards (not the full ~1056-card deck), with `sentences` excluded from the list query
+- [ ] **CARDS-02**: Scrolling `/cards` to the end of the full deck stays smooth — windowed/virtualized rendering, no unbounded DOM growth
+- [ ] **CARDS-03**: Search and lesson filter on `/cards` return correct results across the full deck, not just the loaded page (server-side query, debounced input)
+
+### Study Session Load Performance (P3.3)
+
+- [ ] **STUDY-01**: `/study` issues at most two round trips to Turso per load (down from 4–5)
+- [ ] **STUDY-02**: The redundant second `card.findMany` re-fetch is eliminated or confirmed non-duplicative against the first query's columns
+- [ ] **STUDY-03**: Invariant reads (`CardDependency` edges, `normalizedFront` lemmas) are cached and invalidated only on sync
+
+### Freshness Backstop Narrowing (P3.4)
+
+- [ ] **VERS-01**: `/api/version` returns a monotonic counter bumped by sync completion and review writes
+- [ ] **VERS-02**: The `FreshnessWatcher` JSON backstop re-fetches full payloads only when the version counter has changed since the cache was built — the backstop itself is not removed (works around a real Next 16.2.1 flake)
+
+### Region Pinning (P3.5)
+
+- [ ] **REGION-01**: Vercel function region matches the Turso primary region
+
+### Local-First Shell (P3.6)
+
+- [ ] **LOCAL-01**: Home/Study/Cards/Habits render last-known cached data immediately on mount from IndexedDB, before the network request resolves
+- [ ] **LOCAL-02**: Cache entries are version-checked against `/api/version` (never TTL-based) and keyed by build ID
+- [ ] **LOCAL-03**: Device-originated writes (reviews, card edits, settings) update the cache in the same code path as the optimistic UI update — never trailing behind a stale read
+- [ ] **LOCAL-04**: A pull-to-refresh (or equivalent) escape hatch bypasses the cache and version check entirely
+- [ ] **LOCAL-05**: With the network fully disabled, opening the app shows last-known home stats, card list, and habit data instead of an error or a blank screen
+
+### Offline Support (P3.7)
+
+- [ ] **OFFLINE-01**: A versioned service worker precaches the app shell, JS/CSS bundles, fonts (`public/fonts/`), and icon set; static assets are cache-first, `/api/*` is network-first
+- [ ] **OFFLINE-02**: A study session runs on cached cards in airplane mode
+- [ ] **OFFLINE-03**: Reviews taken offline are queued in IndexedDB (reusing the existing idempotency-key discipline from `postReviewWithRetry`) and flush exactly once when the app returns online or is reopened in the foreground — no reliance on the Background Sync API
 
 ## v2 Requirements
 
 Deferred to future release. Tracked but not in current roadmap.
 
-### Active Recall Refinements
+### Audio Performance
 
-- **ACTIVE-06**: Remember last-used Passive/Active toggle position in `localStorage` across sessions
-- **ACTIVE-07**: Progressive hint escalation (bare target word before full reveal), beyond the single back-gloss hint
+- **AUDIO-01** (P3.8): Prefetch TTS audio for the first N cards of a study session, plus card *n+1* while card *n* is displayed; cache blobs in memory for the session
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Typed input with fuzzy/exact matching | Many-valid-answers problem for free-form sentence production; punishes correct alternate phrasings; conflicts with the app's instant optimistic-grading design |
-| LLM equivalence/answer checking | Adds latency to the grade path; v1.2 made grading intentionally instant (synchronous, optimistic) |
-| Speech recording / pronunciation scoring | No feature need identified; speaking aloud before reveal requires no app support |
-| Per-direction FSRS scheduling (separate state for recognition vs. production) | `Card` stays the single FSRS review unit per existing architectural constraint; shared state across Passive/Active is an accepted tradeoff |
-| Dropping the `Card.distractors` DB column | No Turso DDL needed — left in place unused, mirrors how `clozeSentence`/`clozeAnswer` were handled |
+| P3.8 TTS prefetch | Explicitly optional in the source plan; deferred to v2 (AUDIO-01) |
+| Native iOS shell (Capacitor/WebView/React Native) | Same round trips over the same network, same numbers — P3.6's local-first shell gets the real win at a fraction of the cost without abandoning existing components |
+| Schema changes | Nothing in P3.0–P3.7 needs `prisma/schema.prisma` changes; P3.4's version counter and P3.6's cache both stay outside the DB (Setting table / client-side only) |
+| `CLEANUP-03` (distractor write-side retirement) | Carried over from v1.7 Phase 29, never planned/executed. Deliberately excluded here — distinct subsystem (extraction pipeline, not performance). Tracked as an open item in PROJECT.md ▸ Requirements ▸ Active and STATE.md ▸ Deferred Items, unscheduled |
 
 ## Traceability
 
-Every v1 requirement maps to exactly one phase. Coarse granularity: 2 phases (28–29).
+Empty — filled during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MODE-01 | Phase 28 | Complete |
-| MODE-02 | Phase 28 | Complete |
-| ACTIVE-01 | Phase 28 | Complete |
-| ACTIVE-02 | Phase 28 | Complete |
-| ACTIVE-03 | Phase 28 | Complete |
-| ACTIVE-04 | Phase 28 | Complete |
-| ACTIVE-05 | Phase 28 | Complete |
-| CLEANUP-01 | Phase 28 | Complete |
-| CLEANUP-02 | Phase 28 | Complete |
-| CLEANUP-03 | Phase 29 | Pending |
-| CLEANUP-04 | Phase 28 | Complete |
+| PERCEPT-01 | TBD | Pending |
+| PERCEPT-02 | TBD | Pending |
+| PERCEPT-03 | TBD | Pending |
+| LAYOUT-01 | TBD | Pending |
+| CARDS-01 | TBD | Pending |
+| CARDS-02 | TBD | Pending |
+| CARDS-03 | TBD | Pending |
+| STUDY-01 | TBD | Pending |
+| STUDY-02 | TBD | Pending |
+| STUDY-03 | TBD | Pending |
+| VERS-01 | TBD | Pending |
+| VERS-02 | TBD | Pending |
+| REGION-01 | TBD | Pending |
+| LOCAL-01 | TBD | Pending |
+| LOCAL-02 | TBD | Pending |
+| LOCAL-03 | TBD | Pending |
+| LOCAL-04 | TBD | Pending |
+| LOCAL-05 | TBD | Pending |
+| OFFLINE-01 | TBD | Pending |
+| OFFLINE-02 | TBD | Pending |
+| OFFLINE-03 | TBD | Pending |
 
 **Coverage:**
 
-- v1 requirements: 11 total
-- Mapped to phases: 11 ✓
-- Unmapped: 0
-
-**Per-phase distribution:**
-
-- Phase 28 (Active Recall Study Mode): MODE-01, MODE-02, ACTIVE-01, ACTIVE-02, ACTIVE-03, ACTIVE-04, ACTIVE-05, CLEANUP-01, CLEANUP-02, CLEANUP-04 (10)
-- Phase 29 (Distractor Write-Side Retirement): CLEANUP-03 (1)
+- v1 requirements: 21 total
+- Mapped to phases: 0
+- Unmapped: 21 ⚠️ (to be resolved by roadmapper)
 
 ---
-*Requirements defined: 2026-07-13*
-*Last updated: 2026-07-14 after roadmap creation (Phases 28–29 mapped)*
+*Requirements defined: 2026-08-05*
+*Last updated: 2026-08-05 after initial definition*
