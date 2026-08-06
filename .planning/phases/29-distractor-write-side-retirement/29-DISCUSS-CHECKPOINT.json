@@ -1,0 +1,59 @@
+{
+  "phase": 29,
+  "phase_slug": "distractor-write-side-retirement",
+  "areas_selected": [
+    "Audit-checks scope",
+    "Doc refresh depth",
+    "prompt-eval.mts validation",
+    "Legacy data handling"
+  ],
+  "areas_completed": [
+    "Audit-checks scope",
+    "Doc refresh depth",
+    "prompt-eval.mts validation"
+  ],
+  "decisions": [
+    {
+      "area": "Audit-checks scope",
+      "questions": [
+        {
+          "question": "Full removal vs keep-but-downgrade for lib/audit-checks.ts distractor check class",
+          "options": [
+            "Full removal (follow ROADMAP literally)",
+            "Keep but downgrade (follow research Pitfall 8)"
+          ],
+          "selected": "Full removal (follow ROADMAP literally)",
+          "notes": "Delete checkDistractors(), DistractorAnomaly type, DistractorFindingEntry, distractorFindings array/report section in audit-cards.mts, and test coverage. Deviates from research Pitfall 8's suggestion; user explicitly chose the literal ROADMAP reading."
+        }
+      ]
+    },
+    {
+      "area": "Doc refresh depth",
+      "questions": [
+        {
+          "question": "Full sweep vs minimal patch for CLAUDE.md and .planning/codebase/*.md",
+          "options": [
+            "Full sweep",
+            "Minimal patch"
+          ],
+          "selected": "Full sweep",
+          "notes": "Rewrite stale StudySession/ModeSelector/FlashcardMode CLAUDE.md sections to describe the actual Passive/Active model (toggle, hint reveal, new-card gate), plus retire distractor mentions everywhere, across CLAUDE.md and .planning/codebase/*.md (grep hits so far: ARCHITECTURE.md, INTEGRATIONS.md, STRUCTURE.md, plus CLAUDE.md itself). Not just patching around CLEANUP-03's own diff."
+        }
+      ]
+    },
+    {
+      "area": "prompt-eval.mts validation",
+      "questions": [
+        {
+          "question": "One-off manual check vs permanent extension of prompt-eval.mts",
+          "options": [
+            "One-off manual check",
+            "Extend prompt-eval.mts permanently"
+          ],
+          "selected": "One-off manual check",
+          "notes": "Reuse the non-persisting pattern (env loading, no Prisma writes, real extractCardsFromNotes call against one real lesson) to manually confirm zero distractors post-change and no pipeline errors. Do not add a permanent distractor metric to LessonTally/computeDiff/baseline JSON \u2014 the script's own header documents its tally logic as frozen after the romanization baseline commit."
+        }
+      ]
+    }
+  ]
+}
