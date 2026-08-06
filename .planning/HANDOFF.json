@@ -1,0 +1,88 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-08-05T00:00:00Z",
+  "phase": "28",
+  "phase_name": "active-recall-study-mode",
+  "phase_dir": ".planning/phases/28-active-recall-study-mode",
+  "plan": "completed",
+  "task": "completed",
+  "total_tasks": 7,
+  "status": "paused",
+  "context": "phase-complete",
+  "completed_tasks": [
+    {
+      "id": 1,
+      "name": "Plan & Discuss Phase 28",
+      "status": "done",
+      "commit": "d76cd10"
+    },
+    {
+      "id": 2,
+      "name": "Code: Implement Passive/Active toggle + delete MC/FillBlank",
+      "status": "done",
+      "commit": "52fd5c2"
+    },
+    {
+      "id": 3,
+      "name": "Test: E2E coverage for mid-session state graduation",
+      "status": "done",
+      "commit": "52fd5c2"
+    },
+    {
+      "id": 4,
+      "name": "Code review & fix",
+      "status": "done",
+      "commit": "6f52f49"
+    },
+    {
+      "id": 5,
+      "name": "Security audit (ASVS L1)",
+      "status": "done",
+      "commit": "c602d71"
+    },
+    {
+      "id": 6,
+      "name": "UAT & verification",
+      "status": "done",
+      "commit": "52fd5c2"
+    },
+    {
+      "id": 7,
+      "name": "Deploy to production",
+      "status": "done",
+      "commit": "d76cd10"
+    }
+  ],
+  "remaining_tasks": [],
+  "blockers": [],
+  "async_jobs": [],
+  "human_actions_pending": [],
+  "decisions": [
+    {
+      "decision": "Full Passive/Active toggle (not 3-mode grid)",
+      "rationale": "Simpler mental model, focus on production exercise, clear default for new learners",
+      "phase": "28"
+    },
+    {
+      "decision": "Active mode as default",
+      "rationale": "Productive exercise should be the primary study path for learners",
+      "phase": "28"
+    },
+    {
+      "decision": "Fully delete MC & FillBlank (not deprecate)",
+      "rationale": "Simplify codebase, clear single-mode path, no future maintenance burden",
+      "phase": "28"
+    }
+  ],
+  "uncommitted_files": [
+    ".planning/phases/29-distractor-write-side-retirement/"
+  ],
+  "next_action": "Run `/gsd-new-milestone` to advance to Phase 29 (distractor-write-side-retirement) execution",
+  "context_notes": "Phase 28 is production-complete. All gates (UAT, security, code review) passed. The new Passive/Active study toggle is live. Next phase is ready to start: distractor system cleanup (Column writes, audit-checks.ts, documentation sweep).",
+  "gates_passed": {
+    "uat": "2/2 tests passed, 0 issues",
+    "security": "0 open threats (ASVS L1)",
+    "code_review": "Fixes applied",
+    "deployed": true
+  }
+}
