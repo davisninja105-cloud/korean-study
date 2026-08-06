@@ -71,38 +71,49 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ## Traceability
 
-Empty — filled during roadmap creation.
+All 21 v1 requirements map to exactly one phase. No orphans, no duplicates.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PERCEPT-01 | TBD | Pending |
-| PERCEPT-02 | TBD | Pending |
-| PERCEPT-03 | TBD | Pending |
-| LAYOUT-01 | TBD | Pending |
-| CARDS-01 | TBD | Pending |
-| CARDS-02 | TBD | Pending |
-| CARDS-03 | TBD | Pending |
-| STUDY-01 | TBD | Pending |
-| STUDY-02 | TBD | Pending |
-| STUDY-03 | TBD | Pending |
-| VERS-01 | TBD | Pending |
-| VERS-02 | TBD | Pending |
-| REGION-01 | TBD | Pending |
-| LOCAL-01 | TBD | Pending |
-| LOCAL-02 | TBD | Pending |
-| LOCAL-03 | TBD | Pending |
-| LOCAL-04 | TBD | Pending |
-| LOCAL-05 | TBD | Pending |
-| OFFLINE-01 | TBD | Pending |
-| OFFLINE-02 | TBD | Pending |
-| OFFLINE-03 | TBD | Pending |
+| PERCEPT-01 | Phase 30 | Pending |
+| PERCEPT-02 | Phase 30 | Pending |
+| PERCEPT-03 | Phase 30 | Pending |
+| LAYOUT-01 | Phase 30 | Pending |
+| CARDS-01 | Phase 31 | Pending |
+| CARDS-02 | Phase 31 | Pending |
+| CARDS-03 | Phase 31 | Pending |
+| STUDY-01 | Phase 32 | Pending |
+| STUDY-02 | Phase 32 | Pending |
+| STUDY-03 | Phase 32 | Pending |
+| VERS-01 | Phase 33 | Pending |
+| VERS-02 | Phase 33 | Pending |
+| REGION-01 | Phase 30 | Pending |
+| LOCAL-01 | Phase 34 | Pending |
+| LOCAL-02 | Phase 34 | Pending |
+| LOCAL-03 | Phase 34 | Pending |
+| LOCAL-04 | Phase 34 | Pending |
+| LOCAL-05 | Phase 34 | Pending |
+| OFFLINE-01 | Phase 35 | Pending |
+| OFFLINE-02 | Phase 35 | Pending |
+| OFFLINE-03 | Phase 35 | Pending |
+
+**Phase groupings:**
+
+| Phase | Source tier(s) | Requirements | Count |
+|-------|----------------|--------------|-------|
+| Phase 30 — Instant Feedback & Cold-Start Unblocking | P3.0, P3.1, P3.5 | PERCEPT-01, PERCEPT-02, PERCEPT-03, LAYOUT-01, REGION-01 | 5 |
+| Phase 31 — Cards List Pagination & Virtualization | P3.2 | CARDS-01, CARDS-02, CARDS-03 | 3 |
+| Phase 32 — Study Load Round-Trip Collapse | P3.3 | STUDY-01, STUDY-02, STUDY-03 | 3 |
+| Phase 33 — Version-Gated Freshness Backstop | P3.4 | VERS-01, VERS-02 | 2 |
+| Phase 34 — Local-First Shell | P3.6 | LOCAL-01, LOCAL-02, LOCAL-03, LOCAL-04, LOCAL-05 | 5 |
+| Phase 35 — Service Worker & Offline Review Queue | P3.7 | OFFLINE-01, OFFLINE-02, OFFLINE-03 | 3 |
 
 **Coverage:**
 
 - v1 requirements: 21 total
-- Mapped to phases: 0
-- Unmapped: 21 ⚠️ (to be resolved by roadmapper)
+- Mapped to phases: 21 ✓
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-08-05*
-*Last updated: 2026-08-05 after initial definition*
+*Last updated: 2026-08-05 after roadmap creation (Phases 30-35, 21/21 mapped)*

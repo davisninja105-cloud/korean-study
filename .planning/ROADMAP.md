@@ -9,7 +9,8 @@
 - ✅ **v1.4 Knowledge Graph Quality & History** — Phases 16–19 (shipped 2026-07-05)
 - ✅ **v1.5 Extraction Quality & Reliability** — Phases 20–23 (shipped 2026-07-10)
 - ✅ **v1.6 Freshness, Performance & E2E Testing** — Phases 24–27 (shipped 2026-07-14)
-- 🚧 **v1.7 Active Recall Study Mode** — Phases 28–29 (in progress)
+- ⚠️ **v1.7 Active Recall Study Mode** — Phase 28 shipped, Phase 29 archived unexecuted (2026-08-05)
+- 🚧 **v1.8 Perceived & Real Performance** — Phases 30–35 (in progress)
 
 ## Phases
 
@@ -97,49 +98,150 @@ See `.planning/milestones/v1.6-ROADMAP.md` for full phase details.
 
 </details>
 
-### 🚧 v1.7 Active Recall Study Mode (In Progress)
+<details>
+<summary>⚠️ v1.7 Active Recall Study Mode (Phases 28–29) — Phase 28 SHIPPED 2026-07-24, Phase 29 archived unexecuted 2026-08-05</summary>
 
-**Milestone Goal:** Give the study session a real active-recall path — a Passive/Active toggle on the mode-select screen that swaps flashcard exposure for a "translate the English sentence" production exercise — while retiring Multiple Choice and the standalone Fill-in-the-Blank mode and the now-unused distractor generation pipeline.
+- [x] Phase 28: Active Recall Study Mode (2/2 plans) — completed 2026-07-24
+- [ ] Phase 29: Distractor Write-Side Retirement — discussed, never planned or executed; archived under `.planning/milestones/v1.7-phases/` when v1.8 started. CLEANUP-03 remains open and unscheduled (see PROJECT.md ▸ Requirements ▸ Active).
+
+</details>
+
+### 🚧 v1.8 Perceived & Real Performance (In Progress)
+
+**Milestone Goal:** Make every tap paint something within 100ms and settle within 1s — fix the feedback illusion first (invisible skeletons, white launch flash, dishonest spinner), then the three real bottlenecks (`/cards` unpaginated, `/study`'s 4–5 sequential Turso round trips, a doubled freshness-backstop payload), then pin the Vercel region, then make the shell local-first (IndexedDB stale-while-revalidate) with a service worker + offline review queue.
+
+**Source:** Adapted from `lag_remediation_plan.md` ("P3 — Performance"), tiers P3.0–P3.7. P3.8 (TTS prefetch) is out of scope for this milestone.
+
+**Measured baseline (on-device, 60fps screen recording, tap → first paint of real content):**
+
+| Path | Baseline | Target |
+|------|----------|--------|
+| Cold launch → `/` | 2.5s | < 1.0s |
+| Tab → `/study` | 2.9s | < 0.8s |
+| Lesson filter Apply | 4.7s | < 1.0s |
+| Tab → `/cards` | 6.4s | < 1.0s |
+| Tab → `/habits` | 1.8s | < 0.8s |
+| Any repeat visit | — | < 0.1s |
+
+**Feedback budget, independent of the table:** every tap paints *something* — skeleton, cached content, or state change — within 100ms. Phase 30 satisfies this for all routes and no later phase may regress it.
+
+**Milestone-wide constraints (carry into every phase):**
+
+- Tailwind v4 tokens live in `app/globals.css` (`:root` + `@theme inline`) — there is no `tailwind.config`, and every dark value must be mirrored in BOTH the `@media (prefers-color-scheme: dark)` block and the `:root[data-theme="dark"]` block.
+- `react-hooks/purity` is strict: no `Date.now()` / `new Date()` / `Math.random()` in render. Cache reads and timing instrumentation belong in effects or event handlers. `npm run lint` must stay green.
+- No `prisma/schema.prisma` changes are needed through Phase 35. The version counter lives in the `Setting` table; the local cache is client-side only.
+- iOS/WebKit standalone PWA is the only target. Home-screen-installed storage survives ITP, but there is **no Background Sync API** — any deferred flush must fire on the `online` event or on app foreground, never in the background.
+- Do **not** delete the `FreshnessWatcher` backstop. It works around a real, unfixed Next.js 16.2.1 Suspense/Segment-Cache bug. Narrow it only.
+
+**Phase checklist:**
+
+- [ ] **Phase 30: Instant Feedback & Cold-Start Unblocking** - Visible dark-mode skeletons, no white PWA launch flash, honest lesson-filter skeleton, synchronous root layout, Vercel region pinned to Turso
+- [ ] **Phase 31: Cards List Pagination & Virtualization** - `/cards` loads a capped page without sentences, windows its scroll, and searches/filters server-side across the full deck
+- [ ] **Phase 32: Study Load Round-Trip Collapse** - `/study` drops from 4–5 sequential Turso round trips to at most two, with sync-invalidated caching of invariant reads
+- [ ] **Phase 33: Version-Gated Freshness Backstop** - `/api/version` monotonic counter lets the freshness backstop re-fetch payloads only when something actually changed
+- [ ] **Phase 34: Local-First Shell** - IndexedDB stale-while-revalidate cache makes every repeat visit paint instantly and the app usable with the network off
+- [ ] **Phase 35: Service Worker & Offline Review Queue** - Precached app shell plus a persisted review queue that flushes exactly once when the app comes back online
 
 ## Phase Details
 
-### Phase 28: Active Recall Study Mode
+### Phase 30: Instant Feedback & Cold-Start Unblocking
 
-**Goal**: Replace the /study 3-mode grid (Flashcards / Multiple Choice / Fill-in-the-Blank) and the Exposure/Recall sub-toggle with a single Passive/Active toggle (Passive default), retire Multiple Choice and standalone Fill-in-the-Blank entirely, and add the Active production mode (English sentence prompt → tap-to-reveal Korean + audio → self-grade). Remove the old modes first via a `StudyMode` type-narrowing pass so the compiler enumerates stale references, then extend `FlashcardMode` with the Active front-face branch into the smaller surface.
-**Depends on**: Nothing (first phase of v1.7)
-**Requirements**: MODE-01, MODE-02, ACTIVE-01, ACTIVE-02, ACTIVE-03, ACTIVE-04, ACTIVE-05, CLEANUP-01, CLEANUP-02, CLEANUP-04
+**Goal**: Make waiting visible everywhere and strip the two avoidable costs from the cold path — a blocking DB read in `RootLayout` and a possible cross-region hop to Turso. This is the cheapest work in the milestone and the largest single improvement in felt speed; it also establishes the re-measurement baseline every later phase is judged against.
+**Depends on**: Nothing (first phase of v1.8)
+**Requirements**: PERCEPT-01, PERCEPT-02, PERCEPT-03, LAYOUT-01, REGION-01
 **Success Criteria** (what must be TRUE):
 
-  1. On /study, the user sees one Passive/Active toggle — no 3-mode grid, no Multiple Choice, no standalone Fill-in-the-Blank, no Exposure/Recall sub-toggle — and it opens on Passive by default.
-  2. In Active mode the card front shows the selected sentence's English translation; tapping the main reveal flips to the full Korean sentence with the target expression highlighted, plus audio playback and tap-to-gloss.
-  3. An optional "tap to reveal hint" control (hidden until tapped) surfaces the card's English back gloss, separate from and preceding the main answer reveal.
-  4. After revealing, the user self-grades on the existing Again/Hard/Good/Easy bar, with reveal copy anchoring the grade to the highlighted target expression rather than the whole sentence.
-  5. A brand-new card (FSRS state 0/1) selected in Active mode falls back to the Passive/exposure experience (bare word / sentence shown) and graduates to full Active production once state ≥ 1; the existing Passive flow (grade, undo, requeue, audio, tap-to-gloss) shows no regressions and the e2e grade-flow suite stays green.
+  1. In dark mode on a throttled connection, tapping through to `/study`, `/cards`, `/habits`, and `/history` shows clearly visible pulsing skeleton shapes within ~100ms of the tap — never an empty void or outline-only frame — and every existing `bg-surface-3` consumer (including `Nav.tsx` hover states) still looks intentional.
+  2. Cold-launching the installed PWA from the home-screen icon shows no white frame at any point; the manifest's `background_color` and `theme_color` match the dark theme already declared in `app/layout.tsx`.
+  3. Applying a lesson range on `/study` shows a content-shaped skeleton in the final content's shape instead of a bare centred spinner, and nothing shifts position when the real data lands.
+  4. `RootLayout` is no longer `async` and awaits no DB read — the first HTML byte ships without waiting on Turso — while a saved settings change (button/reward color, reading text scale, reading aid) still applies on the next navigation with no colour flash.
+  5. The deployed Vercel function region matches the Turso primary region, and `/habits` (the cleanest pure-round-trip signal) lands faster than its 1.8s baseline; its `e2e/perf.spec.ts` page-load budget passes at a tightened threshold.
 
-**Plans**: 2/2 plans complete
-
-- [x] 28-01-PLAN.md
-- [x] 28-02-PLAN.md
-
+**Plans**: TBD
 **UI hint**: yes
 
-### Phase 29: Distractor Write-Side Retirement
+### Phase 31: Cards List Pagination & Virtualization
 
-**Goal**: Now that no study mode consumes distractors, stop requesting and writing them across the extraction/write pipeline and its checks — atomically across all sites in one pass — leaving the `Card.distractors` DB column in place but unused (deprecated like `clozeSentence`/`clozeAnswer`). Refresh the project docs to describe the two-mode study model.
-**Depends on**: Phase 28
-**Requirements**: CLEANUP-03
+**Goal**: Stop `/cards` from querying, serializing, transferring, and hydrating the entire ~1056-card deck plus its ~1616 sentence rows on every visit. Cap the initial query, split the `sentences` relation out of the list read, window the rendered rows, and move search + lesson filtering server-side so correctness survives pagination.
+**Depends on**: Phase 30
+**Requirements**: CARDS-01, CARDS-02, CARDS-03
 **Success Criteria** (what must be TRUE):
 
-  1. A fresh sync/extraction produces cards with no distractor data — the extraction prompt and zod schema no longer request distractors, validated non-persistently via `scripts/prompt-eval.mts`.
-  2. No code path writes `Card.distractors`; the column remains in the DB unused, and distractor references are removed across the write side (`CardDTO` drops `distractors`, `lib/audit-checks.ts` drops the distractor check class, `extract-cards` tests drop distractor assertions) with the full test suite green.
-  3. `CLAUDE.md` and `.planning/codebase/*.md` accurately describe the retired distractor pipeline and the two-mode (Passive/Active) study model.
+  1. Opening `/cards` paints its first rows in under a second on a normal connection — the initial query returns a capped page and carries no `sentences` rows — and its `e2e/perf.spec.ts` page-load budget passes at a tightened threshold.
+  2. Scrolling from the top of the deck to the last card stays smooth, with the rendered DOM staying bounded rather than growing with every page loaded.
+  3. Typing a search term returns matching cards from anywhere in the full deck, not just the loaded page, with input debounced so intermediate keystrokes don't each hit the server.
+  4. Applying a lesson range on `/cards` returns the correct card set across the full deck, and a collapsed row still shows its reading-practice/sentence count without loading the sentences themselves.
+  5. Add, edit, delete, swipe-to-delete, tap-to-gloss, group collapse, and the Reading practice view all still behave correctly against the paginated list; the existing e2e and unit suites stay green.
+
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 32: Study Load Round-Trip Collapse
+
+**Goal**: Cut `/study`'s load cost from four-to-five serial libSQL HTTP round trips to at most two, by batching the independent reads, removing (or proving non-duplicative) the second full-row `card.findMany`, and caching the reads that only ever change on sync — without altering which cards a session picks or the order it presents them in.
+**Depends on**: Phase 31
+**Requirements**: STUDY-01, STUDY-02, STUDY-03
+**Success Criteria** (what must be TRUE):
+
+  1. A `/study` load issues at most two round trips to Turso, demonstrable from query instrumentation rather than asserted by inspection.
+  2. The mode-select screen shows its real due count well ahead of the 2.9s baseline, and applying a lesson range settles well ahead of the 4.7s baseline; the `/study` and `/api/cards/due` budgets in `e2e/perf.spec.ts` pass at tightened thresholds.
+  3. `CardDependency` edges and the `normalizedFront` lemma set are served from cache on repeat loads and are invalidated when a sync completes — cards from a freshly synced lesson sequence correctly with no redeploy and no stale-prerequisite behavior.
+  4. Session composition is byte-for-byte unchanged in behavior: prerequisite closure, foundation-first ordering, the bare-word-first gate, and least-unknown sentence selection all still hold, with the unit suites and the e2e grade-flow spec green.
+
+**Plans**: TBD
+
+### Phase 33: Version-Gated Freshness Backstop
+
+**Goal**: Stop the freshness backstop from delivering the same payload twice on every resume. Add a cheap monotonic version counter the client can poll, and re-fetch route payloads only when it has actually moved — narrowing the backstop without removing it, since it still guards a real unfixed Next.js 16.2.1 bug.
+**Depends on**: Phase 32
+**Requirements**: VERS-01, VERS-02
+**Success Criteria** (what must be TRUE):
+
+  1. `GET /api/version` returns a monotonic counter that advances when a sync completes and when a review is written, and stays put otherwise — with no `prisma/schema.prisma` change (the counter lives in the `Setting` table).
+  2. Resuming the app or navigating back with no server-side changes issues one small version request instead of a full payload re-fetch — the common case costs a fraction of what it did.
+  3. When the counter has moved (for example after the daily cron sync), the same resume path re-fetches and the route shows the new data; the existing `e2e/freshness-*` resume and back-forward specs stay green.
+  4. `FreshnessWatcher` still exists and still applies its JSON re-fetch backstop when the version has changed, carrying a `TODO` that records the Next.js version last tested for the underlying Suspense/Segment-Cache flake.
+
+**Plans**: TBD
+
+### Phase 34: Local-First Shell
+
+**Goal**: Stop first paint from depending on the network at all. Cache each route's DTO payload in IndexedDB, render the last-known data immediately on mount, revalidate in the background, and keep the cache honest with build-ID keying, version checks (never TTLs), write-through on device-originated writes, and a pull-to-refresh escape hatch.
+**Depends on**: Phase 33 (needs `/api/version`), Phase 30
+**Requirements**: LOCAL-01, LOCAL-02, LOCAL-03, LOCAL-04, LOCAL-05
+**Success Criteria** (what must be TRUE):
+
+  1. Second and subsequent visits to Home, Study, Cards, and Habits paint real content immediately from the local cache — before the network request resolves — showing a subtle "updating" affordance rather than a blocking skeleton when cached data exists.
+  2. With the network fully disabled, opening the app shows the last-known home stats, card list, and habit data rather than an error or a blank screen.
+  3. Grading a card, editing a card, or changing a setting updates the cache in the same code path as the optimistic UI update — reopening that route never shows the pre-write value, even offline.
+  4. After the daily cron sync runs, reopening the app shows the new lessons and cards on the next launch with no hard reload; entries are discarded when `/api/version` moves or the build ID changes, and never merely because time has passed.
+  5. Pull-to-refresh bypasses both the cache and the version check entirely and repopulates from the server, so any cache problem is recoverable from the phone.
+
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 35: Service Worker & Offline Review Queue
+
+**Goal**: Turn "fast" into "works without a network." Precache the app shell, bundles, fonts, and icons behind a versioned service worker with a clear invalidation path, and persist the review queue to IndexedDB so a session studied in airplane mode lands exactly once when the app next comes to the foreground online.
+**Depends on**: Phase 34
+**Requirements**: OFFLINE-01, OFFLINE-02, OFFLINE-03
+**Success Criteria** (what must be TRUE):
+
+  1. A versioned service worker precaches the app shell, JS/CSS bundles, `public/fonts/`, and the icon set; static assets serve cache-first and `/api/*` serves network-first, and deploying a new build replaces the cached shell instead of serving stale JS.
+  2. In airplane mode, tapping the home-screen icon launches the app and runs a full study session on cached cards.
+  3. Reviews taken offline survive a force-quit: restoring the network and reopening the app flushes them, and each review lands exactly once — verified against `ReviewLog` / the review counter, not the UI — reusing the existing `postReviewWithRetry` idempotency-key discipline.
+  4. The flush is triggered by the `online` event and by the app returning to the foreground, with no registration of or reliance on the Background Sync API (which never fires on iOS).
 
 **Plans**: TBD
 
 ## Progress
 
 **Execution Order:**
-Phases execute in numeric order: 1 → 2 → ... → 27 (all complete) → 28 → 29.
+Phases execute in numeric order: 1 → 2 → ... → 28 (complete) → 29 (archived unexecuted) → 30 → 31 → 32 → 33 → 34 → 35.
+
+Phases 30 → 31 → 32 → 33 are each independently shippable in that order. Phases 34 → 35 are structural and depend on Phase 30 having landed; Phase 34 additionally depends on Phase 33's `/api/version` endpoint, and Phase 35 depends on Phase 34's IndexedDB layer.
+
+Re-measure the baseline table after Phase 30 before starting Phase 31 — the numbers move less than the experience does, and that is the point.
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
@@ -171,8 +273,14 @@ Phases execute in numeric order: 1 → 2 → ... → 27 (all complete) → 28 �
 | 25. E2E Test Infrastructure & Baselines | v1.6 | 3/3 | Complete | 2026-07-12 |
 | 26. Freshness Fix | v1.6 | 6/6 | Complete | 2026-07-13 |
 | 27. E2E Coverage & Performance Validation | v1.6 | 3/3 | Complete | 2026-07-13 |
-| 28. Active Recall Study Mode | v1.7 | 2/2 | Complete    | 2026-07-14 |
-| 29. Distractor Write-Side Retirement | v1.7 | 0/TBD | Not started | - |
+| 28. Active Recall Study Mode | v1.7 | 2/2 | Complete | 2026-07-24 |
+| 29. Distractor Write-Side Retirement | v1.7 | 0/0 | Deferred (archived unexecuted — CLEANUP-03 open, unscheduled) | - |
+| 30. Instant Feedback & Cold-Start Unblocking | v1.8 | 0/TBD | Not started | - |
+| 31. Cards List Pagination & Virtualization | v1.8 | 0/TBD | Not started | - |
+| 32. Study Load Round-Trip Collapse | v1.8 | 0/TBD | Not started | - |
+| 33. Version-Gated Freshness Backstop | v1.8 | 0/TBD | Not started | - |
+| 34. Local-First Shell | v1.8 | 0/TBD | Not started | - |
+| 35. Service Worker & Offline Review Queue | v1.8 | 0/TBD | Not started | - |
 
 ---
-*Last updated: 2026-07-14 — v1.7 Active Recall Study Mode roadmap created (Phases 28–29, coarse granularity, 11/11 requirements mapped).*
+*Last updated: 2026-08-05 — v1.8 Perceived & Real Performance roadmap created (Phases 30–35, coarse granularity, 21/21 requirements mapped).*

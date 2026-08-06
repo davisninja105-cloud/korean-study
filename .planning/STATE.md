@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Perceived & Real Performance
-status: planning
-last_updated: "2026-08-06T03:39:50.732Z"
+status: ready
+last_updated: "2026-08-05T00:00:00.000Z"
 last_activity: 2026-08-05
 progress:
-  total_phases: 0
+  total_phases: 6
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,22 +17,23 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-07-24)
+See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 29 — Distractor Write-Side Retirement
+**Current focus:** Phase 30 — Instant Feedback & Cold-Start Unblocking
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 30 — Instant Feedback & Cold-Start Unblocking
 Plan: —
-Status: Defining requirements
-Last activity: 2026-08-05 — Milestone v1.8 started
+Status: Roadmap created, phase not yet planned
+Last activity: 2026-08-05 — v1.8 roadmap created (Phases 30–35, 21/21 requirements mapped)
 
 ## Performance Metrics
 
 **Velocity:**
 
+- Prior milestone (v1.7): 2 plans across 1 executed phase (28); Phase 29 archived unexecuted
 - Prior milestone (v1.6): 14 plans across 4 phases (24–27), 3 days
 - Prior milestone (v1.5): 9 plans across 4 phases (20–23)
 
@@ -46,14 +47,14 @@ Last activity: 2026-08-05 — Milestone v1.8 started
 
 Full decision log lives in PROJECT.md Key Decisions table and .planning/RETROSPECTIVE.md.
 
-v1.7 roadmap shaping decisions (2026-07-14):
+v1.8 roadmap shaping decisions (2026-08-05):
 
-- Coarse granularity: research's suggested 3-phase split (remove-modes → add-active → cleanup) consolidated to 2 delivery-coherent phases. The mode removal and Active build are one continuous StudySession/ModeSelector refactor whose only user-observable deliverable (Passive/Active toggle, no MC/Fill-blank) is coherent as a whole — a standalone "remove modes" phase would ship a broken Active toggle position. Removal-first ordering is preserved as intra-phase implementation sequencing (type-narrow `StudyMode`, let the compiler enumerate stale refs) per research.
-- Distractor write-side retirement (CLEANUP-03) kept as its own Phase 29: it touches a distinct subsystem (extraction/sync/DTO/audit, not the study UI), changes the `CardDTO` shape, and is safest done AFTER Active is stable — retired atomically across all sites and validated with `scripts/prompt-eval.mts` (research Pitfall 8).
-- Product decisions baked into Phase 28 scope: Passive is the default toggle position (MODE-02, reversed from research's Active-default suggestion during requirements); the Active hint control is tap-to-reveal / hidden-by-default (ACTIVE-02, reversed from research's always-visible suggestion).
-- New-card gate (ACTIVE-05): state 0/1 cards in Active mode degrade to the Passive/exposure experience (not a full-sentence production prompt) — protects Core Value; gate design to be finalized in Phase 28 discuss-phase (research Pitfall 1).
-
-Phase 28 close (2026-07-24): MODE-01/02, ACTIVE-01..05, CLEANUP-01/02/04 all shipped and UAT-verified (2/2 passed); `activeFace` derived fresh in render scope so mid-session state graduation (1→2) flips faces live with no reload; security review closed 4 threats at ASVS L1 with zero open. Full detail in PROJECT.md Key Decisions.
+- **P3.0 + P3.1 + P3.5 consolidated into Phase 30.** All three are sub-day tiers on the same cold-path deliverable (feedback within 100ms + nothing avoidable blocking first paint), and none requires architecture the others don't. Splitting them would produce three phases whose success criteria read as tasks. Follows the v1.7 precedent of consolidating a research-suggested split into delivery-coherent phases. P3.5 (region pin) is order-independent — the source plan's strict P3.0→P3.5 sequence is a "may ship independently in this order" statement, not a constraint that forbids grouping.
+- **P3.2, P3.3, P3.4 each kept as their own phase (31/32/33).** Each is substantial (half-day to a full day), touches a distinct subsystem (cards list query + client, study-cards pipeline, freshness backstop), and has a self-contained user-observable outcome.
+- **P3.6 and P3.7 kept separate (Phases 34/35) despite P3.7 depending on P3.6.** They deliver different user-facing capabilities: Phase 34 is cache-for-speed (instant repeat visits), Phase 35 is offline usability (airplane-mode study + queued reviews that land exactly once). Merging them would produce a multi-day phase whose success criteria span two unrelated failure modes.
+- **P3.8 (TTS prefetch) excluded** — explicitly optional in the source plan; tracked as v2 AUDIO-01 in REQUIREMENTS.md.
+- **CLEANUP-03 (v1.7 Phase 29) deliberately not folded into v1.8** — distinct subsystem (extraction pipeline, not performance). Remains open and unscheduled.
+- **Re-measurement phrasing:** success criteria reference the existing `e2e/perf.spec.ts` median-of-5 budgets at tightened thresholds rather than the source plan's manual ffmpeg frame-diff methodology, which is too heavyweight for automated phase verification. The on-device baseline table stays in ROADMAP.md as the intent anchor.
 
 ### Pending Todos
 
@@ -61,7 +62,11 @@ None open.
 
 ### Blockers/Concerns
 
-- [Phase 29 flag from research — Pitfall 8] Retire the distractor chain atomically across prompt/schema/DTO/audit/tests in one pass; a half-retired chain leaves warn spam / extraction overhead.
+- [Phase 30] Raising dark `--surface-3` affects every existing `bg-surface-3` consumer, including `hover:bg-surface-3` in `Nav.tsx`. Both the `@media (prefers-color-scheme: dark)` block and the `:root[data-theme="dark"]` block in `globals.css` must change (they are duplicated) — the project's established "token appears in 3 globals.css blocks" rule applies.
+- [Phase 33/34] Do NOT delete the `FreshnessWatcher` backstop. It works around a real, unfixed Next.js 16.2.1 Suspense/Segment-Cache bug where routes with a `loading.tsx` fetch a fresh RSC payload and never apply it. Narrow only; re-test after any Next upgrade.
+- [Phase 34/35] iOS/WebKit has no Background Sync API. Any deferred flush must fire on the `online` event or on app foreground — registering `sync`/`periodicsync` will silently never fire.
+- [Phase 34] Local-first reintroduces the staleness class that `force-dynamic` + `FreshnessWatcher` were added to fix. The five staleness rules from the source plan (classify writes by origin, version-check never TTL, replace layers don't add one, key by build ID, ship a manual escape hatch) are non-negotiable design constraints, not suggestions.
+- [carried from v1.7] CLEANUP-03 (distractor write-side retirement) open and unscheduled — Pitfall 8: retire the chain atomically across prompt/schema/DTO/audit/tests in one pass.
 - [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch — out of scope; deferred candidate.
 - [carried from v1.5] 거/게 romanization-flagged card fronts (post-audit cron arrivals) — out of scope; open for a future audit/fix pass.
 
@@ -71,19 +76,23 @@ Carried forward, informational only:
 
 | Category | Item | Status |
 |----------|------|--------|
+| cleanup | CLEANUP-03 distractor write-side retirement (v1.7 Phase 29, archived unexecuted) | Open, unscheduled |
+| performance | AUDIO-01 / P3.8 TTS prefetch for study sessions | Deferred to v2 |
 | hardening | `app/api/review/undo/route.ts` missing try/catch (deferred in Phase 13) | Open |
 | feature | Card retirement/mastery flag (MASTERY-01) | Deferred to v2 |
 | quality | 거/게 romanization-flagged fronts (post-audit cron arrivals) | Open for future audit/fix pass |
 | e2e-v2 | Cards CRUD spec (E2E-08), stubbed sync-route coverage (E2E-09), WebKit project (E2E-10) | Deferred to v2 |
 | feature | Remember last-used Passive/Active toggle in localStorage (ACTIVE-06); progressive hint escalation (ACTIVE-07) | Deferred to v2 |
-| hardening | `FreshnessWatcher` JSON backstop request-sequencing race (WR-01) — no observed occurrence across 44+ e2e runs | Open, non-blocking |
+| hardening | `FreshnessWatcher` JSON backstop request-sequencing race (WR-01) — no observed occurrence across 44+ e2e runs; may be resolved incidentally by Phase 33 | Open, non-blocking |
 
 ## Session Continuity
 
-Last session: 2026-07-24T06:04:48.267Z
-Stopped at: Phase 28 complete, ready to plan Phase 29
+Last session: 2026-08-05
+Stopped at: v1.8 roadmap created (Phases 30–35), ready to plan Phase 30
 Resume file: None
 
 ## Operator Next Steps
 
-- Plan Phase 29 with `/gsd-plan-phase 29` (Distractor Write-Side Retirement — CLEANUP-03)
+- Plan Phase 30 with `/gsd-plan-phase 30` (Instant Feedback & Cold-Start Unblocking — PERCEPT-01/02/03, LAYOUT-01, REGION-01)
+- Phase 30 is flagged **UI hint: yes** — consider `/gsd-ui-phase 30` before planning
+- Re-measure the baseline table in ROADMAP.md after Phase 30 lands, before starting Phase 31
