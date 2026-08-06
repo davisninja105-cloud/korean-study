@@ -1,20 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.7
-milestone_name: Active Recall Study Mode
-current_phase: 29
-current_phase_name: Distractor Write-Side Retirement
-status: ready_to_plan
-stopped_at: Phase 28 complete, ready to plan Phase 29
-last_updated: "2026-07-24T06:04:48.267Z"
-last_activity: 2026-07-24
-last_activity_desc: Phase 28 complete, transitioned to Phase 29
+milestone: v1.8
+milestone_name: Perceived & Real Performance
+status: planning
+last_updated: "2026-08-06T03:39:50.732Z"
+last_activity: 2026-08-05
 progress:
-  total_phases: 2
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
-  percent: 50
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -28,12 +24,10 @@ See: .planning/PROJECT.md (updated 2026-07-24)
 
 ## Current Position
 
-Phase: 29 — Distractor Write-Side Retirement
-Plan: Not started
-Status: Ready to plan Phase 29
-Last activity: 2026-07-24 — Phase 28 complete, transitioned to Phase 29
-
-Progress: [██████████░░░░░░░░░░] 50%
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-08-05 — Milestone v1.8 started
 
 ## Performance Metrics
 

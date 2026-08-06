@@ -16,6 +16,24 @@ The app is deployed and fully functional. v1.6 diagnosed and fixed a real produc
 
 **Next:** Planning next milestone — run `/gsd-new-milestone`.
 
+## Current Milestone: v1.8 Perceived & Real Performance (P3.0–P3.7)
+
+**Goal:** Make every tap paint something within 100ms and settle within 1s — fix the feedback illusion first (invisible skeletons, white launch flash, dishonest spinner), then the three real bottlenecks (`/cards` unpaginated, `/study`'s 4–5 sequential Turso round trips, a doubled freshness-backstop payload), then pin the Vercel region, then make the shell local-first (IndexedDB stale-while-revalidate) with a service worker + offline review queue.
+
+**Target features:**
+- P3.0 — Fix invisible dark-mode skeleton token (`--surface-3` == `--background`), white PWA launch flash (`manifest.ts` light-theme `background_color`), and the dishonest lesson-filter spinner (replace with content-shaped skeleton)
+- P3.1 — Un-block `RootLayout` from its synchronous `getLayoutSettings()` DB read (cookie mirror preferred over defaults+client-correction)
+- P3.2 — Paginate + virtualize `/cards`: cap the initial query (`take`/cursor), drop the `sentences` relation from the list query, window the scroll, move search/filter server-side
+- P3.3 — Collapse `/study`'s round trips: batch the independent pool/dependency/known-lemmas reads, eliminate the redundant second `findMany`, cache invariant reads keyed by sync version
+- P3.4 — Narrow the freshness backstop: add `/api/version` (monotonic counter bumped by sync + review writes), refetch only on change — do not delete the backstop, it works around a real Next 16.2.1 flake
+- P3.5 — Pin the Vercel function region to the Turso primary region
+- P3.6 — Local-first shell: IndexedDB stale-while-revalidate cache for Home/Study/Cards/Habits, version-checked (not TTL'd) against `/api/version`, keyed by build ID, pull-to-refresh escape hatch, device-originated writes (reviews/edits/settings) always ahead of the cache
+- P3.7 — Service worker precaching the app shell/JS/CSS/fonts/icons (network-first `/api/*`, cache-first static) + IndexedDB-persisted offline review queue flushed on `online`/app-foreground (no Background Sync — iOS PWA has none)
+- Excluded from this milestone: P3.8 (TTS prefetch) — explicitly optional in the source plan, deferred
+
+<details>
+<summary>v1.7 Active Recall Study Mode (archived 2026-08-05 — incomplete, Phase 29 deferred)</summary>
+
 ## Current Milestone: v1.7 Active Recall Study Mode
 
 **Goal:** Give the study session a real active-recall path — a Passive/Active toggle on the mode-select screen that swaps flashcard exposure for a "translate the English sentence" production exercise — while retiring Multiple Choice and the standalone Fill-in-the-Blank mode.
@@ -27,6 +45,10 @@ The app is deployed and fully functional. v1.6 diagnosed and fixed a real produc
 - Multiple Choice fully deleted: `MultipleChoiceMode.tsx`, distractor-selection logic in `StudySession.tsx`, related tests
 - Fill-in-the-Blank retired as a standalone mode (superseded by Active)
 - `Card.distractors` DB column left in place but no longer written (deprecated, like `clozeSentence`/`clozeAnswer`)
+
+**Status at archive:** Phase 28 (MODE-01/02, ACTIVE-01..05, CLEANUP-01/02/04) shipped and UAT-verified. Phase 29 (CLEANUP-03 — distractor write-side retirement) was discussed (`29-DISCUSS-CHECKPOINT.json`) but never planned or executed; archived unexecuted under `milestones/v1.7-phases/` when v1.8 started. CLEANUP-03 remains open — see Requirements ▸ Active and STATE.md Deferred Items.
+
+</details>
 
 <details>
 <summary>v1.6 Freshness, Performance & E2E Testing (archived 2026-07-14)</summary>
@@ -142,7 +164,8 @@ Full details: `.planning/milestones/v1.5-ROADMAP.md`
 
 ### Active
 
-- [ ] `Card.distractors` DB column left in place but no longer written — extraction prompt/schema stops requesting distractors (CLEANUP-03) — Phase 29
+- [ ] `Card.distractors` DB column left in place but no longer written — extraction prompt/schema stops requesting distractors (CLEANUP-03) — carried over from v1.7 Phase 29, unplanned/unexecuted; open, unscheduled
+- [ ] v1.8 performance requirements (P3.0–P3.7) — see `.planning/REQUIREMENTS.md` once defined
 
 **Deferred candidates** (raised during v1.2/v1.3/v1.4/v1.5/v1.6, not committed to any milestone):
 - Pagination or virtual scroll for the cards list (RSC conversion already removed first-load cost; only relevant if the deck grows much larger)
@@ -270,4 +293,4 @@ This document evolves at phase transitions and milestone boundaries.
 5. **Refresh reference docs** — update root `CLAUDE.md` and `.planning/codebase/*.md` (ARCHITECTURE, STRUCTURE, CONVENTIONS, STACK, TESTING, CONCERNS, INTEGRATIONS) so they describe the codebase as it exists after this milestone, not before. Verify claims against actual source (grep/read the real files) rather than assuming prior doc content is still true — the v1.2 close found `.planning/codebase/` had drifted since 2026-06-23, including claims that predated even that milestone (e.g. "zero test coverage" when 58 Vitest tests existed). Prefer `/gsd-docs-update` scoped to these existing files over its default `docs/` scaffold, which doesn't match this project's doc layout.
 
 ---
-*Last updated: 2026-07-24 after Phase 28*
+*Last updated: 2026-08-05 after starting milestone v1.8*
