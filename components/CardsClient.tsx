@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import { Virtuoso } from 'react-virtuoso'
 import CardEditor from '@/components/CardEditor'
@@ -10,6 +10,7 @@ import Sheet from '@/components/Sheet'
 import SwipeRow from '@/components/SwipeRow'
 import { useWordTap } from '@/components/GlossProvider'
 import { useFreshPayload } from '@/components/FreshnessWatcher'
+import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { typeBadgeClass } from '@/lib/card-style'
 import type { CardDTO, CardsPageDTO, GroupCountsDTO, LessonRefItem } from '@/lib/dto'
 
@@ -31,21 +32,64 @@ interface CardEditorShape {
 const TYPE_GROUPS = ['vocabulary', 'grammar', 'phrase'] as const
 type GroupKey = (typeof TYPE_GROUPS)[number] | 'other'
 const GROUP_KEYS: GroupKey[] = [...TYPE_GROUPS, 'other']
+const PAGE_SIZE = 30
+const SCROLL_LOAD_PROXIMITY = 5 // rows-from-boundary before auto-load fires (31-RESEARCH Pattern 3 / A4)
+
+// Copywriting Contract strings (31-UI-SPEC.md) — defined as JS string
+// constants (not inline JSX text) so an apostrophe/quote-carrying string can
+// be rendered via a `{}` expression instead of raw JSX text. `react/no-
+// unescaped-entities` only flags literal ' " > } characters written directly
+// as JSX children, not characters inside a JS string referenced via `{}` —
+// this keeps `npm run lint` clean while keeping every copy string an exact,
+// grep-able literal (phase verification greps for these verbatim).
+const COPY = {
+  loadingMore: 'Loading more…',
+  endOfList: "You've reached the end.",
+  batchLoadError: "Couldn't load more cards. Check your connection and try again.",
+  filterNoMatches: 'No cards match this filter.',
+  queryError: "Couldn't search right now. Try again.",
+  noCardsAtAll: 'No cards yet. Sync your Google Doc to get started.',
+} as const
+
+const noResultsFor = (query: string): string => `No results for "${query}".`
 
 interface GroupState {
   loaded: CardDTO[]
   nextCursor: string | null
   hasMore: boolean
   loading: boolean
+  error: string | null
+}
+
+const EMPTY_GROUP_STATE: GroupState = { loaded: [], nextCursor: null, hasMore: false, loading: false, error: null }
+
+interface SearchState {
+  loaded: CardDTO[]
+  nextCursor: string | null
+  hasMore: boolean
+  querying: boolean // a NEW query (debounce-settled term/filter/lesson change) is in flight
+  loadingMore: boolean // a next-page (scroll-triggered) fetch is in flight
+  loadMoreError: string | null
+}
+
+const EMPTY_SEARCH_STATE: SearchState = {
+  loaded: [],
+  nextCursor: null,
+  hasMore: false,
+  querying: false,
+  loadingMore: false,
+  loadMoreError: null,
 }
 
 // Composed-row shape for the single flat <Virtuoso> instance (31-RESEARCH.md
-// Pattern 2). Group headers are just rows, not a separate library API — this
-// is what lets the Vocabulary group (expanded, virtualized) and the
-// Grammar/Phrase/Other groups (collapsed, header-only) share one list.
+// Pattern 2). Group headers, skeleton placeholders, and status captions are
+// all just rows, not a separate library API — this is what lets the grouped
+// browse view (D-01/D-02) and the flattened search view (D-06) share one list.
 type Row =
   | { kind: 'header'; groupKey: GroupKey; label: string; count: number; collapsed: boolean }
   | { kind: 'card'; groupKey: GroupKey; card: CardDTO }
+  | { kind: 'skeleton'; sectionKey: string; skeletonId: number }
+  | { kind: 'status'; sectionKey: string; status: 'loading-more' | 'end' | 'error' }
 
 function labelForGroup(key: GroupKey): string {
   return key === 'other' ? 'Other' : key.charAt(0).toUpperCase() + key.slice(1)
@@ -64,6 +108,39 @@ function countForGroup(groupCounts: GroupCountsDTO, key: GroupKey): number {
   return groupCounts.byType.find((g) => g.type === key)?._count ?? 0
 }
 
+function groupKeyForType(type: string): GroupKey {
+  return (TYPE_GROUPS as readonly string[]).includes(type) ? (type as GroupKey) : 'other'
+}
+
+function skeletonRows(sectionKey: string, n: number): Row[] {
+  return Array.from({ length: n }, (_, i) => ({ kind: 'skeleton' as const, sectionKey, skeletonId: i }))
+}
+
+type CardsPageResponse = CardsPageDTO & { groupCounts?: GroupCountsDTO }
+
+// Server-side fetch for a single page of cards (CARDS-01/CARDS-03) — every
+// filtering/search decision this component makes originates from this call,
+// never from an in-memory re-filter of an already-loaded array.
+async function fetchCardsPage(params: {
+  type: string
+  cursor: string | null
+  search: string | null
+  lessonFrom: number | null
+  lessonTo: number | null
+  take: number
+}): Promise<CardsPageResponse> {
+  const qs = new URLSearchParams()
+  qs.set('type', params.type)
+  if (params.cursor) qs.set('cursor', params.cursor)
+  if (params.search) qs.set('search', params.search)
+  if (params.lessonFrom !== null) qs.set('lessonFrom', String(params.lessonFrom))
+  if (params.lessonTo !== null) qs.set('lessonTo', String(params.lessonTo))
+  qs.set('take', String(params.take))
+  const res = await fetch(`/api/cards?${qs.toString()}`)
+  if (!res.ok) throw new Error(`Failed: ${res.status}`)
+  return res.json()
+}
+
 interface Props {
   initialCardsPage: CardsPageDTO
   initialGroupCounts: GroupCountsDTO
@@ -71,45 +148,68 @@ interface Props {
 }
 
 export default function CardsClient({ initialCardsPage, initialGroupCounts, initialLessons }: Props) {
-  // Per-group cursor state. For THIS plan (31-01, the phase's tracer) only
-  // `vocabulary` is ever populated/expanded — Grammar/Phrase/Other render a
-  // collapsed header-only row (their real server-aggregated count, zero
-  // rows fetched), matching D-02's default. Auto-load-on-scroll (D-03),
-  // tap-to-expand-with-fetch, and server-side search/filter (CARDS-03) are
-  // explicitly out of scope for this plan — they land in 31-02.
+  // Per-group cursor state — one entry per type-group, independently
+  // paginated/loaded/collapsed (D-01/D-02/D-03). Only `vocabulary` starts
+  // populated (from the SSR-provided initialCardsPage); Grammar/Phrase/Other
+  // fetch lazily on first expand (Task 2 below).
   const [groups, setGroups] = useState<Record<GroupKey, GroupState>>({
     vocabulary: {
       loaded: initialCardsPage.cards,
       nextCursor: initialCardsPage.nextCursor,
       hasMore: initialCardsPage.hasMore,
       loading: false,
+      error: null,
     },
-    grammar: { loaded: [], nextCursor: null, hasMore: false, loading: false },
-    phrase: { loaded: [], nextCursor: null, hasMore: false, loading: false },
-    other: { loaded: [], nextCursor: null, hasMore: false, loading: false },
+    grammar: { ...EMPTY_GROUP_STATE },
+    phrase: { ...EMPTY_GROUP_STATE },
+    other: { ...EMPTY_GROUP_STATE },
   })
   const [groupCounts, setGroupCounts] = useState<GroupCountsDTO>(initialGroupCounts)
 
-  // Only Vocabulary starts expanded (D-02). Tapping a collapsed header still
-  // just flips this flag — no fetch is wired for Grammar/Phrase/Other yet,
-  // so expanding one shows zero rows beneath its header until 31-02 adds
-  // per-group expand-with-fetch.
+  // Only Vocabulary starts expanded (D-02).
   const [collapsed, setCollapsed] = useState<Record<GroupKey, boolean>>({
     vocabulary: false,
     grammar: true,
     phrase: true,
     other: true,
   })
-  const toggleCollapse = (key: GroupKey) => setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }))
 
-  const [filter, setFilter] = useState<string>('all')
+  // ── Search (raw input + debounced + server-driven flattened results) ────
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebouncedValue(search, 300)
+  const searchActive = debouncedSearch.length > 0
+  const [searchResults, setSearchResults] = useState<SearchState>(EMPTY_SEARCH_STATE)
+
+  // ── Committed filter/lesson-range (drives every server fetch) vs. the
+  // Filter Sheet's own pending edits (drives only the Sheet's UI) — D-06/
+  // CARDS-03 require server round trips, so a filter change is only applied
+  // (re-issues the query) when the user taps "Done", not on every pill tap.
+  const [filter, setFilter] = useState<string>('all')
+  const [pendingFilter, setPendingFilter] = useState<string>('all')
+  const [lessons] = useState<LessonRefItem[]>(initialLessons)
+  const [lessonFrom, setLessonFrom] = useState(() =>
+    initialLessons.length > 0 ? initialLessons[0].orderIndex : 1
+  )
+  const [lessonTo, setLessonTo] = useState(() =>
+    initialLessons.length > 0 ? initialLessons[initialLessons.length - 1].orderIndex : 1
+  )
+  const [pendingLessonFrom, setPendingLessonFrom] = useState(lessonFrom)
+  const [pendingLessonTo, setPendingLessonTo] = useState(lessonTo)
+  const [filterOpen, setFilterOpen] = useState(false)
+
   const [showAdd, setShowAdd] = useState(false)
   const [newCard, setNewCard] = useState({ type: 'vocabulary', front: '', back: '', notes: '' })
   const [adding, setAdding] = useState(false)
   const [addError, setAddError] = useState<string | null>(null)
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
   const [activeView, setActiveView] = useState<ActiveView>('cards')
+
+  // Shared error for a failed SEARCH request or a failed FILTER-COMMIT
+  // request (Done-triggered first-page refresh) — both surface the same
+  // "Couldn't search right now. Try again." copy per the must_haves backstop
+  // (distinct from an ordinary scroll-triggered batch-load failure, which
+  // stays inline per-group with "Couldn't load more cards…" copy).
+  const [queryError, setQueryError] = useState<string | null>(null)
 
   // Edit sheet state. CardsClient no longer holds sentences for any loaded
   // list row (CARDS-01 drops `sentences` from the list query's `select`) —
@@ -161,28 +261,32 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
     setEditingDetailError(false)
   }
 
-  // Lesson range filter state — initialized from server-fetched lessons (no initial-load fetch)
-  const [lessons] = useState<LessonRefItem[]>(initialLessons)
-  const [filterOpen, setFilterOpen] = useState(false)
-  const [lessonFrom, setLessonFrom] = useState(() =>
-    initialLessons.length > 0 ? initialLessons[0].orderIndex : 1
-  )
-  const [lessonTo, setLessonTo] = useState(() =>
-    initialLessons.length > 0 ? initialLessons[initialLessons.length - 1].orderIndex : 1
-  )
+  const maxOrder = lessons.length > 0 ? lessons[lessons.length - 1].orderIndex : 1
+  const fullSpan = isFullSpan(lessonFrom, lessonTo, maxOrder)
+  const pendingFullSpan = isFullSpan(pendingLessonFrom, pendingLessonTo, maxOrder)
+
+  // Badge count: how many COMMITTED filter dimensions are active (not the
+  // Sheet's unsaved pending edits).
+  const activeFilterCount = (filter !== 'all' ? 1 : 0) + (!fullSpan ? 1 : 0)
+  const pendingActiveCount = (pendingFilter !== 'all' ? 1 : 0) + (!pendingFullSpan ? 1 : 0)
+  const hasActiveClientQuery = searchActive || filter !== 'all' || !fullSpan
 
   // Gated adoption of a fresh initialCardsPage (26-01-PLAN.md design decision
   // 4d, extended to the per-group shape). FreshnessWatcher's router.refresh()
   // re-delivers initialCardsPage/initialGroupCounts with new object
   // references at every boundary refresh. Never adopt a payload that arrived
   // while a sheet was open — see the original rationale preserved verbatim
-  // below. Only the `vocabulary` group's page-1 data is replaced wholesale
-  // here (it's the only group this plan's RSC page re-fetches); Grammar/
-  // Phrase/Other stay untouched.
+  // below. 31-02 addition: also never adopt while a client-side search/
+  // filter/lesson-range query is active — initialCardsPage/initialGroupCounts
+  // are always the server's UNFILTERED default page-1 view (the RSC page has
+  // no knowledge of client-side filter state), so blindly adopting it while
+  // the user has a filtered view open would silently overwrite their
+  // filtered results with the wrong (unfiltered) data — a real regression
+  // this plan's server-side-filtering change would otherwise introduce.
   const [prevInitialCardsPage, setPrevInitialCardsPage] = useState(initialCardsPage)
   if (initialCardsPage !== prevInitialCardsPage) {
     setPrevInitialCardsPage(initialCardsPage)
-    if (editingId === null && !showAdd && !adding && deletingIds.size === 0) {
+    if (editingId === null && !showAdd && !adding && deletingIds.size === 0 && !hasActiveClientQuery) {
       setGroups((prev) => ({
         ...prev,
         vocabulary: {
@@ -190,6 +294,7 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
           nextCursor: initialCardsPage.nextCursor,
           hasMore: initialCardsPage.hasMore,
           loading: false,
+          error: null,
         },
       }))
     }
@@ -198,64 +303,50 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   const [prevInitialGroupCounts, setPrevInitialGroupCounts] = useState(initialGroupCounts)
   if (initialGroupCounts !== prevInitialGroupCounts) {
     setPrevInitialGroupCounts(initialGroupCounts)
-    if (editingId === null && !showAdd && !adding && deletingIds.size === 0) {
+    if (editingId === null && !showAdd && !adding && deletingIds.size === 0 && !hasActiveClientQuery) {
       setGroupCounts(initialGroupCounts)
     }
   }
 
   // JSON backstop delivery (26-05-PLAN.md) — Suspense-independent second
   // delivery path for the card list. KNOWN INTERIM GAP (31-RESEARCH.md
-  // Pitfall 1, deferred to a later plan in this phase): FreshnessWatcher's
-  // `/cards` backstop still fetches the OLD full-array shape and gates on
-  // `Array.isArray(result)`, which is always false against the new
-  // CardsPageDTO object — so `freshCards` never actually delivers on this
-  // page today. This handler is kept (harmless no-op) so the wiring below
-  // activates for free once FreshnessWatcher's `/cards` branch is fixed to
-  // emit an upsert-only merge instead of a wholesale replace.
+  // Pitfall 1, deferred to 31-04): FreshnessWatcher's `/cards` backstop still
+  // fetches the OLD full-array shape and gates on `Array.isArray(result)`,
+  // which is always false against the new CardsPageDTO object — so
+  // `freshCards` never actually delivers on this page today. This handler is
+  // kept (harmless no-op) so the wiring below activates for free once
+  // FreshnessWatcher's `/cards` branch is fixed to emit an upsert-only merge
+  // instead of a wholesale replace. Also guarded against an active
+  // client-side query for the same reason as the block above.
   const { cards: freshCards } = useFreshPayload()
   const [prevFreshCards, setPrevFreshCards] = useState(freshCards)
   if (freshCards !== prevFreshCards) {
     setPrevFreshCards(freshCards)
-    if (freshCards !== null && editingId === null && !showAdd && !adding && deletingIds.size === 0) {
+    if (
+      freshCards !== null &&
+      editingId === null &&
+      !showAdd &&
+      !adding &&
+      deletingIds.size === 0 &&
+      !hasActiveClientQuery
+    ) {
       setGroups((prev) => ({ ...prev, vocabulary: { ...prev.vocabulary, loaded: freshCards } }))
     }
   }
 
-  const maxOrder = lessons.length > 0 ? lessons[lessons.length - 1].orderIndex : 1
-  const fullSpan = isFullSpan(lessonFrom, lessonTo, maxOrder)
+  // ── Stale-response / out-of-order-response guards (CARDS-03) ────────────
+  // A strictly later request advances these refs past whatever an earlier,
+  // slower response captured in its closure — so a late-resolving response
+  // is silently discarded instead of overwriting newer results.
+  const searchSeqRef = useRef(0)
+  const filterGenerationRef = useRef(0)
+  // Tracks the {filter, lessonFrom, lessonTo} the grouped (non-search) view
+  // was last actually fetched under, so clearing the search box alone
+  // re-hydrates the existing grouped state instead of re-fetching it.
+  const lastGroupedParamsRef = useRef<{ filter: string; lessonFrom: number; lessonTo: number } | null>(null)
+  const didMountRef = useRef(false)
 
-  // Badge count: how many filter dimensions are active
-  const activeFilterCount = (filter !== 'all' ? 1 : 0) + (!fullSpan ? 1 : 0)
-
-  // ── Filtering (INTERIM — client-side, Vocabulary group only) ────────────────
-  // CARDS-03 requires this to run server-side against the full deck; that
-  // rewrite lands in 31-02. Kept here, unadapted, per this plan's explicit
-  // scope note, purely so the Vocabulary group and the Reading practice tab
-  // still have a data source this task. `matchesSentence` is currently inert
-  // — every loaded card's `sentences` is `[]` (dropped per CARDS-01) — until
-  // server-side sentence search (D-05) lands.
-  const filteredVocabCards = groups.vocabulary.loaded.filter((c) => {
-    if (!fullSpan) {
-      if (!c.lesson || c.lesson.orderIndex < lessonFrom || c.lesson.orderIndex > lessonTo) {
-        return false
-      }
-    }
-    if (filter !== 'all' && c.type !== filter) return false
-    if (search) {
-      const q = search.toLowerCase()
-      const matchesCard =
-        c.front.toLowerCase().includes(q) ||
-        c.back.toLowerCase().includes(q) ||
-        (c.notes?.toLowerCase().includes(q) ?? false)
-      const matchesSentence = (c.sentences ?? []).some(
-        (s) => s.korean.toLowerCase().includes(q) || s.translation.toLowerCase().includes(q)
-      )
-      if (!matchesCard && !matchesSentence) return false
-    }
-    return true
-  })
-
-  // ── Mutation helpers ─────────────────────────────────────────────────────────
+  // ── Mutation helpers ─────────────────────────────────────────────────────
   const bumpGroupCount = (type: string, delta: number) => {
     setGroupCounts((prev) => {
       const idx = prev.byType.findIndex((g) => g.type === type)
@@ -267,8 +358,243 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
     })
   }
 
-  const groupKeyForType = (type: string): GroupKey =>
-    (TYPE_GROUPS as readonly string[]).includes(type) ? (type as GroupKey) : 'other'
+  const applyGroupPage = (key: GroupKey, page: CardsPageDTO, mode: 'replace' | 'append') => {
+    setGroups((prev) => ({
+      ...prev,
+      [key]: {
+        loaded: mode === 'replace' ? page.cards : [...prev[key].loaded, ...page.cards],
+        nextCursor: page.nextCursor,
+        hasMore: page.hasMore,
+        loading: false,
+        error: null,
+      },
+    }))
+  }
+
+  // Ordinary batch fetch (expand-on-tap first page, or scroll-triggered next
+  // page) — a failure surfaces INLINE in that group's own row ("Couldn't
+  // load more cards…", Task 2's copy), and already-loaded rows above it stay
+  // untouched (partial-failure-tolerant).
+  const fetchGroupPage = (key: GroupKey, cursor: string | null, mode: 'replace' | 'append') => {
+    const generation = filterGenerationRef.current
+    setGroups((prev) => ({ ...prev, [key]: { ...prev[key], loading: true, error: null } }))
+    fetchCardsPage({
+      type: key,
+      cursor,
+      search: null,
+      lessonFrom: fullSpan ? null : lessonFrom,
+      lessonTo: fullSpan ? null : lessonTo,
+      take: PAGE_SIZE,
+    })
+      .then((page) => {
+        if (filterGenerationRef.current !== generation) return // superseded by a newer filter/lesson-range commit
+        applyGroupPage(key, page, mode)
+        if (page.groupCounts) setGroupCounts(page.groupCounts)
+      })
+      .catch(() => {
+        if (filterGenerationRef.current !== generation) return
+        setGroups((prev) => ({ ...prev, [key]: { ...prev[key], loading: false, error: COPY.batchLoadError } }))
+      })
+  }
+
+  const fetchGroupNextPage = (key: GroupKey) => {
+    const g = groups[key]
+    if (!g || g.loading || !g.hasMore) return
+    fetchGroupPage(key, g.nextCursor, 'append')
+  }
+
+  const retryGroupFetch = (key: GroupKey) => {
+    const g = groups[key]
+    if (!g) return
+    fetchGroupPage(key, g.loaded.length === 0 ? null : g.nextCursor, g.loaded.length === 0 ? 'replace' : 'append')
+  }
+
+  // Filter-commit-triggered first-page fetch (Done button) — a failure here
+  // surfaces the SHARED "Couldn't search right now…" banner instead of an
+  // inline per-group error, per the must_haves backstop resolving E7's
+  // ambiguity (a filter-commit failure must not stall silently or look like
+  // an ordinary scroll-continuation failure).
+  const fetchGroupPageForFilterCommit = (key: GroupKey, generation: number) => {
+    setGroups((prev) => ({ ...prev, [key]: { ...prev[key], loading: true, error: null } }))
+    fetchCardsPage({
+      type: key,
+      cursor: null,
+      search: null,
+      lessonFrom: fullSpan ? null : lessonFrom,
+      lessonTo: fullSpan ? null : lessonTo,
+      take: PAGE_SIZE,
+    })
+      .then((page) => {
+        if (filterGenerationRef.current !== generation) return
+        applyGroupPage(key, page, 'replace')
+        if (page.groupCounts) setGroupCounts(page.groupCounts)
+      })
+      .catch(() => {
+        if (filterGenerationRef.current !== generation) return
+        setGroups((prev) => ({ ...prev, [key]: { ...prev[key], loading: false } }))
+        setQueryError(COPY.queryError)
+      })
+  }
+
+  // Expand-on-tap (Task 2/D-02): a collapsed group that has never loaded any
+  // rows fetches its first page the moment it's expanded. Re-expanding a
+  // group that already has loaded rows never refetches (D-04 continuity).
+  const toggleCollapse = (key: GroupKey) => {
+    const wasCollapsed = collapsed[key]
+    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }))
+    if (wasCollapsed) {
+      const g = groups[key]
+      if (g.loaded.length === 0 && !g.loading) {
+        fetchGroupPage(key, null, 'replace')
+      }
+    }
+  }
+
+  const fetchSearchNextPage = () => {
+    if (searchResults.loadingMore || searchResults.querying || !searchResults.hasMore) return
+    const seq = ++searchSeqRef.current
+    setSearchResults((prev) => ({ ...prev, loadingMore: true, loadMoreError: null }))
+    fetchCardsPage({
+      type: filter,
+      cursor: searchResults.nextCursor,
+      search: debouncedSearch,
+      lessonFrom: fullSpan ? null : lessonFrom,
+      lessonTo: fullSpan ? null : lessonTo,
+      take: PAGE_SIZE,
+    })
+      .then((page) => {
+        if (searchSeqRef.current !== seq) return
+        setSearchResults((prev) => ({
+          loaded: [...prev.loaded, ...page.cards],
+          nextCursor: page.nextCursor,
+          hasMore: page.hasMore,
+          querying: false,
+          loadingMore: false,
+          loadMoreError: null,
+        }))
+      })
+      .catch(() => {
+        if (searchSeqRef.current !== seq) return
+        setSearchResults((prev) => ({ ...prev, loadingMore: false, loadMoreError: COPY.batchLoadError }))
+      })
+  }
+
+  // ── The single query-runner (Task 1 + Task 3) ────────────────────────────
+  // Branches on whether a search term is active. Search mode fetches ONE
+  // flattened `type=<filter>&search=…` page (D-06) and never touches grouped
+  // state. Grouped mode resets and refetches every currently-relevant
+  // (type-filtered) group's first page, but ONLY for groups that are
+  // currently expanded — a collapsed group's fetch still happens lazily on
+  // its own expand-on-tap gate. `force` bypasses the "nothing actually
+  // changed" skip so the "Try again" retry link always re-issues the request.
+  const runQuery = (opts?: { force?: boolean }) => {
+    const effLessonFrom = fullSpan ? null : lessonFrom
+    const effLessonTo = fullSpan ? null : lessonTo
+
+    if (searchActive) {
+      setQueryError(null)
+      const seq = ++searchSeqRef.current
+      setSearchResults((prev) => ({ ...prev, querying: true, loadMoreError: null }))
+      fetchCardsPage({
+        type: filter,
+        cursor: null,
+        search: debouncedSearch,
+        lessonFrom: effLessonFrom,
+        lessonTo: effLessonTo,
+        take: PAGE_SIZE,
+      })
+        .then((page) => {
+          if (searchSeqRef.current !== seq) return
+          setSearchResults({
+            loaded: page.cards,
+            nextCursor: page.nextCursor,
+            hasMore: page.hasMore,
+            querying: false,
+            loadingMore: false,
+            loadMoreError: null,
+          })
+          if (page.groupCounts) setGroupCounts(page.groupCounts)
+        })
+        .catch(() => {
+          if (searchSeqRef.current !== seq) return
+          setSearchResults((prev) => ({ ...prev, querying: false }))
+          setQueryError(COPY.queryError)
+        })
+      return
+    }
+
+    // Grouped mode.
+    const params = { filter, lessonFrom, lessonTo }
+    const last = lastGroupedParamsRef.current
+    const unchanged =
+      !opts?.force &&
+      !!last &&
+      last.filter === params.filter &&
+      last.lessonFrom === params.lessonFrom &&
+      last.lessonTo === params.lessonTo
+    if (unchanged) return
+    lastGroupedParamsRef.current = params
+    setQueryError(null)
+
+    const generation = ++filterGenerationRef.current
+    // Reset every group so a stale/irrelevant group never shows
+    // filter-mismatched rows if later expanded.
+    setGroups({
+      vocabulary: { ...EMPTY_GROUP_STATE },
+      grammar: { ...EMPTY_GROUP_STATE },
+      phrase: { ...EMPTY_GROUP_STATE },
+      other: { ...EMPTY_GROUP_STATE },
+    })
+
+    const relevant: GroupKey[] = filter === 'all' ? GROUP_KEYS : [filter as GroupKey]
+    const expandedRelevant = relevant.filter((key) => !collapsed[key])
+
+    if (expandedRelevant.length === 0) {
+      // Nothing needs a row-fetch (e.g. narrowed to a still-collapsed
+      // group), but header counts still need refreshing for the new
+      // lesson-range/search scope.
+      fetchCardsPage({ type: 'all', cursor: null, search: null, lessonFrom: effLessonFrom, lessonTo: effLessonTo, take: 1 })
+        .then((page) => {
+          if (filterGenerationRef.current === generation && page.groupCounts) setGroupCounts(page.groupCounts)
+        })
+        .catch(() => {})
+      return
+    }
+
+    for (const key of expandedRelevant) {
+      fetchGroupPageForFilterCommit(key, generation)
+    }
+  }
+
+  useEffect(() => {
+    if (!didMountRef.current) {
+      didMountRef.current = true
+      lastGroupedParamsRef.current = { filter, lessonFrom, lessonTo }
+      return
+    }
+    runQuery()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, filter, lessonFrom, lessonTo, fullSpan])
+
+  // ── Filter Sheet open/commit (two-tier: pending edits vs. committed) ────
+  const openFilterSheet = () => {
+    setPendingFilter(filter)
+    setPendingLessonFrom(lessonFrom)
+    setPendingLessonTo(lessonTo)
+    setFilterOpen(true)
+  }
+
+  const commitFilter = () => {
+    setFilter(pendingFilter)
+    setLessonFrom(pendingLessonFrom)
+    setLessonTo(pendingLessonTo)
+    // E6-adjacent: narrowing to exactly one type is a pointless filter if
+    // that group stays collapsed — auto-expand it so the user sees results.
+    if (pendingFilter !== 'all') {
+      setCollapsed((prev) => ({ ...prev, [pendingFilter as GroupKey]: false }))
+    }
+    setFilterOpen(false)
+  }
 
   // ── Handlers ───────────────────────────────────────────────────────────────
   const handleDelete = async (id: string) => {
@@ -293,6 +619,11 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
         }
         return next
       })
+      setSearchResults((prev) => {
+        const found = prev.loaded.find((c) => c.id === id)
+        if (found) deletedType = deletedType ?? found.type
+        return { ...prev, loaded: prev.loaded.filter((c) => c.id !== id) }
+      })
       if (deletedType) bumpGroupCount(deletedType, -1)
       if (editingId === id) closeEdit()
     } catch (err) {
@@ -306,20 +637,20 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
     // Spread preserves all CardDTO fields from `c`; only core editor fields
     // (now including the real `sentences`, fetched via GET /api/cards/[id]
     // before the editor mounted) are overwritten.
+    const merge = (c: CardDTO) => ({ ...c, ...updated }) as CardDTO
     setGroups((prev) => {
       const next = { ...prev }
       for (const key of GROUP_KEYS) {
         if (next[key].loaded.some((c) => c.id === updated.id)) {
-          next[key] = {
-            ...next[key],
-            loaded: next[key].loaded.map((c) =>
-              c.id === updated.id ? ({ ...c, ...updated } as CardDTO) : c
-            ),
-          }
+          next[key] = { ...next[key], loaded: next[key].loaded.map((c) => (c.id === updated.id ? merge(c) : c)) }
         }
       }
       return next
     })
+    setSearchResults((prev) => ({
+      ...prev,
+      loaded: prev.loaded.map((c) => (c.id === updated.id ? merge(c) : c)),
+    }))
     closeEdit()
   }
 
@@ -356,25 +687,94 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
 
   // ── Derived views ──────────────────────────────────────────────────────────
 
-  // Composed rows for the single flat <Virtuoso> instance. A group with a
-  // real server-aggregated count of 0 is omitted entirely (matches the old
-  // groupedCards.filter(g => g.cards.length > 0) behavior).
-  const rows: Row[] = GROUP_KEYS.flatMap((key) => {
-    const count = countForGroup(groupCounts, key)
-    if (count === 0) return []
-    const isCollapsed = collapsed[key]
-    const header: Row = { kind: 'header', groupKey: key, label: labelForGroup(key), count, collapsed: isCollapsed }
-    if (isCollapsed) return [header]
-    const loadedCards = key === 'vocabulary' ? filteredVocabCards : groups[key].loaded
-    const cardRows: Row[] = loadedCards.map((card) => ({ kind: 'card', groupKey: key, card }))
-    return [header, ...cardRows]
-  })
+  // Composed rows for the single flat <Virtuoso> instance — grouped browse
+  // view (D-01/D-02) or flattened search view (D-06), never both at once.
+  const relevantGroups: GroupKey[] = filter === 'all' ? GROUP_KEYS : [filter as GroupKey]
 
-  // Flat sentence list for the Reading practice view. INTERIM (this plan
-  // only, per 31-01-PLAN.md Task 2): sourced from the Vocabulary group's
-  // loaded cards, which never carry sentences post-CARDS-01 — so this tab
-  // shows its "no example sentences" empty state until 31-04's dedicated
-  // Reading Practice fetch (D-07) lands.
+  const composeGroupedRows = (): Row[] =>
+    relevantGroups.flatMap((key) => {
+      const count = countForGroup(groupCounts, key)
+      if (count === 0) return []
+      const isCollapsed = collapsed[key]
+      const header: Row = { kind: 'header', groupKey: key, label: labelForGroup(key), count, collapsed: isCollapsed }
+      if (isCollapsed) return [header]
+      const g = groups[key]
+      const cardRows: Row[] = g.loaded.map((card) => ({ kind: 'card', groupKey: key, card }))
+      const tail: Row[] = []
+      if (g.loaded.length === 0 && g.loading) {
+        tail.push(...skeletonRows(key, 4))
+      } else if (g.error) {
+        tail.push({ kind: 'status', sectionKey: key, status: 'error' })
+      } else if (g.loading) {
+        tail.push({ kind: 'status', sectionKey: key, status: 'loading-more' })
+        tail.push(...skeletonRows(key, 3))
+      } else if (!g.hasMore && g.loaded.length > 0) {
+        tail.push({ kind: 'status', sectionKey: key, status: 'end' })
+      }
+      return [header, ...cardRows, ...tail]
+    })
+
+  const composeSearchRows = (): Row[] => {
+    if (searchResults.loaded.length === 0 && searchResults.querying) {
+      return skeletonRows('search', 4)
+    }
+    const cardRows: Row[] = searchResults.loaded.map((card) => ({
+      kind: 'card',
+      groupKey: groupKeyForType(card.type),
+      card,
+    }))
+    const tail: Row[] = []
+    if (searchResults.loadMoreError) {
+      tail.push({ kind: 'status', sectionKey: 'search', status: 'error' })
+    } else if (searchResults.loadingMore) {
+      tail.push({ kind: 'status', sectionKey: 'search', status: 'loading-more' })
+      tail.push(...skeletonRows('search', 3))
+    } else if (!searchResults.querying && !searchResults.hasMore && searchResults.loaded.length > 0) {
+      tail.push({ kind: 'status', sectionKey: 'search', status: 'end' })
+    }
+    return [...cardRows, ...tail]
+  }
+
+  const rows: Row[] = searchActive ? composeSearchRows() : composeGroupedRows()
+
+  const retryStatusRow = (sectionKey: string) => {
+    if (sectionKey === 'search') {
+      fetchSearchNextPage()
+    } else {
+      retryGroupFetch(sectionKey as GroupKey)
+    }
+  }
+
+  // Auto-load-on-scroll (D-03, Task 2 Pattern 3): fires independent of
+  // whether the whole list reached bottom — only the group/section owning
+  // the currently-visible bottom row is checked against its own boundary.
+  const handleRangeChanged = ({ endIndex }: { endIndex: number }) => {
+    if (searchActive) {
+      if (searchResults.loadingMore || searchResults.querying || !searchResults.hasMore) return
+      let lastCardIndex = -1
+      rows.forEach((r, i) => { if (r.kind === 'card') lastCardIndex = i })
+      if (lastCardIndex >= 0 && endIndex >= lastCardIndex - SCROLL_LOAD_PROXIMITY) fetchSearchNextPage()
+      return
+    }
+    const visibleRow = rows[endIndex]
+    if (!visibleRow) return
+    const key: GroupKey | undefined =
+      visibleRow.kind === 'header' || visibleRow.kind === 'card'
+        ? visibleRow.groupKey
+        : (visibleRow.sectionKey as GroupKey)
+    if (!key) return
+    const g = groups[key]
+    if (!g || collapsed[key] || g.loading || !g.hasMore) return
+    let lastCardIndex = -1
+    rows.forEach((r, i) => { if (r.kind === 'card' && r.groupKey === key) lastCardIndex = i })
+    if (lastCardIndex >= 0 && endIndex >= lastCardIndex - SCROLL_LOAD_PROXIMITY) fetchGroupNextPage(key)
+  }
+
+  // Flat sentence list for the Reading practice view. INTERIM (unchanged
+  // scope boundary from 31-01 — Reading Practice's own dedicated fetch is
+  // 31-04's D-07 scope, not this plan's): sourced from the Vocabulary
+  // group's loaded cards, which never carry sentences post-CARDS-01 — so
+  // this tab shows its "no example sentences" empty state until then.
   const allSentences = groups.vocabulary.loaded.flatMap((c) =>
     (c.sentences ?? []).map((s) => ({ sentence: s, card: c }))
   )
@@ -473,7 +873,32 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
         </div>
       )
     }
-    return renderCardRow(row.card)
+    if (row.kind === 'card') return renderCardRow(row.card)
+    if (row.kind === 'skeleton') {
+      return (
+        <div className="pb-2">
+          <div className="bg-skeleton rounded-xl p-4 h-24 animate-pulse" />
+        </div>
+      )
+    }
+    // status row
+    if (row.status === 'loading-more') {
+      return <p className="text-xs text-muted text-center py-2">{COPY.loadingMore}</p>
+    }
+    if (row.status === 'end') {
+      return <p className="text-xs text-muted text-center py-3">{COPY.endOfList}</p>
+    }
+    return (
+      <div className="text-center py-3 flex flex-col gap-1 items-center">
+        <p className="text-sm text-muted">{COPY.batchLoadError}</p>
+        <button
+          onClick={() => retryStatusRow(row.sectionKey)}
+          className="text-sm font-semibold text-button hover:underline"
+        >
+          Try again
+        </button>
+      </div>
+    )
   }
 
   return (
@@ -482,17 +907,25 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       {/* ── Sticky search + action bar ──────────────────────────────────────── */}
       <div className="sticky top-0 z-10 -mx-4 px-4 py-3 bg-background border-b border-border/60">
         <div className="flex gap-2 items-center">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search cards or sentences…"
-            className={`flex-1 min-w-0 ${inputCls}`}
-          />
+          <div className="relative flex-1 min-w-0">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search cards or sentences…"
+              className={`w-full ${inputCls}`}
+            />
+            {searchActive && searchResults.querying && (
+              <span
+                aria-hidden="true"
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 border-2 border-button border-t-transparent rounded-full animate-spin"
+              />
+            )}
+          </div>
 
           {/* Filter toggle */}
           <button
-            onClick={() => setFilterOpen(true)}
+            onClick={openFilterSheet}
             aria-label={`Filters${activeFilterCount > 0 ? ` (${activeFilterCount} active)` : ''}`}
             className="relative min-h-11 min-w-11 flex items-center justify-center rounded-lg bg-surface-1 hover:bg-surface-2 border border-border transition-colors shrink-0"
           >
@@ -539,24 +972,43 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       {/* ── CARDS VIEW ──────────────────────────────────────────────────────── */}
       {activeView === 'cards' && (
         <>
-          {groupCounts.total === 0 && (
+          {queryError && (
+            <div className="text-center py-4 flex flex-col gap-2 items-center">
+              <p className="text-sm text-muted">{queryError}</p>
+              <button
+                onClick={() => runQuery({ force: true })}
+                className="text-sm font-semibold text-button hover:underline"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+
+          {!searchActive && rows.length === 0 && !queryError && (
             <p className="text-muted text-center py-8">
-              No cards yet. Sync your Google Doc to get started.
+              {activeFilterCount > 0 ? COPY.filterNoMatches : COPY.noCardsAtAll}
             </p>
           )}
-          {groupCounts.total > 0 && filteredVocabCards.length === 0 && groups.vocabulary.loaded.length > 0 && (
-            <p className="text-muted text-center py-8">
-              No cards match your search.
-            </p>
+          {searchActive && !searchResults.querying && searchResults.loaded.length === 0 && !queryError && (
+            <p className="text-muted text-center py-8">{noResultsFor(debouncedSearch)}</p>
           )}
 
           {rows.length > 0 && (
-            <Virtuoso
-              useWindowScroll
-              data={rows}
-              computeItemKey={(_, row) => (row.kind === 'card' ? row.card.id : `header-${row.groupKey}`)}
-              itemContent={(_, row) => renderRow(row)}
-            />
+            <div className={searchActive && searchResults.querying ? 'opacity-60 transition-opacity' : ''}>
+              <Virtuoso
+                useWindowScroll
+                data={rows}
+                computeItemKey={(_, row) =>
+                  row.kind === 'card'
+                    ? row.card.id
+                    : row.kind === 'header'
+                      ? `header-${row.groupKey}`
+                      : `${row.kind}-${row.sectionKey}-${row.kind === 'skeleton' ? row.skeletonId : row.status}`
+                }
+                itemContent={(_, row) => renderRow(row)}
+                rangeChanged={handleRangeChanged}
+              />
+            </div>
           )}
         </>
       )}
@@ -566,8 +1018,8 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
         <>
           {allSentences.length === 0 && (
             <p className="text-muted text-center py-8">
-              {filteredVocabCards.length === 0
-                ? 'No cards match your filter.'
+              {groups.vocabulary.loaded.length === 0
+                ? COPY.filterNoMatches
                 : 'No example sentences yet. Sync a lesson to generate them.'}
             </p>
           )}
@@ -625,9 +1077,9 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
               {['all', 'vocabulary', 'grammar', 'phrase'].map((f) => (
                 <button
                   key={f}
-                  onClick={() => setFilter(f)}
+                  onClick={() => setPendingFilter(f)}
                   className={`px-3 py-2 min-h-11 text-sm rounded-lg capitalize ${
-                    filter === f
+                    pendingFilter === f
                       ? 'bg-button-soft text-button font-medium'
                       : 'bg-surface-2 text-muted hover:bg-surface-3'
                   }`}
@@ -646,20 +1098,20 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
               </p>
               <LessonRangeFilter
                 lessons={lessons}
-                from={lessonFrom}
-                to={lessonTo}
-                onChange={(f, t) => { setLessonFrom(f); setLessonTo(t) }}
+                from={pendingLessonFrom}
+                to={pendingLessonTo}
+                onChange={(f, t) => { setPendingLessonFrom(f); setPendingLessonTo(t) }}
               />
             </div>
           )}
 
           {/* Clear all */}
-          {activeFilterCount > 0 && (
+          {pendingActiveCount > 0 && (
             <button
               onClick={() => {
-                setFilter('all')
-                setLessonFrom(lessons[0]?.orderIndex ?? 1)
-                setLessonTo(lessons[lessons.length - 1]?.orderIndex ?? maxOrder)
+                setPendingFilter('all')
+                setPendingLessonFrom(lessons[0]?.orderIndex ?? 1)
+                setPendingLessonTo(lessons[lessons.length - 1]?.orderIndex ?? maxOrder)
               }}
               className="text-sm text-red-500 dark:text-red-400 hover:underline text-left self-start"
             >
@@ -669,7 +1121,7 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
 
           {/* Done */}
           <button
-            onClick={() => setFilterOpen(false)}
+            onClick={commitFilter}
             className="w-full bg-button text-button-foreground py-3 min-h-11 text-sm font-medium rounded-xl hover:bg-button-hover"
           >
             Done

@@ -210,6 +210,14 @@ describe('getCardsPage', () => {
     expect(callArgs.where.type).toBe('grammar')
   })
 
+  it('maps type "other" to a notIn filter excluding the three canonical types (31-02)', async () => {
+    ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+
+    await getCardsPage({ type: 'other', cursor: null, search: null, lessonFrom: null, lessonTo: null, take: 30 })
+    const callArgs = (prisma.card.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(callArgs.where.type).toEqual({ notIn: ['vocabulary', 'grammar', 'phrase'] })
+  })
+
   it('composes a search where-clause including the D-05 sentence-search OR branch', async () => {
     ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
 

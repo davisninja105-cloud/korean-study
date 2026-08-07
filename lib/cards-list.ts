@@ -32,6 +32,12 @@ const cardSelect = {
   // sentences: DROPPED from the list select per CARDS-01.
 } as const
 
+// Canonical UI type-groups (mirrors components/CardsClient.tsx's TYPE_GROUPS).
+// 'other' is not a real Card.type value in the DB — it's the UI's catch-all
+// bucket for any type outside these three (e.g. a historical extraction
+// value). buildCardsWhere() below maps `type: 'other'` to `notIn` this list.
+const CANONICAL_TYPES = ['vocabulary', 'grammar', 'phrase'] as const
+
 export interface CardsPageParams {
   type: string // 'vocabulary' | 'grammar' | 'phrase' | 'other' | 'all'
   cursor: string | null // last-seen Card.id, or null for page 1
@@ -63,7 +69,17 @@ function buildCardsWhere(params: {
 }): Prisma.CardWhereInput {
   const where: Prisma.CardWhereInput = {}
 
-  if (params.type !== 'all') {
+  // 31-02 deviation (Rule 2 — missing critical functionality): the 'other'
+  // group (Grammar/Phrase/Other's third UI bucket) has no matching literal
+  // Card.type value in the DB — it means "everything NOT vocabulary/
+  // grammar/phrase". Without this branch, `type=other` would fall through
+  // to `where.type = 'other'` and always return zero rows, permanently
+  // breaking the Other group's expand-on-tap fetch (must_haves.truths:
+  // "Tapping a collapsed group (Grammar, Phrase, or Other) triggers that
+  // group's first-page fetch and expands it").
+  if (params.type === 'other') {
+    where.type = { notIn: [...CANONICAL_TYPES] }
+  } else if (params.type !== 'all') {
     where.type = params.type
   }
 
