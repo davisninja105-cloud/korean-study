@@ -484,6 +484,11 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   // re-hydrates the existing grouped state instead of re-fetching it.
   const lastGroupedParamsRef = useRef<{ filter: string; lessonFrom: number; lessonTo: number } | null>(null)
   const didMountRef = useRef(false)
+  // Tracks whether the PREVIOUS runQuery() invocation was in search mode, so
+  // a search→non-search transition (clearing the search box) can force a
+  // grouped refetch even when {filter, lessonFrom, lessonTo} never changed —
+  // otherwise groupCounts stays stuck at the search-narrowed values (CR-01).
+  const wasSearchActiveRef = useRef(false)
 
   // ── Mutation helpers ─────────────────────────────────────────────────────
   const bumpGroupCount = (type: string, delta: number) => {
@@ -693,6 +698,8 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   const runQuery = (opts?: { force?: boolean }) => {
     const effLessonFrom = fullSpan ? null : lessonFrom
     const effLessonTo = fullSpan ? null : lessonTo
+    const searchJustCleared = wasSearchActiveRef.current && !searchActive
+    wasSearchActiveRef.current = searchActive
 
     if (searchActive) {
       setQueryError(null)
@@ -731,6 +738,7 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
     const last = lastGroupedParamsRef.current
     const unchanged =
       !opts?.force &&
+      !searchJustCleared &&
       !!last &&
       last.filter === params.filter &&
       last.lessonFrom === params.lessonFrom &&
