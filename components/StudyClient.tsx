@@ -7,7 +7,7 @@ import StudySession from '@/components/StudySession'
 import LessonRangeFilter, { isFullSpan } from '@/components/LessonRangeFilter'
 import ProgressRing from '@/components/ProgressRing'
 import Sheet from '@/components/Sheet'
-import { SlidersHorizontal, Loader2 } from 'lucide-react'
+import { SlidersHorizontal } from 'lucide-react'
 import { haptic } from '@/lib/haptics'
 import { computeStreaks, habitDateStr, DEFAULT_DAY_START_HOUR, DEFAULT_GOAL_SECONDS, type DayRecord } from '@/lib/habit'
 import { useFreshPayload } from '@/components/FreshnessWatcher'
@@ -235,9 +235,9 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
   if (phase === 'loading') {
     return (
       <div className="w-full max-w-xl mx-auto animate-pulse flex flex-col gap-4 pt-4">
-        <div className="h-3 bg-surface-3 rounded w-full" />
-        <div className="h-[220px] bg-surface-3 rounded-2xl" />
-        <div className="h-12 bg-surface-3 rounded-xl" />
+        <div className="h-3 bg-skeleton rounded w-full" />
+        <div className="h-[220px] bg-skeleton rounded-2xl" />
+        <div className="h-12 bg-skeleton rounded-xl" />
       </div>
     )
   }
@@ -267,8 +267,21 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
         )}
 
         {isFilterLoading ? (
-          <div className="h-16 flex items-center justify-center" role="status" aria-label="Loading cards">
-            <Loader2 className="w-5 h-5 animate-spin text-muted" />
+          <div
+            className="flex flex-col items-center gap-6 py-6"
+            role="status"
+            aria-label="Loading cards"
+            data-testid="filter-loading-skeleton"
+          >
+            {/* Fixed-height slot: card count — mirrors the real content's h-16 slot */}
+            <div className="h-16 flex flex-col items-center justify-center gap-1">
+              {/* bar 1: stands in for the text-5xl font-bold due-count number */}
+              <div className="h-12 w-16 rounded-lg bg-skeleton animate-pulse" />
+              {/* bar 2: stands in for the "card(s) ready" label */}
+              <div className="h-4 w-24 rounded bg-skeleton animate-pulse" />
+            </div>
+            {/* button placeholder: stands in for "Start studying →" */}
+            <div className="w-full max-w-sm min-h-14 rounded-2xl bg-skeleton animate-pulse" />
           </div>
         ) : noDue ? (
           <div className="text-center py-10 flex flex-col items-center gap-4">
@@ -346,10 +359,10 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
   if (phase === 'loading-practice') {
     return (
       <div className="w-full max-w-xl mx-auto animate-pulse flex flex-col gap-4 pt-4">
-        <div className="h-3 bg-surface-3 rounded w-full" />
-        <div className="h-[220px] bg-surface-3 rounded-2xl" />
-        <div className="h-4 bg-surface-3 rounded w-48 mx-auto" />
-        <div className="h-12 bg-surface-3 rounded-xl" />
+        <div className="h-3 bg-skeleton rounded w-full" />
+        <div className="h-[220px] bg-skeleton rounded-2xl" />
+        <div className="h-4 bg-skeleton rounded w-48 mx-auto" />
+        <div className="h-12 bg-skeleton rounded-xl" />
       </div>
     )
   }
