@@ -1,21 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 31-cards-list-pagination-virtualization
 source: [31-VERIFICATION.md]
 started: 2026-08-07T20:16:30Z
-updated: 2026-08-07T20:16:30Z
+updated: 2026-08-07T21:15:00Z
 ---
 
 ## Current Test
 
-number: 1
-name: All-4-groups auto-load at scale (Grammar/Phrase/Other expand + scroll-proximity load)
-expected: |
-  On a dev server seeded with a large (~1000-card) deck, tap to expand Grammar/Phrase/Other and
-  scroll each group near its loaded boundary. Each group's rows keep appending as its own boundary
-  is approached, independent of the other groups' scroll state, with no "Load more" button. A
-  fully-loaded group shows "You've reached the end." DOM node count stays bounded throughout.
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -23,35 +16,43 @@ awaiting: user response
 expected: Each group's rows keep appending as its own boundary is approached, independent of the
   other groups' scroll state, with no "Load more" button. A fully-loaded group shows "You've reached
   the end." DOM node count stays bounded throughout.
-result: [pending]
+result: pass
 
 ### 2. Tab-switch scroll/state preservation (D-08)
 expected: Scroll partway down the Cards tab's Vocabulary group, switch to Reading Practice, scroll
   it, switch back to Cards. Both views restore their exact pre-switch scroll offset; neither view
   re-fetches or loses already-loaded rows.
-result: [pending]
+result: issue
+reported: "this isn't possible on mobile, the Reading Practice and Cards headers disappear when you scroll"
+severity: major
 
 ### 3. Keyboard/screen-reader reachability of the virtualized Vocabulary group
 expected: Tab through the rendered Vocabulary group with keyboard only, including scrolling past
   the initially-rendered rows. Every card row's Edit control should receive visible focus in order;
   a screen reader should announce each row as focused; off-screen rows should not become
   permanently unreachable dead focus stops.
-  NOTE: This was already human-verified to FAIL during 31-01 execution (2026-08-07), and the human
-  explicitly deferred fixing it as non-blocking at that time. It is surfacing again here so phase
-  close makes an explicit, recorded decision (fix now, schedule a follow-up, or formally waive)
-  rather than this staying silently unresolved. `.planning/WINDOWS.md` entry #1 is still `open`.
-result: [pending]
+result: skipped
+reason: "Formally waived by user decision (2026-08-07) — known keyboard/screen-reader focus-reachability gap in the virtualized Vocabulary group is accepted as-is for this phase, not scheduled for a fix. Recorded as WINDOWS.md entry #1, status: waived."
 
 ## Summary
 
 total: 3
-passed: 0
-issues: 0
-pending: 3
-skipped: 0
+passed: 1
+issues: 1
+pending: 0
+skipped: 1
 blocked: 0
 
 ## Gaps
+
+- gap_id: G-31-2
+  truth: "Scroll partway down the Cards tab's Vocabulary group, switch to Reading Practice, scroll it, switch back to Cards. Both views restore their exact pre-switch scroll offset; neither view re-fetches or loses already-loaded rows."
+  status: failed
+  reason: "User reported: this isn't possible on mobile, the Reading Practice and Cards headers disappear when you scroll"
+  severity: major
+  test: 2
+  artifacts: []
+  missing: []
 
 - truth: "A collapsed row still shows its reading-practice/sentence count without loading the sentences themselves (ROADMAP Success Criterion 4, second clause)"
   status: failed

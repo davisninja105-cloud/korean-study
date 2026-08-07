@@ -1,10 +1,10 @@
 ---
 schema_version: 1
-open_count: 3
-waived_count: 0
-fixed_count: 3
+open_count: 1
+waived_count: 1
+fixed_count: 4
 total_count: 6
-last_updated: 2026-08-07T19:27:17.899Z
+last_updated: 2026-08-07T21:12:34.449Z
 ---
 
 # Broken Windows Ledger
@@ -15,11 +15,11 @@ last_updated: 2026-08-07T19:27:17.899Z
 
 | id | phase | kind | file | line | description | status | reason | recorded_at | resolved_at |
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
-| 1 | 31 | deviation | components/CardsClient.tsx |  | CARDS-02: keyboard Tab navigation does not correctly reach card rows/Edit controls inside the virtualized Vocabulary group (human-verified 2026-08-07, explicitly deferred as non-blocker by user decision) | open |  | 2026-08-07T16:43:20.250Z |  |
+| 1 | 31 | deviation | components/CardsClient.tsx |  | CARDS-02: keyboard Tab navigation does not correctly reach card rows/Edit controls inside the virtualized Vocabulary group (human-verified 2026-08-07, explicitly deferred as non-blocker by user decision) | waived | User formally waived during 31-UAT test 3 (2026-08-07): keyboard/screen-reader reachability gap in the virtualized Vocabulary group is accepted as a known limitation, not scheduled for a phase-31 fix. | 2026-08-07T16:43:20.250Z | 2026-08-07T21:12:26.182Z |
 | 2 | 31 | stub | components/CardsClient.tsx |  | Reading Practice tab always shows empty state — temporarily sourced from groups.vocabulary.loaded, which never carries sentences post-CARDS-01; real fix (D-07 independent fetch) lands in 31-04 | fixed |  | 2026-08-07T16:43:30.024Z | 2026-08-07T19:27:09.829Z |
 | 3 | 31 | stub | components/CardsClient.tsx |  | Search box does not match inside example sentences (client-side-only filter over sentence-free cards); server-side D-05 sentence search lands in 31-02 | fixed |  | 2026-08-07T16:43:36.471Z | 2026-08-07T17:19:51.011Z |
 | 4 | 31 | stub | components/FreshnessWatcher.tsx |  | FreshnessWatcher's /cards backstop is inert — its Array.isArray(result) check never matches the new CardsPageDTO object shape, so freshCards never delivers; upsert-merge fix lands in 31-04 | fixed |  | 2026-08-07T16:43:39.044Z | 2026-08-07T19:27:09.948Z |
-| 5 | 31 | unmet-truth | components/CardsClient.tsx |  | CARDS-02 all-4-groups auto-load/expand not manually spot-checked against the real ~1056-card production deck (8-card e2e fixture too small to exercise a real second page or the Other group meaningfully) — resolve via manual dev-server check per 31-02-SUMMARY.md D3 | open |  | 2026-08-07T17:19:04.547Z |  |
+| 5 | 31 | unmet-truth | components/CardsClient.tsx |  | CARDS-02 all-4-groups auto-load/expand not manually spot-checked against the real ~1056-card production deck (8-card e2e fixture too small to exercise a real second page or the Other group meaningfully) — resolve via manual dev-server check per 31-02-SUMMARY.md D3 | fixed |  | 2026-08-07T17:19:04.547Z | 2026-08-07T21:12:34.449Z |
 | 6 | 31 | stub | components/CardsClient.tsx |  | ROADMAP Success Criterion 4 ('a collapsed row still shows its reading-practice/sentence count without loading the sentences themselves') is not implemented — card rows carry no per-card sentence-count badge; CARDS-01's sentences-dropped-from-list-select change removed any such signal and no replacement was scheduled in any of 31-01/31-02/31-03/31-04's task lists | open |  | 2026-08-07T19:27:17.899Z |  |
 
 ````json
@@ -31,10 +31,10 @@ last_updated: 2026-08-07T19:27:17.899Z
     "file": "components/CardsClient.tsx",
     "line": null,
     "description": "CARDS-02: keyboard Tab navigation does not correctly reach card rows/Edit controls inside the virtualized Vocabulary group (human-verified 2026-08-07, explicitly deferred as non-blocker by user decision)",
-    "status": "open",
-    "reason": "",
+    "status": "waived",
+    "reason": "User formally waived during 31-UAT test 3 (2026-08-07): keyboard/screen-reader reachability gap in the virtualized Vocabulary group is accepted as a known limitation, not scheduled for a phase-31 fix.",
     "recorded_at": "2026-08-07T16:43:20.250Z",
-    "resolved_at": null
+    "resolved_at": "2026-08-07T21:12:26.182Z"
   },
   {
     "id": 2,
@@ -79,10 +79,10 @@ last_updated: 2026-08-07T19:27:17.899Z
     "file": "components/CardsClient.tsx",
     "line": null,
     "description": "CARDS-02 all-4-groups auto-load/expand not manually spot-checked against the real ~1056-card production deck (8-card e2e fixture too small to exercise a real second page or the Other group meaningfully) — resolve via manual dev-server check per 31-02-SUMMARY.md D3",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-07T17:19:04.547Z",
-    "resolved_at": null
+    "resolved_at": "2026-08-07T21:12:34.449Z"
   },
   {
     "id": 6,
