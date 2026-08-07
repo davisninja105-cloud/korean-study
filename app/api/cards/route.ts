@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { normalizeFront } from '@/lib/card-key'
 import { getCardsPage, getCardsGroupCounts } from '@/lib/cards-list'
+import { Prisma } from '@/app/generated/prisma/client'
 
 const sentencesInclude = { orderBy: { orderIndex: 'asc' } } as const
 
@@ -62,60 +63,96 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const { type, front, back, notes, sentences } = await req.json()
-  if (!type || !front || !back) {
-    return NextResponse.json({ error: 'type, front, and back are required' }, { status: 400 })
-  }
+  try {
+    const data = await req.json()
+    if (data === null || typeof data !== 'object') {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    }
+    const { type, front, back, notes, sentences } = data
 
-  const card = await prisma.card.create({
-    data: {
-      type,
-      front,
-      back,
-      notes: notes ?? null,
-      normalizedFront: normalizeFront(front),
-      sentences: Array.isArray(sentences) && sentences.length > 0
+    // WR-02: validate field shapes before they reach Prisma — a non-string
+    // front would throw inside normalizeFront() (previously uncaught), and
+    // an invalid type would be persisted verbatim with no enum check.
+    // Mirrors the PUT handler's validation in app/api/cards/[id]/route.ts.
+    if (typeof front !== 'string' || front.trim() === '') {
+      return NextResponse.json({ error: 'front must be a non-empty string' }, { status: 400 })
+    }
+    if (!['vocabulary', 'grammar', 'phrase'].includes(type)) {
+      return NextResponse.json({ error: 'type must be vocabulary, grammar, or phrase' }, { status: 400 })
+    }
+    if (typeof back !== 'string' || back.trim() === '') {
+      return NextResponse.json({ error: 'back must be a non-empty string' }, { status: 400 })
+    }
+    if (notes !== undefined && notes !== null && typeof notes !== 'string') {
+      return NextResponse.json({ error: 'notes must be a string' }, { status: 400 })
+    }
+    if (
+      sentences !== undefined &&
+      (!Array.isArray(sentences) ||
+        sentences.some((s: unknown) => typeof s !== 'object' || s === null))
+    ) {
+      return NextResponse.json({ error: 'sentences must be an array of objects' }, { status: 400 })
+    }
+
+    const card = await prisma.card.create({
+      data: {
+        type,
+        front,
+        back,
+        notes: notes ?? null,
+        normalizedFront: normalizeFront(front),
+        sentences: Array.isArray(sentences) && sentences.length > 0
+          ? {
+              create: sentences.map(
+                (s: { korean: string; targetForm: string; translation: string }, i: number) => ({
+                  korean: s.korean ?? '',
+                  targetForm: s.targetForm ?? '',
+                  translation: s.translation ?? '',
+                  orderIndex: i,
+                })
+              ),
+            }
+          : undefined,
+        review: { create: {} },
+      },
+      include: {
+        review: true,
+        lesson: { select: { title: true, createdAt: true, orderIndex: true } },
+        sentences: sentencesInclude,
+      },
+    })
+
+    // Serialize dates to ISO strings so the RSC boundary contract (CardDTO) is satisfied.
+    // Raw Prisma Date objects serialize as empty objects {} in JSON.
+    const dto = {
+      ...card,
+      createdAt: card.createdAt.toISOString(),
+      updatedAt: card.updatedAt.toISOString(),
+      lesson: card.lesson
+        ? { ...card.lesson, createdAt: card.lesson.createdAt.toISOString() }
+        : null,
+      review: card.review
         ? {
-            create: sentences.map(
-              (s: { korean: string; targetForm: string; translation: string }, i: number) => ({
-                korean: s.korean,
-                targetForm: s.targetForm,
-                translation: s.translation,
-                orderIndex: i,
-              })
-            ),
+            ...card.review,
+            nextReview: card.review.nextReview.toISOString(),
+            lastReview: card.review.lastReview?.toISOString() ?? null,
           }
-        : undefined,
-      review: { create: {} },
-    },
-    include: {
-      review: true,
-      lesson: { select: { title: true, createdAt: true, orderIndex: true } },
-      sentences: sentencesInclude,
-    },
-  })
-
-  // Serialize dates to ISO strings so the RSC boundary contract (CardDTO) is satisfied.
-  // Raw Prisma Date objects serialize as empty objects {} in JSON.
-  const dto = {
-    ...card,
-    createdAt: card.createdAt.toISOString(),
-    updatedAt: card.updatedAt.toISOString(),
-    lesson: card.lesson
-      ? { ...card.lesson, createdAt: card.lesson.createdAt.toISOString() }
-      : null,
-    review: card.review
-      ? {
-          ...card.review,
-          nextReview: card.review.nextReview.toISOString(),
-          lastReview: card.review.lastReview?.toISOString() ?? null,
-        }
-      : null,
-    sentences: card.sentences.map((s) => ({
-      ...s,
-      createdAt: s.createdAt.toISOString(),
-      updatedAt: s.updatedAt.toISOString(),
-    })),
+        : null,
+      sentences: card.sentences.map((s) => ({
+        ...s,
+        createdAt: s.createdAt.toISOString(),
+        updatedAt: s.updatedAt.toISOString(),
+      })),
+    }
+    return NextResponse.json(dto)
+  } catch (e) {
+    // WR-02: a normalizedFront collision raises Prisma P2002 — surface a
+    // friendly 400 instead of an unhandled 500, mirroring the PUT handler's
+    // disclosure posture in app/api/cards/[id]/route.ts.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+      return NextResponse.json({ error: 'This front already exists' }, { status: 400 })
+    }
+    console.error('POST /api/cards failed:', e)
+    return NextResponse.json({ error: 'Failed to create card' }, { status: 500 })
   }
-  return NextResponse.json(dto)
 }
