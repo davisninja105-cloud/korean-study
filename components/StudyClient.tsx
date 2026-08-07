@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import ModeSelector, { StudyMode } from '@/components/ModeSelector'
 import StudySession from '@/components/StudySession'
@@ -39,6 +39,20 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
   const [sessionSize, setSessionSize] = useState(20) // for "Study N more" label
   const [habitData, setHabitData] = useState<{ days: DayRecord[]; today: string; goal: number } | null>(null)
   const [isFilterLoading, setIsFilterLoading] = useState(false)
+
+  // WR-03 fix: loadDue below needs the CURRENT phase without depending on it
+  // (re-creating the callback every phase change would be wasteful and,
+  // worse, invite a stale-closure race with the in-flight fetch). A ref kept
+  // in sync via effect is the standard escape hatch — reading it from inside
+  // a .then() callback is a normal effect-adjacent read, not a render read,
+  // so it doesn't trip react-hooks/purity. This replaces the previous
+  // setPhase-functional-updater trick, which called setStudyCards/setScope/
+  // setIsFilterLoading from *inside* the updater passed to setPhase — updater
+  // functions must be pure per React's contract, and Strict Mode double-
+  // invokes them in dev specifically to catch exactly that side-effect
+  // pattern.
+  const phaseRef = useRef(phase)
+  useEffect(() => { phaseRef.current = phase }, [phase])
 
   // Lesson range filter — initialized from server-provided props (no initial fetch needed)
   const [lessons] = useState<LessonDTO[]>(initialLessons)
@@ -79,13 +93,13 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
       .then((cards: CardDTO[]) => {
         // Guard: only update study cards when we're still in select-mode.
         // If the user is mid-session, the fetch result is stale and must be discarded.
-        setPhase((currentPhase) => {
-          if (currentPhase !== 'select-mode') return currentPhase
-          setStudyCards(cards)
-          setScope('due')
+        if (phaseRef.current !== 'select-mode') {
           setIsFilterLoading(false)
-          return currentPhase
-        })
+          return
+        }
+        setStudyCards(cards)
+        setScope('due')
+        setIsFilterLoading(false)
       })
       .catch(() => {
         setIsFilterLoading(false)
