@@ -60,16 +60,21 @@ export async function PUT(req: NextRequest) {
   // the ks_auth (AUTH_COOKIE) httpOnly convention: this cookie carries only
   // cosmetic UI preference data, never anything auth/session-related, and
   // MUST NOT be trusted as an authorization or identity signal anywhere.
+  // NOTE: no manual encodeURIComponent() here — res.cookies.set() already
+  // percent-encodes the value when serializing the Set-Cookie header (via the
+  // standard `cookie` package's serialize()); double-encoding would leave the
+  // client's single decodeURIComponent() unable to JSON.parse the result
+  // (confirmed via e2e/settings-flash.spec.ts during Task 2 verification).
   res.cookies.set(
     'ks_settings',
-    encodeURIComponent(JSON.stringify({
+    JSON.stringify({
       buttonColor: newColor,
       buttonFg: readableForeground(newColor),
       rewardColor: newReward,
       rewardFg: readableForeground(newReward),
       readingTextScale: newScale,
       readingAid: newAid,
-    })),
+    }),
     {
       httpOnly: false,
       secure: process.env.NODE_ENV === 'production',
