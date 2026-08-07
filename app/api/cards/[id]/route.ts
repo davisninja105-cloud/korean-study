@@ -5,6 +5,61 @@ import { Prisma } from '@/app/generated/prisma/client'
 
 const sentencesInclude = { orderBy: { orderIndex: 'asc' } } as const
 
+// Full-card fetch, sentences included — needed once GET /api/cards' list
+// query drops sentences entirely (CARDS-01). The Edit sheet calls this
+// on-demand before rendering CardEditor: CardEditor's handleSave
+// unconditionally PUTs whatever `sentences` array it was seeded with, and
+// the PUT handler below treats any array (including []) as "replace all
+// sentences" — so opening the editor with a sentence-free CardDTO and
+// saving ANY field would silently delete every real Sentence row for that
+// card. This route is the fix: CardsClient fetches the full card (with
+// real sentences) before the editor ever mounts.
+export async function GET(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const { id } = await params
+    const card = await prisma.card.findUnique({
+      where: { id },
+      include: {
+        review: true,
+        lesson: { select: { title: true, createdAt: true, orderIndex: true } },
+        sentences: sentencesInclude,
+      },
+    })
+    if (!card) {
+      return NextResponse.json({ error: 'Card not found' }, { status: 404 })
+    }
+    // Serialize dates to ISO strings — same shape as POST's dto in
+    // app/api/cards/route.ts and lib/cards-list.ts's getCardsPage.
+    const dto = {
+      ...card,
+      createdAt: card.createdAt.toISOString(),
+      updatedAt: card.updatedAt.toISOString(),
+      lesson: card.lesson
+        ? { ...card.lesson, createdAt: card.lesson.createdAt.toISOString() }
+        : null,
+      review: card.review
+        ? {
+            ...card.review,
+            nextReview: card.review.nextReview.toISOString(),
+            lastReview: card.review.lastReview?.toISOString() ?? null,
+          }
+        : null,
+      sentences: card.sentences.map((s) => ({
+        ...s,
+        createdAt: s.createdAt.toISOString(),
+        updatedAt: s.updatedAt.toISOString(),
+      })),
+    }
+    return NextResponse.json(dto)
+  } catch (e) {
+    console.error('GET /api/cards/[id] failed:', e)
+    return NextResponse.json({ error: 'Failed to load card' }, { status: 500 })
+  }
+}
+
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

@@ -68,6 +68,23 @@ export interface CardDTO {
   sentences: SentenceDTO[]
 }
 
+// Returned by lib/cards-list.ts:getCardsPage() — a single type-group's
+// cursor-paginated page. `cards` carry no `sentences` (CARDS-01 — dropped
+// from the list query's `select`; fetched on demand elsewhere).
+export interface CardsPageDTO {
+  cards: CardDTO[]
+  nextCursor: string | null
+  hasMore: boolean
+}
+
+// Returned by lib/cards-list.ts:getCardsGroupCounts() — full-deck per-type
+// counts, independent of which groups are expanded/loaded client-side.
+// Same shape as StatsDTO['cardsByType'] (prisma.card.groupBy _count: true).
+export interface GroupCountsDTO {
+  byType: { type: string; _count: number }[]
+  total: number
+}
+
 // For /api/lessons and LessonRangeFilter
 export interface LessonDTO {
   id: string

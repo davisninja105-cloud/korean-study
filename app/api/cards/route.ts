@@ -1,13 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { normalizeFront } from '@/lib/card-key'
-import { getCardsList } from '@/lib/cards-list'
+import { getCardsPage, getCardsGroupCounts } from '@/lib/cards-list'
 
 const sentencesInclude = { orderBy: { orderIndex: 'asc' } } as const
 
-export async function GET() {
-  const cards = await getCardsList()
-  return NextResponse.json(cards)
+// DOS clamp (T-31-01) — never trust the raw client-supplied `take` value,
+// mirrors lib/settings.ts's server-defined session-size pattern.
+const DEFAULT_TAKE = 30
+const MAX_TAKE = 100
+
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const type = searchParams.get('type') ?? 'all'
+    const cursor = searchParams.get('cursor')
+    const search = searchParams.get('search')?.toLowerCase() || null
+    const lessonFromRaw = searchParams.get('lessonFrom')
+    const lessonToRaw = searchParams.get('lessonTo')
+    const lessonFrom = lessonFromRaw !== null ? Number(lessonFromRaw) : null
+    const lessonTo = lessonToRaw !== null ? Number(lessonToRaw) : null
+    const requestedTake = Number(searchParams.get('take') ?? DEFAULT_TAKE)
+    const take = Math.min(
+      Number.isFinite(requestedTake) && requestedTake > 0 ? requestedTake : DEFAULT_TAKE,
+      MAX_TAKE
+    )
+
+    const page = await getCardsPage({ type, cursor, search, lessonFrom, lessonTo, take })
+
+    // Bundle full-deck group counts into the page-1 (cursor-less) response
+    // only — subsequent "load more" calls always carry a cursor and skip
+    // this second query, keeping the round-trip count minimal.
+    if (!cursor) {
+      const groupCounts = await getCardsGroupCounts({ search, lessonFrom, lessonTo })
+      return NextResponse.json({ ...page, groupCounts })
+    }
+
+    return NextResponse.json(page)
+  } catch (e) {
+    console.error('GET /api/cards failed:', e)
+    return NextResponse.json({ error: 'Failed to load cards' }, { status: 500 })
+  }
 }
 
 export async function POST(req: NextRequest) {
