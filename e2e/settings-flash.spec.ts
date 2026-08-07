@@ -62,6 +62,26 @@ test('saved settings persist via a non-httpOnly cookie, applied before hydration
   expect(computed.hangulSpaced).toBe(true)
 })
 
+test('GET /settings renders the real Settings UI, not a server error (G-30-2 regression guard)', async ({ page }) => {
+  // Start listening BEFORE navigating — the mount-effect POST fires almost
+  // immediately after mount, so registering the wait after navigation risks
+  // missing the response entirely (waitForResponse only observes events
+  // that occur after it is called).
+  const backfillResponse = page.waitForResponse(
+    (res) => res.url().includes('/api/settings/backfill-cookie') && res.status() === 200,
+  )
+
+  const response = await page.goto('/settings')
+  expect(response?.status()).toBe(200)
+
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+
+  await backfillResponse
+
+  const cookieString = await page.evaluate(() => document.cookie)
+  expect(cookieString).toContain('ks_settings=')
+})
+
 test('cleanup — reset settings to defaults so shared test DB/cookie state stays clean', async ({ page }) => {
   await page.goto('/')
 

@@ -70,6 +70,27 @@ export default function SettingsClient({
     Promise.resolve().then(() => setTheme(getStoredTheme()))
   }, [])
 
+  // G-30-2 fix: re-seed the ks_settings cookie on every /settings mount from
+  // the initial* props the server already rendered (not the mutable
+  // buttonColor/rewardColor/etc. state) — preserves CR-01's original
+  // "re-seed on every visit" intent now that the backfill can no longer live
+  // in app/settings/page.tsx's render body (Next.js only permits cookie
+  // mutation during the action phase). Fire-and-forget, matching the
+  // project's non-blocking background-write convention (e.g. submitReview's
+  // POST /api/review) — never gates or delays anything already on screen.
+  useEffect(() => {
+    fetch('/api/settings/backfill-cookie', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        buttonColor: initialButtonColor,
+        rewardColor: initialRewardColor,
+        readingTextScale: initialReadingTextScale,
+        readingAid: initialReadingAid,
+      }),
+    }).catch(() => {})
+  }, [initialButtonColor, initialRewardColor, initialReadingTextScale, initialReadingAid])
+
   const save = async (patch: { dailyGoalSeconds?: number; dayStartHour?: number; sessionSize?: number; buttonColor?: string; rewardColor?: string; readingTextScale?: number; readingAid?: boolean }) => {
     setSaving(true)
     setSaved(false)
