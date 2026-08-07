@@ -2,36 +2,36 @@
 gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Perceived & Real Performance
-current_phase: 30
-current_phase_name: instant-feedback-cold-start-unblocking
-status: executing
+current_phase: 31
+current_phase_name: Cards List Pagination & Virtualization
+status: planning
 stopped_at: Phase 30 UI-SPEC approved
-last_updated: "2026-08-07T03:37:56.924Z"
+last_updated: "2026-08-07T05:56:47.625Z"
 last_activity: 2026-08-06
-last_activity_desc: Phase 30 execution resumed (wave continue)
+last_activity_desc: Phase 30 complete, transitioned to Phase 31
 progress:
   total_phases: 6
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 4
-  completed_plans: 3
-  percent: 0
+  completed_plans: 4
+  percent: 17
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-08-05)
+See: .planning/PROJECT.md (updated 2026-08-06)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 30 — instant-feedback-cold-start-unblocking
+**Current focus:** Phase 31 — cards-list-pagination-&-virtualization
 
 ## Current Position
 
-Phase: 30 (instant-feedback-cold-start-unblocking) — EXECUTING
-Plan: 1 of 3
-Status: Executing Phase 30
-Last activity: 2026-08-06 — Phase 30 execution resumed (wave continue)
+Phase: 31 — Cards List Pagination & Virtualization
+Plan: Not started
+Status: Ready to plan
+Last activity: 2026-08-06 — Phase 30 complete, transitioned to Phase 31
 
 ## Performance Metrics
 
@@ -60,19 +60,26 @@ v1.8 roadmap shaping decisions (2026-08-05):
 - **CLEANUP-03 (v1.7 Phase 29) deliberately not folded into v1.8** — distinct subsystem (extraction pipeline, not performance). Remains open and unscheduled.
 - **Re-measurement phrasing:** success criteria reference the existing `e2e/perf.spec.ts` median-of-5 budgets at tightened thresholds rather than the source plan's manual ffmpeg frame-diff methodology, which is too heavyweight for automated phase verification. The on-device baseline table stays in ROADMAP.md as the intent anchor.
 
+Phase 30 decisions (2026-08-06):
+
+- **RootLayout unblocked via a `ks_settings` cookie mirror, not a re-architected DB read.** `PUT /api/settings` writes a non-httpOnly cookie carrying only the already-validated button/reward/reading values; a 3rd pre-paint `<script>` applies it before first paint. `httpOnly: false` is deliberate — cosmetic data only, `ks_auth` untouched.
+- **New `--skeleton-bg` token instead of raising dark `--surface-3`.** Isolates the fix from `--surface-3`'s 17+ other consumers (Nav, Toast, etc.); reuses the existing dark `--surface-1` shade, no new color invented. Supersedes the original raise-`--surface-3` plan noted below.
+- **G-30-2 fixed:** the CR-01 cookie backfill was calling `cookies().set()` from a Server Component's render body (invalid in Next.js 16.2.1 — action-phase only), causing a deterministic production 500 on every `/settings` visit. Moved to a genuine zero-DB `POST /api/settings/backfill-cookie` Route Handler invoked from `SettingsClient.tsx`'s mount effect; a permanent regression-guard test now forbids reintroducing render-body cookie mutation.
+- **Vercel region pinned to `pdx1`** via a live `turso db show korean-study` lookup (not guessed) — confirmed an exact AWS `us-west-2` infrastructure match to Turso's reported primary region.
+
 ### Pending Todos
 
 None open.
 
 ### Blockers/Concerns
 
-- [Phase 30] Raising dark `--surface-3` affects every existing `bg-surface-3` consumer, including `hover:bg-surface-3` in `Nav.tsx`. Both the `@media (prefers-color-scheme: dark)` block and the `:root[data-theme="dark"]` block in `globals.css` must change (they are duplicated) — the project's established "token appears in 3 globals.css blocks" rule applies.
 - [Phase 33/34] Do NOT delete the `FreshnessWatcher` backstop. It works around a real, unfixed Next.js 16.2.1 Suspense/Segment-Cache bug where routes with a `loading.tsx` fetch a fresh RSC payload and never apply it. Narrow only; re-test after any Next upgrade.
 - [Phase 34/35] iOS/WebKit has no Background Sync API. Any deferred flush must fire on the `online` event or on app foreground — registering `sync`/`periodicsync` will silently never fire.
 - [Phase 34] Local-first reintroduces the staleness class that `force-dynamic` + `FreshnessWatcher` were added to fix. The five staleness rules from the source plan (classify writes by origin, version-check never TTL, replace layers don't add one, key by build ID, ship a manual escape hatch) are non-negotiable design constraints, not suggestions.
 - [carried from v1.7] CLEANUP-03 (distractor write-side retirement) open and unscheduled — Pitfall 8: retire the chain atomically across prompt/schema/DTO/audit/tests in one pass.
 - [carried from v1.3] `app/api/review/undo/route.ts` still lacks try/catch — out of scope; deferred candidate.
 - [carried from v1.5] 거/게 romanization-flagged card fronts (post-audit cron arrivals) — out of scope; open for a future audit/fix pass.
+- [Phase 30 security review] `POST /api/settings/backfill-cookie` type-checks its body but doesn't re-run `HEX_RE` hex-format validation like `PUT /api/settings` does (T-30-10 in `30-SECURITY.md`) — closed as low-severity/self-only (auth-gated, consumed only via `style.setProperty()`, never `innerHTML`/`eval`), but a real asymmetry with the sibling route worth tightening if touched again.
 
 ## Deferred Items
 
@@ -88,15 +95,15 @@ Carried forward, informational only:
 | e2e-v2 | Cards CRUD spec (E2E-08), stubbed sync-route coverage (E2E-09), WebKit project (E2E-10) | Deferred to v2 |
 | feature | Remember last-used Passive/Active toggle in localStorage (ACTIVE-06); progressive hint escalation (ACTIVE-07) | Deferred to v2 |
 | hardening | `FreshnessWatcher` JSON backstop request-sequencing race (WR-01) — no observed occurrence across 44+ e2e runs; may be resolved incidentally by Phase 33 | Open, non-blocking |
+| hardening | `POST /api/settings/backfill-cookie` hex-format validation gap (T-30-10) — type-check only, no `HEX_RE` re-check | Open, non-blocking |
 
 ## Session Continuity
 
-Last session: 2026-08-06T04:30:04.947Z
-Stopped at: Phase 30 UI-SPEC approved
-Resume file: /Users/main/Documents/claude-test/.planning/phases/30-instant-feedback-cold-start-unblocking/30-UI-SPEC.md
+Last session: 2026-08-07T05:56:47.925Z
+Stopped at: Phase 30 complete (UAT passed, security threat-secure), ready to plan Phase 31
+Resume file: None
 
 ## Operator Next Steps
 
-- Plan Phase 30 with `/gsd-plan-phase 30` (Instant Feedback & Cold-Start Unblocking — PERCEPT-01/02/03, LAYOUT-01, REGION-01)
-- Phase 30 is flagged **UI hint: yes** — consider `/gsd-ui-phase 30` before planning
-- Re-measure the baseline table in ROADMAP.md after Phase 30 lands, before starting Phase 31
+- Plan Phase 31 with `/gsd-plan-phase 31` (Cards List Pagination & Virtualization — P3.2)
+- Re-measure the baseline table in ROADMAP.md now that Phase 30 has landed, before Phase 31 work begins
