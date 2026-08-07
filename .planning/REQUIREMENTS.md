@@ -9,9 +9,9 @@
 
 ### Perceived Loading (P3.0)
 
-- [ ] **PERCEPT-01**: Dark-mode skeleton screens (`/study`, `/cards`, `/habits`, `/history`) are visibly distinct from the background, not the same color as `--background`
-- [ ] **PERCEPT-02**: PWA cold launch shows no white flash — `app/manifest.ts` `background_color`/`theme_color` match the dark theme
-- [ ] **PERCEPT-03**: Applying a lesson-range filter on `/study` shows a content-shaped skeleton instead of a bare spinner, with no layout shift when data lands
+- [x] **PERCEPT-01**: Dark-mode skeleton screens (`/study`, `/cards`, `/habits`, `/history`) are visibly distinct from the background, not the same color as `--background`
+- [x] **PERCEPT-02**: PWA cold launch shows no white flash — `app/manifest.ts` `background_color`/`theme_color` match the dark theme
+- [x] **PERCEPT-03**: Applying a lesson-range filter on `/study` shows a content-shaped skeleton instead of a bare spinner, with no layout shift when data lands
 
 ### Root Layout (P3.1)
 
@@ -36,7 +36,7 @@
 
 ### Region Pinning (P3.5)
 
-- [ ] **REGION-01**: Vercel function region matches the Turso primary region
+- [x] **REGION-01**: Vercel function region matches the Turso primary region
 
 ### Local-First Shell (P3.6)
 
@@ -75,9 +75,9 @@ All 21 v1 requirements map to exactly one phase. No orphans, no duplicates.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PERCEPT-01 | Phase 30 | Pending |
-| PERCEPT-02 | Phase 30 | Pending |
-| PERCEPT-03 | Phase 30 | Pending |
+| PERCEPT-01 | Phase 30 | Complete |
+| PERCEPT-02 | Phase 30 | Complete |
+| PERCEPT-03 | Phase 30 | Complete |
 | LAYOUT-01 | Phase 30 | Complete |
 | CARDS-01 | Phase 31 | Pending |
 | CARDS-02 | Phase 31 | Pending |
@@ -87,7 +87,7 @@ All 21 v1 requirements map to exactly one phase. No orphans, no duplicates.
 | STUDY-03 | Phase 32 | Pending |
 | VERS-01 | Phase 33 | Pending |
 | VERS-02 | Phase 33 | Pending |
-| REGION-01 | Phase 30 | Pending |
+| REGION-01 | Phase 30 | Complete |
 | LOCAL-01 | Phase 34 | Pending |
 | LOCAL-02 | Phase 34 | Pending |
 | LOCAL-03 | Phase 34 | Pending |

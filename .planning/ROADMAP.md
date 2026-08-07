@@ -135,7 +135,7 @@ See `.planning/milestones/v1.6-ROADMAP.md` for full phase details.
 
 **Phase checklist:**
 
-- [ ] **Phase 30: Instant Feedback & Cold-Start Unblocking** - Visible dark-mode skeletons, no white PWA launch flash, honest lesson-filter skeleton, synchronous root layout, Vercel region pinned to Turso
+- [x] **Phase 30: Instant Feedback & Cold-Start Unblocking** - Visible dark-mode skeletons, no white PWA launch flash, honest lesson-filter skeleton, synchronous root layout, Vercel region pinned to Turso (completed 2026-08-06)
 - [ ] **Phase 31: Cards List Pagination & Virtualization** - `/cards` loads a capped page without sentences, windows its scroll, and searches/filters server-side across the full deck
 - [ ] **Phase 32: Study Load Round-Trip Collapse** - `/study` drops from 4–5 sequential Turso round trips to at most two, with sync-invalidated caching of invariant reads
 - [ ] **Phase 33: Version-Gated Freshness Backstop** - `/api/version` monotonic counter lets the freshness backstop re-fetch payloads only when something actually changed
@@ -281,7 +281,7 @@ Re-measure the baseline table after Phase 30 before starting Phase 31 — the nu
 | 27. E2E Coverage & Performance Validation | v1.6 | 3/3 | Complete | 2026-07-13 |
 | 28. Active Recall Study Mode | v1.7 | 2/2 | Complete | 2026-07-24 |
 | 29. Distractor Write-Side Retirement | v1.7 | 0/0 | Deferred (archived unexecuted — CLEANUP-03 open, unscheduled) | - |
-| 30. Instant Feedback & Cold-Start Unblocking | v1.8 | 4/4 | In Progress|  |
+| 30. Instant Feedback & Cold-Start Unblocking | v1.8 | 4/4 | Complete    | 2026-08-06 |
 | 31. Cards List Pagination & Virtualization | v1.8 | 0/TBD | Not started | - |
 | 32. Study Load Round-Trip Collapse | v1.8 | 0/TBD | Not started | - |
 | 33. Version-Gated Freshness Backstop | v1.8 | 0/TBD | Not started | - |
