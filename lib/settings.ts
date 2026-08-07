@@ -211,45 +211,6 @@ export async function setRewardColor(hex: string): Promise<string> {
 }
 
 /**
- * Batched equivalent of Promise.all([getButtonColor(), getRewardColor(),
- * getReadingTextScale(), getReadingAid()]) — the exact 4 keys app/layout.tsx
- * reads on every route render. One findMany instead of 4 findUnique calls.
- * Mirrors getButtonColor/getRewardColor's try/catch resilience: on any
- * failure (including partial-batch failure — a single query either succeeds
- * or throws) all four values degrade to their individual defaults, matching
- * what independent per-key failures would have produced.
- */
-export async function getLayoutSettings(): Promise<{
-  buttonColor: string
-  rewardColor: string
-  readingTextScale: number
-  readingAid: boolean
-}> {
-  try {
-    const map = await getSettings([
-      SETTING_KEYS.buttonColor,
-      SETTING_KEYS.rewardColor,
-      SETTING_KEYS.readingTextScale,
-      SETTING_KEYS.readingAid,
-    ])
-    return {
-      buttonColor: parseButtonColor(map.get(SETTING_KEYS.buttonColor)),
-      rewardColor: parseRewardColor(map.get(SETTING_KEYS.rewardColor)),
-      readingTextScale: parseReadingTextScale(map.get(SETTING_KEYS.readingTextScale)),
-      readingAid: parseReadingAid(map.get(SETTING_KEYS.readingAid)),
-    }
-  } catch (err) {
-    console.error('Failed to read layout settings:', err)
-    return {
-      buttonColor: DEFAULT_ACTION_COLOR,
-      rewardColor: DEFAULT_REWARD_COLOR,
-      readingTextScale: 1,
-      readingAid: false,
-    }
-  }
-}
-
-/**
  * Batched equivalent of the 8-key Promise.all in GET /api/settings.
  * lastAutoSyncedAt is a raw pass-through (null if absent) — no parse function
  * needed, matching getLastAutoSyncedAt()'s existing contract.
