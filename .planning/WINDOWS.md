@@ -2,9 +2,9 @@
 schema_version: 1
 open_count: 4
 waived_count: 0
-fixed_count: 0
-total_count: 4
-last_updated: 2026-08-07T16:43:39.044Z
+fixed_count: 1
+total_count: 5
+last_updated: 2026-08-07T17:19:51.011Z
 ---
 
 # Broken Windows Ledger
@@ -17,8 +17,9 @@ last_updated: 2026-08-07T16:43:39.044Z
 |----|-------|------|------|------|-------------|--------|--------|-------------|-------------|
 | 1 | 31 | deviation | components/CardsClient.tsx |  | CARDS-02: keyboard Tab navigation does not correctly reach card rows/Edit controls inside the virtualized Vocabulary group (human-verified 2026-08-07, explicitly deferred as non-blocker by user decision) | open |  | 2026-08-07T16:43:20.250Z |  |
 | 2 | 31 | stub | components/CardsClient.tsx |  | Reading Practice tab always shows empty state — temporarily sourced from groups.vocabulary.loaded, which never carries sentences post-CARDS-01; real fix (D-07 independent fetch) lands in 31-04 | open |  | 2026-08-07T16:43:30.024Z |  |
-| 3 | 31 | stub | components/CardsClient.tsx |  | Search box does not match inside example sentences (client-side-only filter over sentence-free cards); server-side D-05 sentence search lands in 31-02 | open |  | 2026-08-07T16:43:36.471Z |  |
+| 3 | 31 | stub | components/CardsClient.tsx |  | Search box does not match inside example sentences (client-side-only filter over sentence-free cards); server-side D-05 sentence search lands in 31-02 | fixed |  | 2026-08-07T16:43:36.471Z | 2026-08-07T17:19:51.011Z |
 | 4 | 31 | stub | components/FreshnessWatcher.tsx |  | FreshnessWatcher's /cards backstop is inert — its Array.isArray(result) check never matches the new CardsPageDTO object shape, so freshCards never delivers; upsert-merge fix lands in 31-04 | open |  | 2026-08-07T16:43:39.044Z |  |
+| 5 | 31 | unmet-truth | components/CardsClient.tsx |  | CARDS-02 all-4-groups auto-load/expand not manually spot-checked against the real ~1056-card production deck (8-card e2e fixture too small to exercise a real second page or the Other group meaningfully) — resolve via manual dev-server check per 31-02-SUMMARY.md D3 | open |  | 2026-08-07T17:19:04.547Z |  |
 
 ````json
 [
@@ -53,10 +54,10 @@ last_updated: 2026-08-07T16:43:39.044Z
     "file": "components/CardsClient.tsx",
     "line": null,
     "description": "Search box does not match inside example sentences (client-side-only filter over sentence-free cards); server-side D-05 sentence search lands in 31-02",
-    "status": "open",
+    "status": "fixed",
     "reason": "",
     "recorded_at": "2026-08-07T16:43:36.471Z",
-    "resolved_at": null
+    "resolved_at": "2026-08-07T17:19:51.011Z"
   },
   {
     "id": 4,
@@ -68,6 +69,18 @@ last_updated: 2026-08-07T16:43:39.044Z
     "status": "open",
     "reason": "",
     "recorded_at": "2026-08-07T16:43:39.044Z",
+    "resolved_at": null
+  },
+  {
+    "id": 5,
+    "kind": "unmet-truth",
+    "phase": "31",
+    "file": "components/CardsClient.tsx",
+    "line": null,
+    "description": "CARDS-02 all-4-groups auto-load/expand not manually spot-checked against the real ~1056-card production deck (8-card e2e fixture too small to exercise a real second page or the Other group meaningfully) — resolve via manual dev-server check per 31-02-SUMMARY.md D3",
+    "status": "open",
+    "reason": "",
+    "recorded_at": "2026-08-07T17:19:04.547Z",
     "resolved_at": null
   }
 ]

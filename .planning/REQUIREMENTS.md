@@ -21,7 +21,7 @@
 
 - [ ] **CARDS-01**: `/cards` initial load queries a capped page of cards (not the full ~1056-card deck), with `sentences` excluded from the list query
 - [ ] **CARDS-02**: Scrolling `/cards` to the end of the full deck stays smooth — windowed/virtualized rendering, no unbounded DOM growth
-- [ ] **CARDS-03**: Search and lesson filter on `/cards` return correct results across the full deck, not just the loaded page (server-side query, debounced input)
+- [x] **CARDS-03**: Search and lesson filter on `/cards` return correct results across the full deck, not just the loaded page (server-side query, debounced input)
 
 ### Study Session Load Performance (P3.3)
 
@@ -81,7 +81,7 @@ All 21 v1 requirements map to exactly one phase. No orphans, no duplicates.
 | LAYOUT-01 | Phase 30 | Complete |
 | CARDS-01 | Phase 31 | Pending |
 | CARDS-02 | Phase 31 | Pending |
-| CARDS-03 | Phase 31 | Pending |
+| CARDS-03 | Phase 31 | Complete |
 | STUDY-01 | Phase 32 | Pending |
 | STUDY-02 | Phase 32 | Pending |
 | STUDY-03 | Phase 32 | Pending |
