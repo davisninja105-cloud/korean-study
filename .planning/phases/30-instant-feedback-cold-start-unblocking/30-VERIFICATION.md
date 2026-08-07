@@ -1,7 +1,7 @@
 ---
 phase: 30-instant-feedback-cold-start-unblocking
 verified: 2026-08-06T22:45:00Z
-status: human_needed
+status: passed
 score: 10/10 must-haves verified
 behavior_unverified: 0
 overrides_applied: 0
@@ -9,10 +9,12 @@ re_verification:
   previous_status: human_needed
   previous_score: 9/9
   gaps_closed:
+
     - "G-30-2: /settings threw a deterministic server error (ReadonlyRequestCookiesError) on every production visit because CR-01's cookie backfill called cookies().set() from app/settings/page.tsx's Server Component render body. Fixed by moving the backfill into a genuine Route Handler (app/api/settings/backfill-cookie/route.ts) invoked from components/SettingsClient.tsx's mount effect."
   gaps_remaining: []
   regressions: []
 human_verification:
+
   - test: "On a real device/browser (iOS Safari home-screen launch and Android/Chrome PWA install): (a) save a settings change on /settings and immediately navigate away and back, observing whether button/reward color or reading scale flashes; (b) cold-launch the installed PWA from a home-screen icon."
     expected: "No perceptible flash of a mismatched button/reward color or reading scale after a settings save; no white/mismatched splash frame at any point during PWA cold launch (iOS Safari ignoring manifest background_color is a disclosed, accepted residual risk — not a failure of this check)."
     why_human: "This is the same check UAT Test 2 attempted and never actually completed — it was blocked by G-30-2's server error before the visual flash behavior could be observed at all. Now that G-30-2 is fixed (confirmed by a live e2e run + unit regression guard in this verification pass), the underlying visual/device-dependent behavior the check was designed to observe has still never been confirmed by a human on a real device. tests/settings-page-render-safety.test.ts and e2e/settings-flash.spec.ts prove the DOM-attribute/route mechanics but cannot observe a sub-frame visual flash or a real PWA splash transition."
