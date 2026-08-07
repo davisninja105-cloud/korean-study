@@ -23,7 +23,17 @@ test.beforeAll(async () => {
   await resetToBaseline()
 })
 
-const PAGE_BUDGET_MS = 3000 // D-08 — generous guard rail, not a target
+// D-08 — generous guard rails, not targets. `/habits` is tightened (D-05):
+// this is the phase 30 re-measurement baseline for the rest of the v1.8
+// milestone — cleanest pure-round-trip signal for REGION-01's improvement.
+// `/`, `/study`, `/cards` stay at the original generous budget (D-06) since
+// their real bottlenecks aren't touched until Phases 31/32.
+const PAGE_BUDGETS_MS: Record<'/' | '/study' | '/cards' | '/habits', number> = {
+  '/': 3000,
+  '/study': 3000,
+  '/cards': 3000,
+  '/habits': 1500,
+}
 const API_BUDGET_MS = 1000 // D-09 — generous guard rail, not a target
 const SAMPLES = 5
 
@@ -52,7 +62,7 @@ function median(xs: number[]): number {
   return s[Math.floor(s.length / 2)]
 }
 
-for (const route of ['/', '/study', '/cards', '/habits']) {
+for (const route of Object.keys(PAGE_BUDGETS_MS) as Array<keyof typeof PAGE_BUDGETS_MS>) {
   test(`page-load budget: ${route}`, async ({ page }) => {
     const samples: NavSample[] = []
     for (let i = 0; i < SAMPLES; i++) samples.push(await sampleNav(page, route))
@@ -70,7 +80,7 @@ for (const route of ['/', '/study', '/cards', '/habits']) {
     // Assert the median of DCL (the user-facing milestone); TTFB is logged
     // alongside above (Open Question 2's recommended resolution of D-08's
     // "TTFB / domContentLoaded" wording).
-    expect(median(samples.map((s) => s.dcl))).toBeLessThan(PAGE_BUDGET_MS)
+    expect(median(samples.map((s) => s.dcl))).toBeLessThan(PAGE_BUDGETS_MS[route])
   })
 }
 
