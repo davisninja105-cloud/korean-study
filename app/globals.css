@@ -34,6 +34,10 @@
   --surface-2: #f9fafb;
   --surface-3: #f3f4f6;
 
+  /* Loading-state placeholder — isolated from --surface-3 (D-01–D-03).
+     Light value reuses the light --surface-3 shade. */
+  --skeleton-bg: #f3f4f6;
+
   /* Reward (warm orange) */
   --reward: #f97316;
   --reward-foreground: #ffffff;
@@ -67,6 +71,11 @@
     --surface-2: #141824;
     --surface-3: #0b0f1a;
 
+    /* Loading-state placeholder — dark value reuses --surface-1's dark shade
+       (D-02), deliberately distinct from dark --surface-3 (#0b0f1a), which
+       equals dark --background and is why unmigrated skeletons are invisible. */
+    --skeleton-bg: #1c2030;
+
     /* Muted text & borders (dark overrides) */
     --muted: #9ca3af;             /* gray-400 analog */
     --muted-foreground: #d1d5db; /* gray-300 analog */
@@ -87,6 +96,9 @@
   --surface-1: #1c2030;
   --surface-2: #141824;
   --surface-3: #0b0f1a;
+
+  /* Loading-state placeholder (mirrors @media dark block exactly) */
+  --skeleton-bg: #1c2030;
 
   /* Muted text & borders (mirrors @media dark block exactly) */
   --muted: #9ca3af;             /* gray-400 analog */
@@ -131,6 +143,9 @@ html {
   --color-surface-1: var(--surface-1);
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
+
+  /* Loading-state placeholder */
+  --color-skeleton: var(--skeleton-bg);
 
   /* Reward */
   --color-reward: var(--reward);
