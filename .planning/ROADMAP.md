@@ -179,7 +179,7 @@ See `.planning/milestones/v1.6-ROADMAP.md` for full phase details.
   4. Applying a lesson range on `/cards` returns the correct card set across the full deck, and a collapsed row still shows its reading-practice/sentence count without loading the sentences themselves.
   5. Add, edit, delete, swipe-to-delete, tap-to-gloss, group collapse, and the Reading practice view all still behave correctly against the paginated list; the existing e2e and unit suites stay green.
 
-**Plans**: 4/4 plans executed
+**Plans**: 4/5 plans executed
 
 Plans:
 **Wave 1**
@@ -194,6 +194,10 @@ Plans:
 **Wave 3** *(blocked on Wave 2 completion)*
 
 - [x] 31-04-PLAN.md — Reading Practice UI wiring + CardEditor on-demand fetch + FreshnessWatcher upsert-merge fix + baseline re-measurement/perf budget tightening + full regression
+
+**Gap closure**
+
+- [ ] 31-05-PLAN.md — gap closure: sticky Cards/Reading Practice toggle + Nav-header offset on mobile (G-31-2)
 
 **UI hint**: yes
 
