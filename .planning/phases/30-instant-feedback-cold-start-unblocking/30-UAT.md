@@ -1,23 +1,14 @@
 ---
-status: testing
+status: complete
 phase: 30-instant-feedback-cold-start-unblocking
 source: [30-VERIFICATION.md]
 started: 2026-08-07T01:23:00Z
-updated: 2026-08-07T03:55:00Z
+updated: 2026-08-07T04:10:00Z
 ---
 
 ## Current Test
 
-number: 2
-name: Real-device "no flash" + PWA cold-launch confirmation
-expected: |
-  On a real device/browser: (a) save a settings change on /settings and observe the very
-  next navigation for any color/scale flash; (b) cold-launch the installed PWA from a
-  home-screen icon (Android/Chrome, and separately iOS Safari). No perceptible flash of a
-  mismatched button/reward color or reading scale after a settings save; no white/mismatched
-  splash frame during PWA cold launch (iOS Safari ignoring manifest background_color is a
-  disclosed, accepted residual risk, not a failure).
-awaiting: user response
+[testing complete]
 
 ## Tests
 
@@ -39,22 +30,14 @@ expected: |
   mismatched button/reward color or reading scale after a settings save; no white/mismatched
   splash frame during PWA cold launch (iOS Safari ignoring manifest background_color is a
   disclosed, accepted residual risk — not a failure of this check).
-result: [pending]
-note: |
-  Previous attempt was blocked before it could observe anything — navigating to /settings
-  hit a deterministic production server error (G-30-2). G-30-2 is now fixed and verified
-  (30-VERIFICATION.md, re-verification pass, 2026-08-06): app/settings/page.tsx no longer
-  mutates cookies from its render body, a permanent regression-guard test forbids
-  reintroducing it, and a live e2e run confirms /settings returns 200 with the real
-  Settings UI. The underlying visual/device-dependent check this test exists for has
-  still never actually been completed by a human — retry it now that the blocker is gone.
+result: pass
 
 ## Summary
 
 total: 2
-passed: 1
+passed: 2
 issues: 0
-pending: 1
+pending: 0
 skipped: 0
 blocked: 0
 
