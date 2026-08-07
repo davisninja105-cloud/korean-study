@@ -157,12 +157,12 @@ See `.planning/milestones/v1.6-ROADMAP.md` for full phase details.
   4. `RootLayout` is no longer `async` and awaits no DB read — the first HTML byte ships without waiting on Turso — while a saved settings change (button/reward color, reading text scale, reading aid) still applies on the next navigation with no colour flash.
   5. The deployed Vercel function region matches the Turso primary region, and `/habits` (the cleanest pure-round-trip signal) lands faster than its 1.8s baseline; its `e2e/perf.spec.ts` page-load budget passes at a tightened threshold.
 
-**Plans**: 3/4 plans executed (30-04 is a gap-closure plan for G-30-2, found during UAT)
+**Plans**: 4/4 plans executed
 
 - [x] 30-01-PLAN.md
 - [x] 30-02-PLAN.md
 - [x] 30-03-PLAN.md
-- [ ] 30-04-PLAN.md — gap closure: fix `/settings` production server error (G-30-2)
+- [x] 30-04-PLAN.md — gap closure: fix `/settings` production server error (G-30-2)
 
 **UI hint**: yes
 
@@ -281,7 +281,7 @@ Re-measure the baseline table after Phase 30 before starting Phase 31 — the nu
 | 27. E2E Coverage & Performance Validation | v1.6 | 3/3 | Complete | 2026-07-13 |
 | 28. Active Recall Study Mode | v1.7 | 2/2 | Complete | 2026-07-24 |
 | 29. Distractor Write-Side Retirement | v1.7 | 0/0 | Deferred (archived unexecuted — CLEANUP-03 open, unscheduled) | - |
-| 30. Instant Feedback & Cold-Start Unblocking | v1.8 | 3/3 | In Progress|  |
+| 30. Instant Feedback & Cold-Start Unblocking | v1.8 | 4/4 | In Progress|  |
 | 31. Cards List Pagination & Virtualization | v1.8 | 0/TBD | Not started | - |
 | 32. Study Load Round-Trip Collapse | v1.8 | 0/TBD | Not started | - |
 | 33. Version-Gated Freshness Backstop | v1.8 | 0/TBD | Not started | - |
