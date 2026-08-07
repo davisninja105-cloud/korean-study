@@ -32,7 +32,22 @@ interface CardEditorShape {
   front: string
   back: string
   notes?: string | null
-  sentences?: { id: string; korean: string; targetForm: string; translation: string }[]
+  // WR-04: the on-wire PUT response (what CardEditor's onSave actually hands
+  // back) carries full SentenceDTO fields, but the duck-typed shape only
+  // guarantees {id, korean, targetForm, translation} — the rest are declared
+  // optional so handleSave can use them when present and reconstruct sane
+  // fallbacks when not, instead of spreading an incomplete shape with an
+  // unchecked `as CardDTO` cast.
+  sentences?: {
+    id: string
+    korean: string
+    targetForm: string
+    translation: string
+    cardId?: string
+    orderIndex?: number
+    createdAt?: string
+    updatedAt?: string
+  }[]
 }
 
 // Canonical type groups. Any type not in the first three goes to "other".
@@ -848,6 +863,15 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
         if (found) deletedType = deletedType ?? found.type
         return { ...prev, loaded: prev.loaded.filter((c) => c.id !== id) }
       })
+      // WR-03: prune any now-orphaned Reading Practice row(s) for the
+      // deleted card — readingPractice state deliberately survives tab
+      // switches (D-08), so without this a stale row referencing the
+      // deleted card would persist until a full page reload.
+      setReadingPractice((prev) =>
+        prev.loaded.some((s) => s.card.id === id)
+          ? { ...prev, loaded: prev.loaded.filter((s) => s.card.id !== id) }
+          : prev
+      )
       if (deletedType) bumpGroupCount(deletedType, -1)
       if (editingId === id) closeEdit()
     } catch (err) {
@@ -858,10 +882,30 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   }
 
   const handleSave = (updated: CardEditorShape) => {
-    // Spread preserves all CardDTO fields from `c`; only core editor fields
-    // (now including the real `sentences`, fetched via GET /api/cards/[id]
-    // before the editor mounted) are overwritten.
-    const merge = (c: CardDTO) => ({ ...c, ...updated }) as CardDTO
+    // WR-04: reconstruct the full SentenceDTO shape explicitly (cardId/
+    // orderIndex/createdAt/updatedAt) instead of spreading `updated`
+    // wholesale over `c` with an unchecked `as CardDTO` cast.
+    // CardEditorShape.sentences only guarantees {id, korean, targetForm,
+    // translation} — the extra fields are present in the real PUT response
+    // at runtime but aren't part of the declared type, so we use them when
+    // present and fall back to sane reconstructed values when not.
+    const merge = (c: CardDTO): CardDTO => ({
+      ...c,
+      type: updated.type,
+      front: updated.front,
+      back: updated.back,
+      notes: updated.notes ?? null,
+      sentences: (updated.sentences ?? []).map((s, i) => ({
+        id: s.id,
+        cardId: s.cardId ?? c.id,
+        korean: s.korean,
+        targetForm: s.targetForm,
+        translation: s.translation,
+        orderIndex: s.orderIndex ?? i,
+        createdAt: s.createdAt ?? new Date().toISOString(),
+        updatedAt: s.updatedAt ?? new Date().toISOString(),
+      })),
+    })
     setGroups((prev) => {
       const next = { ...prev }
       for (const key of GROUP_KEYS) {
@@ -875,6 +919,30 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       ...prev,
       loaded: prev.loaded.map((c) => (c.id === updated.id ? merge(c) : c)),
     }))
+    // WR-03: patch any already-loaded Reading Practice row(s) for this card
+    // — readingPractice state deliberately survives tab switches (D-08), so
+    // without this an edited card's sentence text (or other card fields)
+    // would show stale data until a full page reload. Matched by the
+    // sentence's own `id` (present on every existing LocalSentence), not
+    // index, since sentences may be reordered/added/removed in the editor.
+    setReadingPractice((prev) => {
+      if (!prev.loaded.some((s) => s.card.id === updated.id)) return prev
+      const updatedSentencesById = new Map((updated.sentences ?? []).map((s) => [s.id, s]))
+      return {
+        ...prev,
+        loaded: prev.loaded.map((row) => {
+          if (row.card.id !== updated.id) return row
+          const matched = updatedSentencesById.get(row.id)
+          return {
+            ...row,
+            card: merge(row.card),
+            ...(matched
+              ? { korean: matched.korean, targetForm: matched.targetForm, translation: matched.translation }
+              : {}),
+          }
+        }),
+      }
+    })
     closeEdit()
   }
 
