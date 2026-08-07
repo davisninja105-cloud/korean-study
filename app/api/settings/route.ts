@@ -9,6 +9,7 @@ import {
   setReadingAid, getReadingAid,
   getAllSettings,
 } from '@/lib/settings'
+import { readableForeground } from '@/lib/color'
 
 export async function GET() {
   const settings = await getAllSettings()
@@ -42,7 +43,7 @@ export async function PUT(req: NextRequest) {
     hasScale  ? setReadingTextScale(readingTextScale)  : getReadingTextScale(),
     hasAid    ? setReadingAid(readingAid)              : getReadingAid(),
   ])
-  return NextResponse.json({
+  const res = NextResponse.json({
     dailyGoalSeconds: newGoal,
     dayStartHour: newHour,
     buttonColor: newColor,
@@ -51,4 +52,31 @@ export async function PUT(req: NextRequest) {
     readingTextScale: newScale,
     readingAid: newAid,
   })
+  // ks_settings mirrors the just-validated button/reward/reading values into a
+  // non-httpOnly cookie so app/layout.tsx's pre-paint <script> can read it via
+  // document.cookie before first paint (LAYOUT-01) — RootLayout no longer
+  // awaits a DB read, so this cookie is the only way the very next navigation
+  // avoids a flash of the previous/default value. Deliberate deviation from
+  // the ks_auth (AUTH_COOKIE) httpOnly convention: this cookie carries only
+  // cosmetic UI preference data, never anything auth/session-related, and
+  // MUST NOT be trusted as an authorization or identity signal anywhere.
+  res.cookies.set(
+    'ks_settings',
+    encodeURIComponent(JSON.stringify({
+      buttonColor: newColor,
+      buttonFg: readableForeground(newColor),
+      rewardColor: newReward,
+      rewardFg: readableForeground(newReward),
+      readingTextScale: newScale,
+      readingAid: newAid,
+    })),
+    {
+      httpOnly: false,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 60 * 60 * 24 * 365, // 1 year
+    },
+  )
+  return res
 }

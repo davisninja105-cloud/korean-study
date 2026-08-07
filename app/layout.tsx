@@ -4,8 +4,6 @@ import Nav from '@/components/Nav'
 import ThemeWatcher from '@/components/ThemeWatcher'
 import FreshnessWatcher from '@/components/FreshnessWatcher'
 import { GlossProvider } from '@/components/GlossProvider'
-import { getLayoutSettings } from '@/lib/settings'
-import { readableForeground } from '@/lib/color'
 import './globals.css'
 
 const geistSans = Geist({
@@ -43,23 +41,13 @@ export const viewport: Viewport = {
   ],
 }
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode
 }>) {
-  const { buttonColor, rewardColor, readingTextScale: readingScale, readingAid } =
-    await getLayoutSettings()
-  const buttonStyle = {
-    '--button': buttonColor,
-    '--button-foreground': readableForeground(buttonColor),
-    '--reward': rewardColor,
-    '--reward-foreground': readableForeground(rewardColor),
-    '--reading-scale': readingScale,
-  } as React.CSSProperties
-
   return (
-    <html lang="en" suppressHydrationWarning style={buttonStyle} className={`${geistSans.variable} ${geistMono.variable} h-full antialiased${readingAid ? ' hangul-spaced' : ''}`}>
+    <html lang="en" suppressHydrationWarning className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         {/* Pre-paint theme resolution — runs during HTML parse, before first paint,
             so a stored/System dark preference never flashes light on load. */}
@@ -75,6 +63,22 @@ export default async function RootLayout({
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var tmp=document.createElement('div');tmp.style.paddingBottom='env(safe-area-inset-bottom)';document.body.appendChild(tmp);var sab=getComputedStyle(tmp).paddingBottom;document.body.removeChild(tmp);document.documentElement.style.setProperty('--sab',sab||'0px');}catch(e){}})();`,
+          }}
+        />
+        {/* Pre-paint settings resolution — RootLayout is a plain (non-async)
+            function now, so it never awaits a DB read for buttonColor/rewardColor/
+            readingTextScale/readingAid (LAYOUT-01: no blocking DB round trip on
+            the cold path). Instead this script reads the ks_settings cookie
+            (written by PUT /api/settings alongside its Setting-table writes) and
+            corrects the CSS custom properties + hangul-spaced class before first
+            paint, exactly mirroring the theme-resolution script above. A missing
+            or malformed cookie silently falls through to the CSS :root defaults
+            (which already match DEFAULT_ACTION_COLOR/DEFAULT_REWARD_COLOR) — the
+            outer try/catch guarantees this script can never throw and block
+            render. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var m=document.cookie.match(/(?:^|; )ks_settings=([^;]*)/);if(!m)return;var v=JSON.parse(decodeURIComponent(m[1]));var s=document.documentElement.style;if(v.buttonColor)s.setProperty('--button',v.buttonColor);if(v.buttonFg)s.setProperty('--button-foreground',v.buttonFg);if(v.rewardColor)s.setProperty('--reward',v.rewardColor);if(v.rewardFg)s.setProperty('--reward-foreground',v.rewardFg);if(v.readingTextScale)s.setProperty('--reading-scale',v.readingTextScale);if(v.readingAid)document.documentElement.classList.add('hangul-spaced');}catch(e){}})();`,
           }}
         />
         <ThemeWatcher />
