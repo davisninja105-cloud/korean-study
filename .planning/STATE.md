@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Perceived & Real Performance
 current_phase: 31
-current_phase_name: Cards List Pagination & Virtualization
+current_phase_name: cards-list-pagination-virtualization
 status: executing
 stopped_at: Phase 31 UI-SPEC approved
-last_updated: "2026-08-07T15:48:11.321Z"
-last_activity: 2026-08-06
-last_activity_desc: Phase 30 complete, transitioned to Phase 31
+last_updated: "2026-08-07T15:54:58.882Z"
+last_activity: 2026-08-07
+last_activity_desc: Phase 31 execution started
 progress:
   total_phases: 6
   completed_phases: 1
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-06)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 31 — cards-list-pagination-&-virtualization
+**Current focus:** Phase 31 — cards-list-pagination-virtualization
 
 ## Current Position
 
-Phase: 31 — Cards List Pagination & Virtualization
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-08-06 — Phase 30 complete, transitioned to Phase 31
+Phase: 31 (cards-list-pagination-virtualization) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 31
+Last activity: 2026-08-07 — Phase 31 execution started
 
 ## Performance Metrics
 
