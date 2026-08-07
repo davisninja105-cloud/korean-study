@@ -1,7 +1,7 @@
 ---
 phase: 31
 slug: cards-list-pagination-virtualization
-status: draft
+status: approved
 shadcn_initialized: false
 preset: none
 created: 2026-08-07
@@ -14,6 +14,14 @@ created: 2026-08-07
 ---
 
 ## Design System
+
+**Visual hierarchy (checker-flagged addition):** unchanged from today's `/cards` page. The sticky
+search bar + "Add Card" button remain the primary visual anchor (top of viewport, always visible);
+the Filter icon + active-filter badge is the secondary control. Card rows and their grouped
+sections are the content below that anchor — populated-state visual design is untouched by this
+phase (see `## UI Considerations` → populated rows). This phase's new elements (skeletons, loading
+captions, retry links) are visually subordinate — small, muted (`text-muted`), inline with the
+content they describe — never competing with the search bar / Add Card anchor for attention.
 
 | Property | Value |
 |----------|-------|
@@ -43,7 +51,7 @@ Exceptions: `min-h-11` / `min-w-11` (44px) touch targets — existing project-wi
 
 New elements this phase adds (all reuse the existing scale, no new spacing values):
 - Skeleton card row: same `p-4` container padding as a real card row (visual continuity — the skeleton must occupy the exact footprint of the row it stands in for, preventing layout shift when real data replaces it).
-- Infinite-scroll sentinel: `h-px` (1px, effectively 0) — invisible, spacing-neutral trigger element positioned after each group's last loaded row.
+- Infinite-scroll sentinel: `h-px` (1px, effectively 0) — invisible, spacing-neutral trigger element positioned after each group's last loaded row. **Exception (checker-flagged):** this is a technical `IntersectionObserver` trigger target, not a visible spacing value — it renders no content and occupies no perceptible layout space, so it is excluded from the 4px-multiple spacing scale by design, the same way `min-h-11` is called out above as a floor rather than a gap.
 - Inline search-loading spinner: `gap-2` from the search input's trailing edge (sits inside the sticky bar's existing `gap-2` flex row).
 
 ---
@@ -118,28 +126,77 @@ No new color values are introduced. Every new element in this phase draws exclus
 
 ## UI Considerations
 
-Applicable state considerations resolved: 13 covered, 1 backstop, 0 unresolved.
+Run via the compiled `ui-consideration-probe` engine (not authored in prose) against 7 element
+surfaces this phase touches: **E1** Cards list, **E2** Reading practice list, **E3** Search
+input, **E4** Edit sheet on-demand sentence fetch, **E5** type group header, **E6** Add Card
+flow, **E7** Filter sheet (lesson range + type). E7 classified `unclassified` on the first pass
+(prose cues alone didn't trip a kind); it was re-run with an explicit `form` + `interactive-control`
+override per the propose-then-confirm step.
 
-| Category | Element(s) | Status | Resolution / Reason |
-|----------|------------|--------|---------------------|
-| empty | Cards list (list-collection) | ✅ covered | Three distinct empty copies per cause — zero cards overall, zero search matches, zero filter matches (see Copywriting Contract) — so the user always knows which control emptied the list. |
-| empty | Reading practice list (list-collection) | ✅ covered | Reuses existing two-case wording (no sentences synced yet vs. filtered to zero), now applied to Reading practice's own independent fetch per D-07. |
-| loading | Cards list — initial load (list-collection) | ✅ covered | Skeleton card rows (`bg-skeleton`, `animate-pulse`), same footprint (`p-4 rounded-xl`) as a real card row, grouped under the same section headers so the page shape doesn't shift when real data lands — matches the Phase 30 visible-skeleton pattern (PERCEPT-01). Count: 4 skeleton rows in the Vocabulary group (starts expanded per D-02), collapsed groups show only their header + count, no skeleton rows underneath until expanded. |
-| loading | Cards list — infinite-scroll batch (list-collection) | ✅ covered | 2–3 skeleton rows appended below the last real row of the group being extended, preceded by "Loading more…" caption; sentinel `IntersectionObserver` triggers the next fetch at `rootMargin: '0px 0px 600px 0px'` (approaching, not touching, the bottom) per D-03. |
-| loading | Search input — debounced request in flight (interactive-control) | ✅ covered | Inline spinner (existing `border-2 border-button border-t-transparent rounded-full animate-spin` pattern) appears at the search input's trailing edge; previously-loaded rows dim to `opacity-60` rather than being cleared, avoiding a blank-list flash during the ~300ms debounce + round trip. |
-| loading | Edit sheet — on-demand sentence fetch (form) | 🧪 backstop | Opening the Edit sheet for a card now requires a fetch for that card's full `sentences[]] (dropped from the list query per CARDS-01/D-01's premise). The sheet must show a loading placeholder (skeleton lines matching the sentence-editor's field shapes) between opening and the fetch resolving, never a flash of "no sentences" — flagged as backstop because there is no existing precedent component for this exact in-sheet fetch-loading shape; verify at execution that the placeholder renders before the real data, not after an empty state. |
-| error | Cards list — batch load failure (list-collection) | ✅ covered | Inline "Couldn't load more cards…" + retry link, positioned where the skeleton rows would have appeared; does not clear already-loaded rows above it (partial-failure tolerant). |
-| error | Search/filter request failure (interactive-control) | ✅ covered | Inline "Couldn't search right now…" + retry link near the search bar; previous results remain visible (same non-destructive pattern as the loading state). |
-| error | Edit sheet sentence fetch failure (form) | ✅ covered | Inline retry copy inside the sheet (see Copywriting Contract); the rest of the edit form (front/back/notes, which ARE already in memory from the list) still renders and is still editable — only the sentence editor section is blocked pending retry. |
-| populated | Cards list at typical volume (list-collection) | ✅ covered | Unchanged from today's row layout (badge, lesson tag, review count, Edit link, front/back/notes, indented sentence previews) — this phase changes data-loading mechanics, not the populated row's visual design. |
-| populated | Newly added card visibility (list-collection) | ✅ covered | A card added via "Add Card" appears at the top of its type group (existing `setCards(prev => [created, ...prev])` behavior) using the existing `.animate-card-in` fade-in; if that group is currently collapsed (Grammar/Phrase/Other start collapsed per D-02), the group auto-expands so the user sees confirmation their card was saved, rather than a silent no-op behind a collapsed header. |
-| overflow | Cards list — full ~1056-card deck scroll (list-collection) | ✅ covered | Windowed/virtualized rendering keeps the DOM node count bounded regardless of how many pages have loaded (CARDS-02) — the visual contract is that scrolling must look and feel identical to the current unvirtualized list (same row spacing, same group headers, same sticky search bar), with no visible seam where virtualization begins. |
-| zero-one-many | Type groups (Vocabulary/Grammar/Phrase/Other) (list-collection) | ✅ covered | Existing "N card(s)" pluralization pattern is preserved; group header counts are now server-aggregated full-deck totals (not "loaded so far") per the CONTEXT.md decision, so a collapsed group still reads correctly (e.g. "Grammar · 214 cards") even though zero of its rows are loaded yet. |
+**Applicable state considerations resolved: 25 covered / 14 backstop / 11 dismissed / 0 unresolved (50 total).**
+
+| Element | Category | Status | Resolution / Reason |
+|---------|----------|--------|---------------------|
+| E1 Cards list | empty | ✅ covered | Three distinct empty copies per cause — zero cards overall, zero search matches, zero filter matches (Copywriting Contract) — the user always knows which control emptied the list. |
+| E1 Cards list | loading | ✅ covered | Skeleton card rows (`bg-skeleton`, `animate-pulse`, `p-4 rounded-xl`) on initial load (4 in the Vocabulary group, per D-02); 2–3 skeleton rows appended below the last real row during infinite-scroll batch loading, preceded by "Loading more…". |
+| E1 Cards list | error | ✅ covered | Inline "Couldn't load more cards…" + retry link, positioned where skeleton rows would appear; does not clear already-loaded rows above it. |
+| E1 Cards list | populated | ✅ covered | Unchanged from today's row layout — badge, lesson tag, review count, Edit link, front/back/notes, indented sentence previews. |
+| E1 Cards list | partial | ✅ covered | A failed batch load is partial-failure tolerant — already-loaded rows above the failure point stay visible and untouched; only the not-yet-loaded tail shows the retry affordance. |
+| E1 Cards list | overflow | ✅ covered | Windowed/virtualized rendering keeps DOM node count bounded regardless of pages loaded (CARDS-02); scroll must look/feel identical to today's unvirtualized list. |
+| E1 Cards list | zero-one-many | ✅ covered | "N card(s)" pluralization preserved; group header counts are server-aggregated full-deck totals, correct even when zero rows are loaded under a collapsed group. |
+| E2 Reading practice | empty | ✅ covered | Two-case wording (no sentences synced yet / filtered to zero) reused, applied to Reading practice's independent fetch per D-07. |
+| E2 Reading practice | loading | ✅ covered | Same `bg-skeleton`/`animate-pulse` pattern as Cards list — Color section explicitly reserves the token for "skeleton card rows on `/cards` initial load **and on Reading practice initial load**". |
+| E2 Reading practice | error | 🧪 backstop | No Reading-practice-specific error copy is authored; D-07's independent fetch makes a load failure plausible. Presumed to reuse the same "Couldn't load more…" + retry pattern as E1 by symmetry — not explicitly restated. Verify at execution: a Reading-practice batch failure shows retry copy, not a silent stall. |
+| E2 Reading practice | populated | ✅ covered | Sentence-row visual design is unchanged; this phase changes fetch mechanics only (same reasoning as E1/populated). |
+| E2 Reading practice | partial | 🧪 backstop | Same partial-failure-tolerant contract as E1 should extend here by symmetry (D-08: independent state) but isn't explicitly restated. Verify at execution: a failed Reading-practice batch load doesn't clear already-loaded sentences. |
+| E2 Reading practice | overflow | ✅ covered | D-07 explicitly specifies Reading practice gets its own independent "paginated/**windowed**" fetch — establishes the same DOM-bounded contract as E1. |
+| E2 Reading practice | zero-one-many | 🧪 backstop | No explicit count/pluralization copy is authored for Reading practice (it is sentence-per-row, not type-grouped). Verify at execution whether a count string is needed at all, or the flat list suffices. |
+| E2 Reading practice | long-text | ❌ dismissed | Existing `.hangul` `word-break: keep-all` wrap behavior is explicitly out of scope/unchanged for long Korean sentence text (see "Deliberately out of scope" below). |
+| E3 Search input | empty | ✅ covered | `No results for "{query}"` surfaces the actual query so the user sees what was searched (server-side search across the full ~1056-card deck). |
+| E3 Search input | loading | ✅ covered | Inline spinner (existing `border-2 border-button border-t-transparent rounded-full animate-spin` pattern) at the input's trailing edge; previously-loaded rows dim to `opacity-60` rather than clearing, avoiding a blank flash during the ~300ms debounce + round trip. |
+| E3 Search input | error | ✅ covered | Inline "Couldn't search right now…" + retry link near the search bar; previous results remain visible. |
+| E3 Search input | populated | ✅ covered | Search results render in the same row layout as the grouped view, flattened out of type-groups while a term is active (D-06). |
+| E3 Search input | partial | ✅ covered | Previously-loaded rows stay visible (dimmed, not cleared) while a new search request is in flight or fails — same non-destructive pattern as loading/error. |
+| E3 Search input | overflow | ✅ covered | Search results stay in the same windowed/virtualized list as the grouped view (E1) — DOM stays bounded regardless of result-set size. |
+| E3 Search input | zero-one-many | 🧪 backstop | No explicit copy for a single-match vs. many-matches count above results (e.g. "1 result" vs "N results"). Verify at execution whether a count header is needed, or the flattened list with no header suffices. |
+| E3 Search input | long-text | ❌ dismissed | Same `.hangul` reasoning as E2 — search doesn't change text rendering, out of scope. |
+| E4 Edit sheet fetch | empty | 🧪 backstop | Whether a card can genuinely have zero sentences (distinct from a fetch failure) isn't addressed. Verify at execution: confirm this case is actually unreachable (every card has 1–3 sentences per extraction contract) or design a true empty state if it is reachable. |
+| E4 Edit sheet fetch | loading | 🧪 backstop | Already flagged backstop by the researcher: loading placeholder (skeleton lines matching the sentence-editor's field shapes) between sheet-open and fetch-resolving, never a flash of "no sentences" — no existing precedent component for this exact shape. Verify at execution that the placeholder renders before real data, not after an empty state. |
+| E4 Edit sheet fetch | error | ✅ covered | Inline retry copy inside the sheet (Copywriting Contract); front/back/notes (already in memory) still render/editable — only the sentence editor section is blocked pending retry. |
+| E4 Edit sheet fetch | populated | 🧪 backstop | Once the fetch resolves, the sentence editor is presumed identical to today's existing `CardEditor` sentence-editor UI ("the sentence editor's field shapes" implies reuse) but this isn't explicitly restated as its own description. Verify at execution: the post-fetch render matches the pre-existing CardEditor sentence UI exactly. |
+| E4 Edit sheet fetch | partial | 🧪 backstop | Whether the sentences fetch is atomic (all-or-nothing) or could partially populate (e.g. 2 of 3 sentences) isn't addressed. Verify at execution: the fetch is atomic — no partial-sentence-list rendering. |
+| E4 Edit sheet fetch | overflow | ❌ dismissed | Reuses the existing bounded 1–3-sentence CardEditor layout — no virtualization concern at this scale, unchanged from today. |
+| E4 Edit sheet fetch | zero-one-many | 🧪 backstop | Sentence-count (1–3) pluralization/layout for the on-demand-loaded editor isn't restated. Verify at execution: matches today's unchanged CardEditor behavior. |
+| E4 Edit sheet fetch | long-text | ❌ dismissed | Same `.hangul` reasoning; sentence editor text areas are pre-existing, unchanged by this phase. |
+| E5 Group header | empty | ✅ covered | Covered via E1's group-level empty state — a group with zero cards shows E1's empty copy in place of rows. |
+| E5 Group header | loading | ✅ covered | Collapsed groups show header + server-aggregated count with no skeleton rows underneath until expanded; expanded groups (Vocabulary) show E1's skeleton rows. |
+| E5 Group header | error | 🧪 backstop | No group-header-specific error state (e.g. the aggregated count itself failing to load) is addressed — presumed to fail together with the page's overall data fetch, not isolated per-group. Verify at execution if a per-group-count-fetch becomes its own code path. |
+| E5 Group header | populated | ✅ covered | "Grammar · 214 cards" style header; count is a real full-deck number regardless of loaded-row count. |
+| E5 Group header | partial | ❌ dismissed | Group headers are metadata-only (label + count), not a row list themselves — no meaningful partial state distinct from the rows underneath (covered by E1). |
+| E5 Group header | overflow | ❌ dismissed | Header text ("Grammar · 214 cards") is short and bounded; no truncation/overflow concern distinct from existing badge/label styling. |
+| E5 Group header | zero-one-many | ✅ covered | "N card(s)" pluralization preserved, correct at 0/1/many per the existing convention. |
+| E6 Add Card flow | empty | ❌ dismissed | N/A — Add Card is a creation action, not a data-display surface; no "empty" state applies to the act of adding. |
+| E6 Add Card flow | loading | 🧪 backstop | No loading-state copy/spinner is specified for the create-card submit action itself (distinct from field validation) — presumed to reuse today's existing Add-sheet submit behavior, unchanged. Verify at execution if create-card POST latency ever needs an explicit spinner. |
+| E6 Add Card flow | error | 🧪 backstop | No explicit copy for a failed Add Card submission — presumed unchanged from today's existing (out-of-scope) error handling. Verify at execution that this inherited-unchanged assumption holds. |
+| E6 Add Card flow | populated | ✅ covered | New card appears at the top of its type group using the existing `.animate-card-in` fade-in (`setCards(prev => [created, ...prev])`). |
+| E6 Add Card flow | partial | ❌ dismissed | N/A — card creation is atomic (succeeds fully or fails); no partial-creation UI state exists today or is introduced here. |
+| E6 Add Card flow | overflow | ❌ dismissed | N/A — a single new row insertion doesn't interact with virtualization/overflow beyond the existing windowed list absorbing it normally. |
+| E6 Add Card flow | zero-one-many | ✅ covered | If the target group is currently collapsed (Grammar/Phrase/Other per D-02), it auto-expands so the user sees confirmation their card was saved — explicitly handles the zero-visible → one-visible transition. |
+| E7 Filter sheet | empty | ✅ covered | "No cards match this filter." (Copywriting Contract) covers the filter's zero-result consequence; the filter sheet's own controls (lesson range, type pills) always show all available options, never an "empty" control state. |
+| E7 Filter sheet | loading | 🧪 backstop | Committing a filter re-issues the server-side query (reuses E1's skeleton loading), but whether the Filter Sheet's own "Done" button shows a brief loading state vs. closing immediately/optimistically isn't specified. Verify at execution which behavior was implemented and that it's not a silent no-op gap. |
+| E7 Filter sheet | error | 🧪 backstop | Presumed to reuse the same "Couldn't search right now…" + retry pattern as E3 for a failed filter-commit request, but not explicitly stated as shared copy. Verify at execution that a failed filter commit surfaces retry copy, not a silent stall. |
+| E7 Filter sheet | partial | ❌ dismissed | N/A — filter selections are local sheet-state; they're either uncommitted (sheet still open) or committed as a whole on "Done", no partial-submission concept. |
+| E7 Filter sheet | long-text | ❌ dismissed | Filter labels (lesson numbers, type names) are short fixed-vocabulary strings — no long-text overflow risk, unchanged from today. |
 
 Deliberately out of scope for this phase (not re-litigated, existing behavior unchanged):
 - Long-text overflow on card fronts/backs — existing `.hangul` `word-break: keep-all` wrap behavior, untouched.
 - Destructive confirmation UX (native `confirm()`) — untouched, not part of pagination/virtualization work.
 - Nav/tab-toggle long-text at extreme counts — "Cards (1056)" already renders correctly today per the existing smoke-test assertion; unaffected by pagination.
+
+**Executor note:** the 14 🧪 backstop rows above are not blocking — each names a concrete thing to
+visually/functionally verify during or after implementation (most are "confirm X reuses existing
+Y behavior, unchanged" symmetry assumptions from D-07/D-08). None require new design decisions;
+they require confirming the executor's build actually matches the stated symmetry assumption.
 
 ---
 
@@ -154,11 +211,13 @@ Deliberately out of scope for this phase (not re-litigated, existing behavior un
 
 ## Checker Sign-Off
 
-- [ ] Dimension 1 Copywriting: PASS
-- [ ] Dimension 2 Visuals: PASS
-- [ ] Dimension 3 Color: PASS
-- [ ] Dimension 4 Typography: PASS
-- [ ] Dimension 5 Spacing: PASS
-- [ ] Dimension 6 Registry Safety: PASS
+- [x] Dimension 1 Copywriting: PASS
+- [x] Dimension 2 Visuals: PASS (non-blocking FLAG resolved — visual hierarchy now stated explicitly above)
+- [x] Dimension 3 Color: PASS
+- [x] Dimension 4 Typography: PASS
+- [x] Dimension 5 Spacing: PASS (non-blocking FLAG resolved — `h-px` sentinel exception now called out)
+- [x] Dimension 6 Registry Safety: PASS
+
+**Approval:** APPROVED — gsd-ui-checker, both non-blocking recommendations addressed post-verification.
 
 **Approval:** pending
