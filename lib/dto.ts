@@ -85,6 +85,17 @@ export interface GroupCountsDTO {
   total: number
 }
 
+// Returned by lib/cards-list.ts:getSentencesPage() — D-07's independent
+// Reading Practice cursor-paginated sentence stream (Sentence, not Card, is
+// the row unit). Each row carries its full parent CardDTO (sentences always
+// `[]` on the nested card — the list-select intentionally excludes them,
+// same as CardsPageDTO) for rendering/audio/tap-to-gloss context.
+export interface SentencePageDTO {
+  sentences: (SentenceDTO & { card: CardDTO })[]
+  nextCursor: string | null
+  hasMore: boolean
+}
+
 // For /api/lessons and LessonRangeFilter
 export interface LessonDTO {
   id: string

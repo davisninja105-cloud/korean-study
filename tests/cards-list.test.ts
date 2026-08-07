@@ -19,12 +19,15 @@ vi.mock('@/lib/prisma', () => ({
       findMany: vi.fn(),
       groupBy: vi.fn(),
     },
+    sentence: {
+      findMany: vi.fn(),
+    },
   },
 }))
 
 // Import AFTER the mock declaration (vitest hoists vi.mock above imports).
 import { prisma } from '@/lib/prisma'
-import { getCardsPage, getCardsGroupCounts } from '@/lib/cards-list'
+import { getCardsPage, getCardsGroupCounts, getSentencesPage } from '@/lib/cards-list'
 
 // A minimal Prisma row shape matching cardSelect's post-select fields — no
 // `sentences` key at all, since the select drops it entirely (CARDS-01).
@@ -344,5 +347,182 @@ describe('getCardsGroupCounts', () => {
     expect(callArgs.where.type).toBeUndefined()
     expect(callArgs.where.lesson).toEqual({ orderIndex: { gte: 1, lte: 5 } })
     expect(callArgs.where.OR).toContainEqual({ front: { contains: 'test' } })
+  })
+})
+
+// ── getSentencesPage (31-03, D-07) ──────────────────────────────────────────
+
+function makeSentenceRow(id: string, overrides: Record<string, unknown> = {}) {
+  const at = new Date('2026-01-01T00:00:00Z')
+  return {
+    id,
+    createdAt: at,
+    updatedAt: at,
+    cardId: `card-${id}`,
+    korean: `korean-${id}`,
+    targetForm: `target-${id}`,
+    translation: `translation-${id}`,
+    orderIndex: 0,
+    card: makeRow(`card-${id}`),
+    ...overrides,
+  }
+}
+
+describe('getSentencesPage', () => {
+  beforeEach(() => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockReset()
+  })
+
+  it('returns a capped page of sentences with their parent card data attached', async () => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      makeSentenceRow('1'),
+      makeSentenceRow('2'),
+    ])
+
+    const result = await getSentencesPage({
+      cursor: null,
+      search: null,
+      lessonFrom: null,
+      lessonTo: null,
+      take: 30,
+    })
+
+    expect(result.sentences).toHaveLength(2)
+    expect(result.sentences[0].card).toBeDefined()
+    expect(result.sentences[0].card.id).toBe('card-1')
+    // Nested card carries no real sentences of its own (list-select shape).
+    expect(result.sentences[0].card.sentences).toEqual([])
+
+    const callArgs = (prisma.sentence.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(callArgs.include).toEqual({ card: { select: expect.any(Object) } })
+  })
+
+  it('detects hasMore via the overfetch-by-one probe row and sets nextCursor to the last KEPT row', async () => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      makeSentenceRow('a'),
+      makeSentenceRow('b'),
+      makeSentenceRow('c'),
+    ])
+
+    const result = await getSentencesPage({
+      cursor: null,
+      search: null,
+      lessonFrom: null,
+      lessonTo: null,
+      take: 2,
+    })
+
+    expect(result.sentences).toHaveLength(2)
+    expect(result.sentences.map((s) => s.id)).toEqual(['a', 'b'])
+    expect(result.hasMore).toBe(true)
+    expect(result.nextCursor).toBe('b')
+
+    const callArgs = (prisma.sentence.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(callArgs.take).toBe(3) // take + 1
+    expect(callArgs.cursor).toBeUndefined()
+    expect(callArgs.skip).toBeUndefined()
+  })
+
+  it('a page boundary landing exactly on the last row returns hasMore:false / nextCursor:null (no overshoot)', async () => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      makeSentenceRow('a'),
+      makeSentenceRow('b'),
+    ])
+
+    const result = await getSentencesPage({
+      cursor: null,
+      search: null,
+      lessonFrom: null,
+      lessonTo: null,
+      take: 2,
+    })
+
+    expect(result.hasMore).toBe(false)
+    expect(result.nextCursor).toBeNull()
+  })
+
+  it('passes cursor/skip to Prisma only when a cursor is provided (subsequent page)', async () => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([makeSentenceRow('c')])
+
+    await getSentencesPage({
+      cursor: 'b',
+      search: null,
+      lessonFrom: null,
+      lessonTo: null,
+      take: 2,
+    })
+
+    const callArgs = (prisma.sentence.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(callArgs.cursor).toEqual({ id: 'b' })
+    expect(callArgs.skip).toBe(1)
+  })
+
+  it('orders by createdAt desc with an id tiebreak for deterministic cursor pagination', async () => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([makeSentenceRow('1')])
+
+    await getSentencesPage({ cursor: null, search: null, lessonFrom: null, lessonTo: null, take: 30 })
+
+    const callArgs = (prisma.sentence.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(callArgs.orderBy).toEqual([{ createdAt: 'desc' }, { id: 'desc' }])
+  })
+
+  it('the take param is not clamped by the function itself — accepts whatever take it is given (clamping lives in the route)', async () => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+
+    await getSentencesPage({ cursor: null, search: null, lessonFrom: null, lessonTo: null, take: 9999 })
+
+    const callArgs = (prisma.sentence.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(callArgs.take).toBe(10000) // 9999 + 1, unclamped
+  })
+
+  it('composes a search where-clause against the sentence\'s own korean/translation text', async () => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+
+    await getSentencesPage({ cursor: null, search: 'hello', lessonFrom: null, lessonTo: null, take: 30 })
+
+    const callArgs = (prisma.sentence.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(callArgs.where.OR).toEqual([
+      { korean: { contains: 'hello' } },
+      { translation: { contains: 'hello' } },
+    ])
+  })
+
+  it('omits the OR search clause entirely when search is null', async () => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+
+    await getSentencesPage({ cursor: null, search: null, lessonFrom: null, lessonTo: null, take: 30 })
+
+    const callArgs = (prisma.sentence.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(callArgs.where.OR).toBeUndefined()
+  })
+
+  it('composes a lesson-range where-clause against the nested card.lesson.orderIndex', async () => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+
+    await getSentencesPage({ cursor: null, search: null, lessonFrom: 3, lessonTo: 7, take: 30 })
+
+    const callArgs = (prisma.sentence.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(callArgs.where.card).toEqual({ lesson: { orderIndex: { gte: 3, lte: 7 } } })
+  })
+
+  it('composes a one-sided lesson-range where-clause when only lessonFrom or lessonTo is set', async () => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+
+    await getSentencesPage({ cursor: null, search: null, lessonFrom: 3, lessonTo: null, take: 30 })
+    let callArgs = (prisma.sentence.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(callArgs.where.card).toEqual({ lesson: { orderIndex: { gte: 3 } } })
+
+    await getSentencesPage({ cursor: null, search: null, lessonFrom: null, lessonTo: 7, take: 30 })
+    callArgs = (prisma.sentence.findMany as ReturnType<typeof vi.fn>).mock.calls[1][0]
+    expect(callArgs.where.card).toEqual({ lesson: { orderIndex: { lte: 7 } } })
+  })
+
+  it('omits the card lesson-range filter entirely when neither lessonFrom nor lessonTo is set', async () => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+
+    await getSentencesPage({ cursor: null, search: null, lessonFrom: null, lessonTo: null, take: 30 })
+
+    const callArgs = (prisma.sentence.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(callArgs.where.card).toBeUndefined()
   })
 })

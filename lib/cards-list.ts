@@ -9,7 +9,7 @@
 
 import { prisma } from '@/lib/prisma'
 import type { Prisma } from '@/app/generated/prisma/client'
-import type { CardDTO, CardsPageDTO, GroupCountsDTO } from '@/lib/dto'
+import type { CardDTO, CardsPageDTO, GroupCountsDTO, SentenceDTO, SentencePageDTO } from '@/lib/dto'
 
 // select-trimmed: every column CardDTO requires MINUS `sentences` — CARDS-01
 // requires the list query to carry zero sentence rows. Sentences move to an
@@ -170,4 +170,87 @@ export async function getCardsGroupCounts(
   const byType = await prisma.card.groupBy({ by: ['type'], where, _count: true })
   const total = byType.reduce((sum, g) => sum + g._count, 0)
   return { byType, total }
+}
+
+export interface SentencesPageParams {
+  cursor: string | null // last-seen Sentence.id, or null for page 1
+  search: string | null // already-lowercased by the caller (Pitfall 4)
+  lessonFrom: number | null
+  lessonTo: number | null
+  take: number // clamping lives in the caller (app/api/cards/sentences/route.ts), not here
+}
+
+/**
+ * Cursor-paginated read of Sentence rows across the whole deck — D-07's
+ * independently-paginated Reading Practice query, where Sentence (not Card)
+ * is the row unit, so the tab never depends on whatever page of Cards
+ * happens to be loaded client-side. Mirrors getCardsPage's overfetch-by-one
+ * (`take + 1`) hasMore detection and `[{createdAt:'desc'},{id:'desc'}]`
+ * deterministic id-tiebreak ordering. `search` matches inside the
+ * sentence's OWN `korean`/`translation` text (not the parent card's
+ * front/back) — consistent with D-05's search semantics on the Cards
+ * endpoint, just scoped to the sentence itself since Sentence is the row
+ * unit here.
+ */
+export async function getSentencesPage(
+  params: SentencesPageParams
+): Promise<SentencePageDTO> {
+  const where: Prisma.SentenceWhereInput = {}
+
+  if (params.search) {
+    const q = params.search
+    where.OR = [{ korean: { contains: q } }, { translation: { contains: q } }]
+  }
+
+  if (params.lessonFrom !== null || params.lessonTo !== null) {
+    where.card = {
+      lesson: {
+        orderIndex: {
+          ...(params.lessonFrom !== null ? { gte: params.lessonFrom } : {}),
+          ...(params.lessonTo !== null ? { lte: params.lessonTo } : {}),
+        },
+      },
+    }
+  }
+
+  const rows = await prisma.sentence.findMany({
+    where,
+    include: { card: { select: cardSelect } },
+    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    take: params.take + 1,
+    ...(params.cursor ? { cursor: { id: params.cursor }, skip: 1 } : {}),
+  })
+
+  const hasMore = rows.length > params.take
+  const page = hasMore ? rows.slice(0, params.take) : rows
+  const nextCursor = hasMore ? page[page.length - 1].id : null
+
+  const sentences: (SentenceDTO & { card: CardDTO })[] = page.map((s) => ({
+    id: s.id,
+    cardId: s.cardId,
+    korean: s.korean,
+    targetForm: s.targetForm,
+    translation: s.translation,
+    orderIndex: s.orderIndex,
+    createdAt: s.createdAt.toISOString(),
+    updatedAt: s.updatedAt.toISOString(),
+    card: {
+      ...s.card,
+      createdAt: s.card.createdAt.toISOString(),
+      updatedAt: s.card.updatedAt.toISOString(),
+      lesson: s.card.lesson
+        ? { ...s.card.lesson, createdAt: s.card.lesson.createdAt.toISOString() }
+        : null,
+      review: s.card.review
+        ? {
+            ...s.card.review,
+            nextReview: s.card.review.nextReview.toISOString(),
+            lastReview: s.card.review.lastReview?.toISOString() ?? null,
+          }
+        : null,
+      sentences: [],
+    },
+  }))
+
+  return { sentences, nextCursor, hasMore }
 }
