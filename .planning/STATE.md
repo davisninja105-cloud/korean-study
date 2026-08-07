@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Perceived & Real Performance
 current_phase: 30
-current_phase_name: Instant Feedback & Cold-Start Unblocking
-status: ready
+current_phase_name: instant-feedback-cold-start-unblocking
+status: executing
 stopped_at: Phase 30 UI-SPEC approved
-last_updated: "2026-08-06T16:05:39.054Z"
-last_activity: 2026-08-05
-last_activity_desc: v1.8 roadmap created (Phases 30–35, 21/21 requirements mapped)
+last_updated: "2026-08-07T00:16:42.351Z"
+last_activity: 2026-08-06
+last_activity_desc: Phase 30 execution started
 progress:
   total_phases: 6
   completed_phases: 0
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-05)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 30 — Instant Feedback & Cold-Start Unblocking
+**Current focus:** Phase 30 — instant-feedback-cold-start-unblocking
 
 ## Current Position
 
-Phase: 30 — Instant Feedback & Cold-Start Unblocking
-Plan: —
-Status: Roadmap created, phase not yet planned
-Last activity: 2026-08-05 — v1.8 roadmap created (Phases 30–35, 21/21 requirements mapped)
+Phase: 30 (instant-feedback-cold-start-unblocking) — EXECUTING
+Plan: 1 of 3
+Status: Executing Phase 30
+Last activity: 2026-08-06 — Phase 30 execution started
 
 ## Performance Metrics
 
