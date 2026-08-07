@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
-import { Virtuoso } from 'react-virtuoso'
+import { Virtuoso, type VirtuosoHandle, type StateSnapshot } from 'react-virtuoso'
 import CardEditor from '@/components/CardEditor'
 import LessonRangeFilter, { isFullSpan } from '@/components/LessonRangeFilter'
 import HighlightedSentence from '@/components/HighlightedSentence'
@@ -12,7 +12,14 @@ import { useWordTap } from '@/components/GlossProvider'
 import { useFreshPayload } from '@/components/FreshnessWatcher'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { typeBadgeClass } from '@/lib/card-style'
-import type { CardDTO, CardsPageDTO, GroupCountsDTO, LessonRefItem } from '@/lib/dto'
+import type {
+  CardDTO,
+  CardsPageDTO,
+  GroupCountsDTO,
+  LessonRefItem,
+  SentenceDTO,
+  SentencePageDTO,
+} from '@/lib/dto'
 
 type ActiveView = 'cards' | 'reading-practice'
 
@@ -49,6 +56,9 @@ const COPY = {
   filterNoMatches: 'No cards match this filter.',
   queryError: "Couldn't search right now. Try again.",
   noCardsAtAll: 'No cards yet. Sync your Google Doc to get started.',
+  noSentencesYet: 'No example sentences yet. Sync a lesson to generate them.',
+  noSentencesFilterMatch: 'No example sentences match your filter.',
+  editSentencesLoadError: "Couldn't load this card's sentences. Try again.",
 } as const
 
 const noResultsFor = (query: string): string => `No results for "${query}".`
@@ -81,6 +91,29 @@ const EMPTY_SEARCH_STATE: SearchState = {
   loadMoreError: null,
 }
 
+// D-07's independent Reading Practice fetch state — Sentence (not Card) is
+// the row unit, sourced from GET /api/cards/sentences (lib/cards-list.ts
+// getSentencesPage), never derived from whatever page of the Cards tab's
+// Vocabulary group happens to be loaded (the 31-01 interim this plan
+// replaces). `loading` covers BOTH the initial page fetch and a
+// scroll-triggered next-page append — distinguished at render time by
+// whether `loaded` is already non-empty.
+interface ReadingPracticeState {
+  loaded: (SentenceDTO & { card: CardDTO })[]
+  nextCursor: string | null
+  hasMore: boolean
+  loading: boolean
+  error: string | null
+}
+
+const EMPTY_READING_STATE: ReadingPracticeState = {
+  loaded: [],
+  nextCursor: null,
+  hasMore: false,
+  loading: false,
+  error: null,
+}
+
 // Composed-row shape for the single flat <Virtuoso> instance (31-RESEARCH.md
 // Pattern 2). Group headers, skeleton placeholders, and status captions are
 // all just rows, not a separate library API — this is what lets the grouped
@@ -90,6 +123,13 @@ type Row =
   | { kind: 'card'; groupKey: GroupKey; card: CardDTO }
   | { kind: 'skeleton'; sectionKey: string; skeletonId: number }
   | { kind: 'status'; sectionKey: string; status: 'loading-more' | 'end' | 'error' }
+
+// Reading Practice's own composed-row shape (D-07) — a flat sentence
+// stream, never type-grouped, so there's no 'header' variant here.
+type ReadingRow =
+  | { kind: 'sentence'; sentence: SentenceDTO & { card: CardDTO } }
+  | { kind: 'skeleton'; skeletonId: number }
+  | { kind: 'status'; status: 'loading-more' | 'end' | 'error' }
 
 function labelForGroup(key: GroupKey): string {
   return key === 'other' ? 'Other' : key.charAt(0).toUpperCase() + key.slice(1)
@@ -137,6 +177,29 @@ async function fetchCardsPage(params: {
   if (params.lessonTo !== null) qs.set('lessonTo', String(params.lessonTo))
   qs.set('take', String(params.take))
   const res = await fetch(`/api/cards?${qs.toString()}`)
+  if (!res.ok) throw new Error(`Failed: ${res.status}`)
+  return res.json()
+}
+
+// D-07 — Reading Practice's own independent fetch, entirely separate from
+// fetchCardsPage above. Shares the search/lesson-range params (a single
+// search box and Filter Sheet drive both views) but intentionally ignores
+// the type-pill filter — Reading Practice is a flat sentence stream, not
+// type-grouped (must_haves.truths backstop item).
+async function fetchSentencesPage(params: {
+  cursor: string | null
+  search: string | null
+  lessonFrom: number | null
+  lessonTo: number | null
+  take: number
+}): Promise<SentencePageDTO> {
+  const qs = new URLSearchParams()
+  if (params.cursor) qs.set('cursor', params.cursor)
+  if (params.search) qs.set('search', params.search)
+  if (params.lessonFrom !== null) qs.set('lessonFrom', String(params.lessonFrom))
+  if (params.lessonTo !== null) qs.set('lessonTo', String(params.lessonTo))
+  qs.set('take', String(params.take))
+  const res = await fetch(`/api/cards/sentences?${qs.toString()}`)
   if (!res.ok) throw new Error(`Failed: ${res.status}`)
   return res.json()
 }
@@ -204,6 +267,30 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   const [deletingIds, setDeletingIds] = useState<Set<string>>(new Set())
   const [activeView, setActiveView] = useState<ActiveView>('cards')
 
+  // ── Reading Practice (D-07 independent fetch, D-08 tab-state preservation) ──
+  const [readingPractice, setReadingPractice] = useState<ReadingPracticeState>(EMPTY_READING_STATE)
+  // Stale-response guard, mirroring filterGenerationRef below — a search/
+  // lesson-range change while a Reading Practice fetch is in flight must not
+  // let the superseded response overwrite newer results.
+  const readingPracticeGenerationRef = useRef(0)
+  // Fetched lazily, exactly once, the first time the user switches to the
+  // Reading Practice tab (mirrors a collapsed Cards group's expand-on-tap
+  // gate) — never re-fetched merely by switching tabs (D-08).
+  const readingPracticeVisitedRef = useRef(false)
+
+  // D-08: react-virtuoso's own documented snapshot/restore pair for
+  // preserving scroll position across the conditional-mount/unmount that
+  // happens when `activeView` toggles (31-RESEARCH.md Pattern 4) — a
+  // `display:none`-hidden mounted Virtuoso risks broken height
+  // computation on unhide, so the officially-supported approach is used
+  // instead. The `groups`/`readingPractice` row DATA already survives the
+  // toggle regardless, since it lives in this component's own state, not
+  // inside the <Virtuoso> subtree.
+  const cardsVirtuosoRef = useRef<VirtuosoHandle>(null)
+  const [cardsSnapshot, setCardsSnapshot] = useState<StateSnapshot | undefined>(undefined)
+  const readingVirtuosoRef = useRef<VirtuosoHandle>(null)
+  const [readingSnapshot, setReadingSnapshot] = useState<StateSnapshot | undefined>(undefined)
+
   // Shared error for a failed SEARCH request or a failed FILTER-COMMIT
   // request (Done-triggered first-page refresh) — both surface the same
   // "Couldn't search right now. Try again." copy per the must_haves backstop
@@ -223,10 +310,40 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   const [editingDetail, setEditingDetail] = useState<CardDTO | null>(null)
   const [editingDetailLoading, setEditingDetailLoading] = useState(false)
   const [editingDetailError, setEditingDetailError] = useState(false)
+  // Task 2 (E4): the already-in-memory front/back/notes/type — seeded from
+  // whichever loaded row the user tapped "Edit" on — so those fields render
+  // editable IMMEDIATELY on sheet-open, with no wait for the sentences
+  // fetch. Only the sentence-editor section is gated on `editingDetail`
+  // resolving; these core fields never are. `null` only in the defensive
+  // case where no matching loaded summary can be found (shouldn't normally
+  // happen — `openEdit` is always called from an already-rendered row).
+  const [editingDraft, setEditingDraft] = useState<{
+    type: string
+    front: string
+    back: string
+    notes: string
+  } | null>(null)
   // Race guard: an in-flight fetch for a since-closed/reopened id must never
   // clobber a newer id's state. Read at async-completion time (not a stale
   // render-time closure) — same pattern as StudyClient.tsx's phaseRef.
   const editingIdRef = useRef<string | null>(null)
+
+  // Looks up the already-loaded summary CardDTO for `id` across every
+  // client-held row source (grouped browse, flattened search results,
+  // Reading Practice's own sentence rows) — this is what lets the Edit
+  // sheet render front/back/notes/type instantly, before GET /api/cards/[id]
+  // resolves.
+  const findLoadedCardSummary = (id: string): CardDTO | undefined => {
+    for (const key of GROUP_KEYS) {
+      const found = groups[key].loaded.find((c) => c.id === id)
+      if (found) return found
+    }
+    const foundSearch = searchResults.loaded.find((c) => c.id === id)
+    if (foundSearch) return foundSearch
+    const foundReading = readingPractice.loaded.find((s) => s.card.id === id)
+    if (foundReading) return foundReading.card
+    return undefined
+  }
 
   const fetchEditingDetail = (id: string) => {
     editingIdRef.current = id
@@ -249,8 +366,14 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   }
 
   const openEdit = (id: string) => {
+    const summary = findLoadedCardSummary(id)
     setEditingId(id)
     setEditingDetail(null)
+    setEditingDraft(
+      summary
+        ? { type: summary.type, front: summary.front, back: summary.back, notes: summary.notes ?? '' }
+        : null
+    )
     fetchEditingDetail(id)
   }
 
@@ -259,6 +382,7 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
     setEditingId(null)
     setEditingDetail(null)
     setEditingDetailError(false)
+    setEditingDraft(null)
   }
 
   const maxOrder = lessons.length > 0 ? lessons[lessons.length - 1].orderIndex : 1
@@ -309,15 +433,18 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   }
 
   // JSON backstop delivery (26-05-PLAN.md) — Suspense-independent second
-  // delivery path for the card list. KNOWN INTERIM GAP (31-RESEARCH.md
-  // Pitfall 1, deferred to 31-04): FreshnessWatcher's `/cards` backstop still
-  // fetches the OLD full-array shape and gates on `Array.isArray(result)`,
-  // which is always false against the new CardsPageDTO object — so
-  // `freshCards` never actually delivers on this page today. This handler is
-  // kept (harmless no-op) so the wiring below activates for free once
-  // FreshnessWatcher's `/cards` branch is fixed to emit an upsert-only merge
-  // instead of a wholesale replace. Also guarded against an active
-  // client-side query for the same reason as the block above.
+  // delivery path for the card list. FreshnessWatcher's `/cards` backstop
+  // fetches a single, PARTIAL `CardsPageDTO` page (never the full deck) —
+  // so adopting it must be an upsert-by-id merge into each card's own
+  // per-type group, never a wholesale replace (31-RESEARCH.md Pitfall 1,
+  // T-31-08, must_haves.prohibitions CARDS-01). A card present in the
+  // payload updates its matching already-loaded row in place; a card NOT
+  // already loaded in its group is deliberately left out (a partial
+  // backstop page is never authoritative for "what else exists" — only
+  // `groupCounts` is authoritative for totals); a card absent from the
+  // payload is NEVER removed — deletions remain sourced exclusively from
+  // the existing optimistic `handleDelete` path. Also guarded against an
+  // active client-side query for the same reason as the block above.
   const { cards: freshCards } = useFreshPayload()
   const [prevFreshCards, setPrevFreshCards] = useState(freshCards)
   if (freshCards !== prevFreshCards) {
@@ -330,7 +457,19 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       deletingIds.size === 0 &&
       !hasActiveClientQuery
     ) {
-      setGroups((prev) => ({ ...prev, vocabulary: { ...prev.vocabulary, loaded: freshCards } }))
+      setGroups((prev) => {
+        const next = { ...prev }
+        for (const card of freshCards.cards) {
+          const key = groupKeyForType(card.type)
+          const currentGroup = next[key]
+          const idx = currentGroup.loaded.findIndex((c) => c.id === card.id)
+          if (idx === -1) continue // not already loaded — never adopted from a partial payload
+          const loaded = [...currentGroup.loaded]
+          loaded[idx] = card
+          next[key] = { ...currentGroup, loaded }
+        }
+        return next
+      })
     }
   }
 
@@ -479,6 +618,70 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       })
   }
 
+  // ── Reading Practice fetch (D-07) ────────────────────────────────────────
+  // Entirely independent of the Cards tab's `groups`/`searchResults` state —
+  // sourced from GET /api/cards/sentences (Sentence, not Card, is the row
+  // unit), covering the full deck regardless of what's currently loaded in
+  // the Cards tab. `mode: 'replace'` resets to a fresh first page (initial
+  // visit, or a search/lesson-filter change); `'append'` is the
+  // scroll-triggered next-page fetch.
+  const fetchReadingPracticePage = (cursor: string | null, mode: 'replace' | 'append') => {
+    const generation = ++readingPracticeGenerationRef.current
+    setReadingPractice((prev) => ({ ...prev, loading: true, error: null }))
+    fetchSentencesPage({
+      cursor,
+      search: searchActive ? debouncedSearch : null,
+      lessonFrom: fullSpan ? null : lessonFrom,
+      lessonTo: fullSpan ? null : lessonTo,
+      take: PAGE_SIZE,
+    })
+      .then((page) => {
+        if (readingPracticeGenerationRef.current !== generation) return // superseded by a newer search/lesson-range change
+        setReadingPractice((prev) => ({
+          loaded: mode === 'replace' ? page.sentences : [...prev.loaded, ...page.sentences],
+          nextCursor: page.nextCursor,
+          hasMore: page.hasMore,
+          loading: false,
+          error: null,
+        }))
+      })
+      .catch(() => {
+        if (readingPracticeGenerationRef.current !== generation) return
+        setReadingPractice((prev) => ({ ...prev, loading: false, error: COPY.batchLoadError }))
+      })
+  }
+
+  const fetchReadingPracticeNextPage = () => {
+    if (readingPractice.loading || !readingPractice.hasMore) return
+    fetchReadingPracticePage(readingPractice.nextCursor, 'append')
+  }
+
+  const retryReadingPracticeFetch = () => {
+    fetchReadingPracticePage(
+      readingPractice.loaded.length === 0 ? null : readingPractice.nextCursor,
+      readingPractice.loaded.length === 0 ? 'replace' : 'append'
+    )
+  }
+
+  // D-08: capture the currently-mounted view's scroll/measured-size snapshot
+  // BEFORE the conditional-render swap unmounts it, then switch. Loaded row
+  // DATA (`groups`/`readingPractice`) already survives regardless (it lives
+  // in this component's own state), so only the Virtuoso-internal
+  // scroll-position snapshot needs this explicit save/restore pair.
+  const switchView = (view: ActiveView) => {
+    if (view === activeView) return
+    if (activeView === 'cards') {
+      cardsVirtuosoRef.current?.getState((s) => setCardsSnapshot(s))
+    } else {
+      readingVirtuosoRef.current?.getState((s) => setReadingSnapshot(s))
+    }
+    setActiveView(view)
+    if (view === 'reading-practice' && !readingPracticeVisitedRef.current) {
+      readingPracticeVisitedRef.current = true
+      fetchReadingPracticePage(null, 'replace')
+    }
+  }
+
   // ── The single query-runner (Task 1 + Task 3) ────────────────────────────
   // Branches on whether a search term is active. Search mode fetches ONE
   // flattened `type=<filter>&search=…` page (D-06) and never touches grouped
@@ -575,6 +778,19 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
     runQuery()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch, filter, lessonFrom, lessonTo, fullSpan])
+
+  // Reading Practice's own independent refetch (D-07/D-08) — a search or
+  // lesson-range change re-issues its own first-page fetch, but ONLY once
+  // the tab has been visited at least once (switchView's lazy first-fetch
+  // gate above); the type-pill `filter` is deliberately NOT a dependency
+  // here (Reading Practice ignores it — flat sentence stream, not
+  // type-grouped). Runs independent of `didMountRef` since it has its own
+  // "has this ever fetched" gate (`readingPracticeVisitedRef`).
+  useEffect(() => {
+    if (!readingPracticeVisitedRef.current) return
+    fetchReadingPracticePage(null, 'replace')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, lessonFrom, lessonTo, fullSpan])
 
   // ── Filter Sheet open/commit (two-tier: pending edits vs. committed) ────
   const openFilterSheet = () => {
@@ -770,14 +986,37 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
     if (lastCardIndex >= 0 && endIndex >= lastCardIndex - SCROLL_LOAD_PROXIMITY) fetchGroupNextPage(key)
   }
 
-  // Flat sentence list for the Reading practice view. INTERIM (unchanged
-  // scope boundary from 31-01 — Reading Practice's own dedicated fetch is
-  // 31-04's D-07 scope, not this plan's): sourced from the Vocabulary
-  // group's loaded cards, which never carry sentences post-CARDS-01 — so
-  // this tab shows its "no example sentences" empty state until then.
-  const allSentences = groups.vocabulary.loaded.flatMap((c) =>
-    (c.sentences ?? []).map((s) => ({ sentence: s, card: c }))
-  )
+  // Composed rows for Reading Practice's own <Virtuoso> instance (D-07) —
+  // a flat sentence stream, never type-grouped (no header rows), mirroring
+  // the Cards tab's skeleton/status row composition pattern.
+  const composeReadingRows = (): ReadingRow[] => {
+    if (readingPractice.loaded.length === 0 && readingPractice.loading) {
+      return Array.from({ length: 4 }, (_, i) => ({ kind: 'skeleton' as const, skeletonId: i }))
+    }
+    const sentenceRows: ReadingRow[] = readingPractice.loaded.map((s) => ({ kind: 'sentence', sentence: s }))
+    const tail: ReadingRow[] = []
+    if (readingPractice.error) {
+      tail.push({ kind: 'status', status: 'error' })
+    } else if (readingPractice.loading) {
+      tail.push({ kind: 'status', status: 'loading-more' })
+      tail.push(...Array.from({ length: 3 }, (_, i) => ({ kind: 'skeleton' as const, skeletonId: i })))
+    } else if (!readingPractice.hasMore && readingPractice.loaded.length > 0) {
+      tail.push({ kind: 'status', status: 'end' })
+    }
+    return [...sentenceRows, ...tail]
+  }
+
+  const readingRows: ReadingRow[] = composeReadingRows()
+  const readingHasActiveFilter = searchActive || !fullSpan
+
+  const handleReadingRangeChanged = ({ endIndex }: { endIndex: number }) => {
+    if (readingPractice.loading || !readingPractice.hasMore) return
+    let lastSentenceIndex = -1
+    readingRows.forEach((r, i) => { if (r.kind === 'sentence') lastSentenceIndex = i })
+    if (lastSentenceIndex >= 0 && endIndex >= lastSentenceIndex - SCROLL_LOAD_PROXIMITY) {
+      fetchReadingPracticeNextPage()
+    }
+  }
 
   // Tap-to-gloss callback (undefined when GlossProvider not mounted — safe)
   const onWordTap = useWordTap()
@@ -901,6 +1140,75 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
     )
   }
 
+  const renderReadingRow = (row: ReadingRow) => {
+    if (row.kind === 'skeleton') {
+      return (
+        <div className="pb-2">
+          <div className="bg-skeleton rounded-xl p-4 h-24 animate-pulse" />
+        </div>
+      )
+    }
+    if (row.kind === 'status') {
+      if (row.status === 'loading-more') {
+        return <p className="text-xs text-muted text-center py-2">{COPY.loadingMore}</p>
+      }
+      if (row.status === 'end') {
+        return <p className="text-xs text-muted text-center py-3">{COPY.endOfList}</p>
+      }
+      return (
+        <div className="text-center py-3 flex flex-col gap-1 items-center">
+          <p className="text-sm text-muted">{COPY.batchLoadError}</p>
+          <button
+            onClick={retryReadingPracticeFetch}
+            className="text-sm font-semibold text-button hover:underline"
+          >
+            Try again
+          </button>
+        </div>
+      )
+    }
+    // sentence row
+    const { sentence } = row
+    const { card } = sentence
+    return (
+      <div className="pb-3">
+        <div
+          className="bg-surface-1 rounded-xl shadow-sm p-4 flex flex-col gap-1 cursor-pointer hover:ring-1 hover:ring-button/40 transition-all"
+          onClick={() => { openEdit(card.id); switchView('cards') }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              openEdit(card.id)
+              switchView('cards')
+            }
+          }}
+        >
+          {/* Sentence */}
+          <HighlightedSentence
+            korean={sentence.korean}
+            targetForm={sentence.targetForm}
+            cardType={card.type}
+            className="text-base text-foreground font-medium leading-relaxed"
+            onWordTap={onWordTap}
+          />
+          {sentence.translation && (
+            <p className="text-sm text-muted italic">{sentence.translation}</p>
+          )}
+          {/* Parent card reference */}
+          <div className="flex items-center gap-2 mt-1">
+            <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${typeBadgeClass(card.type)}`}>
+              {card.type}
+            </span>
+            <span className="text-xs text-muted">
+              {card.front} — {card.back}
+            </span>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col gap-4">
 
@@ -954,7 +1262,7 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
         {(['cards', 'reading-practice'] as ActiveView[]).map((v) => (
           <button
             key={v}
-            onClick={() => setActiveView(v)}
+            onClick={() => switchView(v)}
             aria-pressed={activeView === v}
             className={`px-4 py-1.5 text-sm font-medium rounded-md min-h-[44px] flex items-center transition-colors ${
               activeView === v
@@ -962,9 +1270,13 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
                 : 'text-muted hover:text-muted-foreground'
             }`}
           >
-            {v === 'cards'
-              ? `Cards (${groupCounts.total})`
-              : `Reading practice (${allSentences.length})`}
+            {/* Reading practice intentionally shows no count — D-07 sources
+                it from an independent paginated endpoint with no groupCounts-
+                equivalent aggregate; showing "loaded so far" would repeat the
+                exact loaded-array-length false-total mistake CARDS-01's
+                groupCounts invariant exists to prevent (31-RESEARCH.md
+                Pitfall 2). */}
+            {v === 'cards' ? `Cards (${groupCounts.total})` : 'Reading practice'}
           </button>
         ))}
       </div>
@@ -996,6 +1308,8 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
           {rows.length > 0 && (
             <div className={searchActive && searchResults.querying ? 'opacity-60 transition-opacity' : ''}>
               <Virtuoso
+                ref={cardsVirtuosoRef}
+                restoreStateFrom={cardsSnapshot}
                 useWindowScroll
                 data={rows}
                 computeItemKey={(_, row) =>
@@ -1013,55 +1327,28 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
         </>
       )}
 
-      {/* ── READING PRACTICE VIEW ───────────────────────────────────────────── */}
+      {/* ── READING PRACTICE VIEW (D-07 independent fetch) ──────────────────── */}
       {activeView === 'reading-practice' && (
         <>
-          {allSentences.length === 0 && (
+          {readingRows.length === 0 && !readingPractice.loading && (
             <p className="text-muted text-center py-8">
-              {groups.vocabulary.loaded.length === 0
-                ? COPY.filterNoMatches
-                : 'No example sentences yet. Sync a lesson to generate them.'}
+              {readingHasActiveFilter ? COPY.noSentencesFilterMatch : COPY.noSentencesYet}
             </p>
           )}
 
-          <div className="flex flex-col gap-3 animate-slide-in">
-            {allSentences.map(({ sentence, card }) => (
-              <div
-                key={sentence.id}
-                className="bg-surface-1 rounded-xl shadow-sm p-4 flex flex-col gap-1 cursor-pointer hover:ring-1 hover:ring-button/40 transition-all"
-                onClick={() => { openEdit(card.id); setActiveView('cards') }}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    openEdit(card.id)
-                    setActiveView('cards')
-                  }
-                }}
-              >
-                {/* Sentence */}
-                <HighlightedSentence
-                  korean={sentence.korean}
-                  targetForm={sentence.targetForm}
-                  cardType={card.type}
-                  className="text-base text-foreground font-medium leading-relaxed"
-                  onWordTap={onWordTap}
-                />
-                {sentence.translation && (
-                  <p className="text-sm text-muted italic">{sentence.translation}</p>
-                )}
-                {/* Parent card reference */}
-                <div className="flex items-center gap-2 mt-1">
-                  <span className={`text-xs font-semibold px-1.5 py-0.5 rounded-full ${typeBadgeClass(card.type)}`}>
-                    {card.type}
-                  </span>
-                  <span className="text-xs text-muted">
-                    {card.front} — {card.back}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+          {readingRows.length > 0 && (
+            <Virtuoso
+              ref={readingVirtuosoRef}
+              restoreStateFrom={readingSnapshot}
+              useWindowScroll
+              data={readingRows}
+              computeItemKey={(_, row) =>
+                row.kind === 'sentence' ? row.sentence.id : `${row.kind}-${row.kind === 'skeleton' ? row.skeletonId : row.status}`
+              }
+              itemContent={(_, row) => renderReadingRow(row)}
+              rangeChanged={handleReadingRangeChanged}
+            />
+          )}
         </>
       )}
 
@@ -1173,31 +1460,112 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       </Sheet>
 
       {/* ── EDIT CARD SHEET ─────────────────────────────────────────────────── */}
+      {/* Task 2 (E4): front/back/notes/type render editable IMMEDIATELY from
+          the already-in-memory summary (`editingDraft`) — only the sentence
+          editor section waits on GET /api/cards/[id]. Once that resolves,
+          the full CardEditor mounts, seeded with the draft's live values so
+          any edits typed during the wait are never lost. */}
       <Sheet open={editingId !== null} onClose={closeEdit} title="Edit Card">
         {editingId !== null && (
           <div className="px-2 pb-4">
-            {editingDetailLoading && (
-              <p className="text-sm text-muted text-center py-6">Loading…</p>
-            )}
-            {!editingDetailLoading && editingDetailError && (
-              <div className="text-center py-6 flex flex-col gap-2 items-center">
-                <p className="text-sm text-muted">
-                  Couldn&apos;t load this card&apos;s sentences. Try again.
-                </p>
-                <button
-                  onClick={() => fetchEditingDetail(editingId)}
-                  className="text-sm font-semibold text-button hover:underline"
-                >
-                  Try again
-                </button>
-              </div>
-            )}
-            {!editingDetailLoading && !editingDetailError && editingDetail && (
+            {!editingDetailLoading && !editingDetailError && editingDetail && editingDraft && (
               <CardEditor
-                card={editingDetail}
+                card={{ ...editingDetail, ...editingDraft }}
                 onSave={handleSave}
                 onCancel={closeEdit}
               />
+            )}
+
+            {(editingDetailLoading || editingDetailError) && editingDraft && (
+              <div className="bg-surface-2 rounded-xl p-4 flex flex-col gap-3">
+                {/* Core fields — editable right away, no wait for sentences */}
+                <select
+                  value={editingDraft.type}
+                  onChange={(e) => setEditingDraft({ ...editingDraft, type: e.target.value })}
+                  className={inputCls}
+                >
+                  <option value="vocabulary">Vocabulary</option>
+                  <option value="grammar">Grammar</option>
+                  <option value="phrase">Phrase</option>
+                </select>
+                <input
+                  value={editingDraft.front}
+                  onChange={(e) => setEditingDraft({ ...editingDraft, front: e.target.value })}
+                  placeholder="Front (Korean)"
+                  className={`hangul ${inputCls}`}
+                />
+                <input
+                  value={editingDraft.back}
+                  onChange={(e) => setEditingDraft({ ...editingDraft, back: e.target.value })}
+                  placeholder="Back (English)"
+                  className={inputCls}
+                />
+                <textarea
+                  value={editingDraft.notes}
+                  onChange={(e) => setEditingDraft({ ...editingDraft, notes: e.target.value })}
+                  placeholder="Notes (optional)"
+                  className={inputCls}
+                  rows={2}
+                />
+
+                {/* Sentence editor section — loading placeholder or retry */}
+                <div className="flex flex-col gap-2">
+                  <p className="text-xs font-semibold text-muted uppercase tracking-wide">
+                    Example Sentences
+                  </p>
+                  {editingDetailLoading && (
+                    <div className="flex flex-col gap-2">
+                      {[0, 1].map((i) => (
+                        <div
+                          key={i}
+                          className="bg-surface-1 rounded-lg p-3 flex flex-col gap-2 border border-border"
+                        >
+                          <div className="h-9 bg-skeleton rounded animate-pulse" />
+                          <div className="h-9 bg-skeleton rounded animate-pulse" />
+                          <div className="h-9 bg-skeleton rounded animate-pulse" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {editingDetailError && (
+                    <div className="text-center py-4 flex flex-col gap-2 items-center">
+                      <p className="text-sm text-muted">{COPY.editSentencesLoadError}</p>
+                      <button
+                        onClick={() => fetchEditingDetail(editingId)}
+                        className="text-sm font-semibold text-button hover:underline"
+                      >
+                        Try again
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Defensive fallback — editingDraft could only be null if
+                openEdit's summary lookup failed to find the tapped row
+                (shouldn't normally happen, since openEdit is always called
+                from an already-rendered row). */}
+            {!editingDraft && (
+              <>
+                {editingDetailLoading && (
+                  <p className="text-sm text-muted text-center py-6">Loading…</p>
+                )}
+                {!editingDetailLoading && editingDetailError && (
+                  <div className="text-center py-6 flex flex-col gap-2 items-center">
+                    <p className="text-sm text-muted">{COPY.editSentencesLoadError}</p>
+                    <button
+                      onClick={() => fetchEditingDetail(editingId)}
+                      className="text-sm font-semibold text-button hover:underline"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
+                {!editingDetailLoading && !editingDetailError && editingDetail && (
+                  <CardEditor card={editingDetail} onSave={handleSave} onCancel={closeEdit} />
+                )}
+              </>
             )}
           </div>
         )}

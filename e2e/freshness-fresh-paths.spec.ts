@@ -11,6 +11,7 @@
 import { test, expect, type Page, type Request as PwRequest } from '@playwright/test'
 import { resetToBaseline } from './seed'
 import { isRscRequest } from './helpers/rsc'
+import { simulateResume } from './helpers/resume'
 import {
   flipOneReviewDueState,
   createMutationCard,
@@ -221,4 +222,67 @@ test('/cards post-mutation-return stays fresh - regression net for Phase 26 (D-0
   const expected = await expectedCardsCount()
   const observed = await readCardsCount(page)
   expect(observed).toBe(expected)
+
+  // ── Upsert-not-replace extension (Phase 31, plan 04, Task 3) ─────────────
+  // Proves FreshnessWatcher's `/cards` backstop (visibilitychange-triggered,
+  // NOT the plain-Link revisit above — that's a legitimate full CardsClient
+  // remount with fresh SSR data, unrelated to this fix) merges by id rather
+  // than wholesale-replacing `groups.vocabulary.loaded` (31-RESEARCH.md
+  // Pitfall 1, T-31-08). The e2e fixture (8-9 cards, well under PAGE_SIZE=30)
+  // can't naturally produce a genuine second DB page to lose, so the
+  // backstop's own exact no-cursor `/api/cards` call is intercepted and
+  // forced to return a deliberately tiny/empty partial page — a wholesale-
+  // replace bug would zero out every already-loaded row; the correct
+  // upsert-by-id merge leaves them all untouched.
+  const loadedFrontSelector = page.locator('p.font-bold.text-foreground.hangul')
+  const loadedBefore = await loadedFrontSelector.count()
+  expect(loadedBefore).toBeGreaterThan(0)
+
+  // router.refresh()'s own RSC re-fetch of the SAME '/cards' route (it
+  // appends its own `_rsc=<hash>` cache-busting query param, distinguished
+  // from ordinary requests by the `rsc: 1` header) legitimately delivers
+  // fresh real data too and would otherwise mask a wholesale-replace
+  // regression in the backstop path (the real refresh happens to restore
+  // the correct count regardless of what the backstop does, since this
+  // fixture's total card count fits on a single real page anyway). Delaying
+  // it well past this test's settle window isolates the backstop's own
+  // merge behavior as the only thing that can have affected `loadedAfter`
+  // below (verified empirically: reverting the upsert fix to a wholesale
+  // replace makes this assertion fail with `loadedAfter === 0` when this
+  // delay is in place, and only in place — confirming this actually
+  // exercises the fix and doesn't just vacuously pass).
+  await page.route(
+    (url) => url.pathname === '/cards',
+    async (route) => {
+      if (route.request().headers()['rsc'] === '1') {
+        await new Promise((r) => setTimeout(r, 3000))
+      }
+      await route.continue()
+    }
+  )
+
+  // The backstop's own exact, no-query-string call to /api/cards — every
+  // other client fetch to /api/cards (expand-on-tap, scroll, filter-commit)
+  // always carries query params and must pass through untouched.
+  await page.route(
+    (url) => url.pathname === '/api/cards' && url.search === '',
+    async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ cards: [], nextCursor: null, hasMore: false }),
+      })
+    }
+  )
+
+  await simulateResume(page, true)
+  await page.waitForTimeout(150)
+  await simulateResume(page, false)
+  await page.waitForTimeout(800) // settles the (unmocked) backstop fetch; well under the RSC route's 3000ms delay
+
+  const loadedAfter = await loadedFrontSelector.count()
+  // The upsert-by-id merge of an EMPTY partial payload must be a pure no-op
+  // — never truncate already-loaded rows down to the backstop's own
+  // (synthetically tiny) page size.
+  expect(loadedAfter).toBe(loadedBefore)
 })

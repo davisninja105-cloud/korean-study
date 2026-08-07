@@ -8,7 +8,7 @@ import {
   useState,
 } from 'react'
 import { useRouter } from 'next/navigation'
-import type { CardDTO, ActivityDTO, StatsDTO } from '@/lib/dto'
+import type { CardDTO, CardsPageDTO, ActivityDTO, StatsDTO } from '@/lib/dto'
 
 // Coalesce window: rapid event bursts (e.g. a popstate immediately followed
 // by a visibilitychange) collapse into a single router.refresh() (T-26-02).
@@ -28,7 +28,13 @@ export interface HabitsFreshPayload {
 
 export interface FreshPayloads {
   study: CardDTO[] | null
-  cards: CardDTO[] | null
+  // A single, PARTIAL CardsPageDTO page (never the full deck) — GET
+  // /api/cards is cursor-paginated (CARDS-01), so this backstop's own
+  // no-cursor call only ever returns page 1 of the default (type=all)
+  // scope. Consumers (CardsClient.tsx) MUST treat this as upsert-only
+  // input, never authoritative for "what else exists" (31-RESEARCH.md
+  // Pitfall 1, T-31-08).
+  cards: CardsPageDTO | null
   habits: HabitsFreshPayload | null
 }
 
@@ -100,11 +106,18 @@ export default function FreshnessWatcher({ children }: { children: React.ReactNo
           })
           .catch(() => {})
       } else if (path === '/cards') {
+        // CARDS-01 made GET /api/cards cursor-paginated — this backstop's
+        // own no-cursor call now returns a CardsPageDTO page-1 object
+        // (`{ cards, nextCursor, hasMore, groupCounts }`), never the old raw
+        // full-array shape. The consumer (CardsClient.tsx) upserts by id
+        // into its existing per-group loaded arrays — this is never
+        // authoritative for "what else exists" (31-RESEARCH.md Pitfall 1).
         fetch('/api/cards')
           .then((res) => (res.ok ? res.json() : null))
           .then((result: unknown) => {
-            if (Array.isArray(result) && window.location.pathname === '/cards') {
-              setPayloads((prev) => ({ ...prev, cards: result as CardDTO[] }))
+            const page = result as CardsPageDTO | null
+            if (page && Array.isArray(page.cards) && window.location.pathname === '/cards') {
+              setPayloads((prev) => ({ ...prev, cards: page }))
             }
           })
           .catch(() => {})
