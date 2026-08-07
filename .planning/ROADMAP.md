@@ -182,9 +182,17 @@ See `.planning/milestones/v1.6-ROADMAP.md` for full phase details.
 **Plans**: 4 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 31-01-PLAN.md — Backend cursor pagination (getCardsPage/getCardsGroupCounts) + react-virtuoso install + tracer: capped virtualized Vocabulary-group render + data-layer tests
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 31-02-PLAN.md — Full Cards-view completion: all 4 groups, auto-load-on-scroll, debounced server-side search, lesson filter, search-flatten view
 - [ ] 31-03-PLAN.md — Backend: Reading Practice pagination endpoint (getSentencesPage) + single-card fetch endpoint (GET /api/cards/[id]) + tests
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 31-04-PLAN.md — Reading Practice UI wiring + CardEditor on-demand fetch + FreshnessWatcher upsert-merge fix + baseline re-measurement/perf budget tightening + full regression
 
 **UI hint**: yes

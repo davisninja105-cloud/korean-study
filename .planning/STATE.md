@@ -4,15 +4,15 @@ milestone: v1.8
 milestone_name: Perceived & Real Performance
 current_phase: 31
 current_phase_name: Cards List Pagination & Virtualization
-status: planning
+status: executing
 stopped_at: Phase 31 UI-SPEC approved
-last_updated: "2026-08-07T06:34:14.789Z"
+last_updated: "2026-08-07T15:48:11.321Z"
 last_activity: 2026-08-06
 last_activity_desc: Phase 30 complete, transitioned to Phase 31
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 4
+  total_plans: 8
   completed_plans: 4
   percent: 17
 ---
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-06)
 
 Phase: 31 — Cards List Pagination & Virtualization
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-08-06 — Phase 30 complete, transitioned to Phase 31
 
 ## Performance Metrics
