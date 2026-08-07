@@ -1288,8 +1288,14 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   return (
     <div className="flex flex-col gap-4">
 
-      {/* ── Sticky search + action bar ──────────────────────────────────────── */}
-      <div className="sticky top-0 z-10 -mx-4 px-4 py-3 bg-background border-b border-border/60">
+      {/* ── Sticky search + action bar + view toggle (merged into one pinned
+          unit, G-31-2/31-05-PLAN.md Task 3) — docks beneath Nav's actual
+          measured height via --nav-height (Task 2) instead of colliding
+          with it at a duplicated top-0. ────────────────────────────────── */}
+      <div
+        className="sticky z-10 -mx-4 px-4 pt-3 pb-3 bg-background border-b border-border/60 flex flex-col gap-3"
+        style={{ top: 'var(--nav-height, 68px)' }}
+      >
         <div className="flex gap-2 items-center">
           <div className="relative flex-1 min-w-0">
             <input
@@ -1331,30 +1337,30 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
             Add Card
           </button>
         </div>
-      </div>
 
-      {/* ── View toggle: Cards | Reading practice ───────────────────────────── */}
-      <div className="flex bg-surface-3 rounded-lg p-1 self-start">
-        {(['cards', 'reading-practice'] as ActiveView[]).map((v) => (
-          <button
-            key={v}
-            onClick={() => switchView(v)}
-            aria-pressed={activeView === v}
-            className={`px-4 py-1.5 text-sm font-medium rounded-md min-h-[44px] flex items-center transition-colors ${
-              activeView === v
-                ? 'bg-surface-1 text-foreground shadow-sm'
-                : 'text-muted hover:text-muted-foreground'
-            }`}
-          >
-            {/* Reading practice intentionally shows no count — D-07 sources
-                it from an independent paginated endpoint with no groupCounts-
-                equivalent aggregate; showing "loaded so far" would repeat the
-                exact loaded-array-length false-total mistake CARDS-01's
-                groupCounts invariant exists to prevent (31-RESEARCH.md
-                Pitfall 2). */}
-            {v === 'cards' ? `Cards (${groupCounts.total})` : 'Reading practice'}
-          </button>
-        ))}
+        {/* ── View toggle: Cards | Reading practice ─────────────────────────── */}
+        <div className="flex bg-surface-3 rounded-lg p-1 self-start">
+          {(['cards', 'reading-practice'] as ActiveView[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => switchView(v)}
+              aria-pressed={activeView === v}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md min-h-[44px] flex items-center transition-colors ${
+                activeView === v
+                  ? 'bg-surface-1 text-foreground shadow-sm'
+                  : 'text-muted hover:text-muted-foreground'
+              }`}
+            >
+              {/* Reading practice intentionally shows no count — D-07 sources
+                  it from an independent paginated endpoint with no groupCounts-
+                  equivalent aggregate; showing "loaded so far" would repeat the
+                  exact loaded-array-length false-total mistake CARDS-01's
+                  groupCounts invariant exists to prevent (31-RESEARCH.md
+                  Pitfall 2). */}
+              {v === 'cards' ? `Cards (${groupCounts.total})` : 'Reading practice'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── CARDS VIEW ──────────────────────────────────────────────────────── */}

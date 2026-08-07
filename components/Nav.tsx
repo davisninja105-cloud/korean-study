@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useLayoutEffect, useRef } from 'react'
 import { Home, BookOpen, Layers, Flame, Settings } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { haptic } from '@/lib/haptics'
@@ -16,11 +17,38 @@ const links: { href: string; label: string; Icon: LucideIcon }[] = [
 export default function Nav() {
   const pathname = usePathname()
   const settingsActive = pathname === '/settings'
+  const headerRef = useRef<HTMLElement>(null)
+
+  // Publishes the header's real rendered height as a `--nav-height` CSS
+  // custom property on `document.documentElement`, mirroring the `--sab`
+  // pattern in app/layout.tsx: a direct DOM/CSS-var mutation from an effect
+  // (not React state) because the value must cross to CardsClient.tsx, a
+  // sibling component with no shared parent state (G-31-2, 31-05-PLAN.md
+  // Task 2). Re-measures on every ResizeObserver-reported size change to
+  // cover orientation changes and any future safe-area-inset-top change.
+  useLayoutEffect(() => {
+    const node = headerRef.current
+    if (!node) return
+
+    const setNavHeight = () => {
+      document.documentElement.style.setProperty('--nav-height', `${node.offsetHeight}px`)
+    }
+
+    setNavHeight()
+
+    const ro = new ResizeObserver(setNavHeight)
+    ro.observe(node)
+
+    return () => ro.disconnect()
+  }, [])
 
   return (
     <>
       {/* ── Top bar: brand + settings gear (all sizes); inline links on desktop ── */}
-      <header className="bg-surface-1/95 backdrop-blur-md saturate-150 shadow-sm dark:shadow-none dark:border-b dark:border-border sticky top-0 z-10 pt-[env(safe-area-inset-top)]">
+      <header
+        ref={headerRef}
+        className="bg-surface-1/95 backdrop-blur-md saturate-150 shadow-sm dark:shadow-none dark:border-b dark:border-border sticky top-0 z-10 pt-[env(safe-area-inset-top)]"
+      >
         <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
           <Link href="/" className="text-xl font-bold text-foreground">
             Korean Study
