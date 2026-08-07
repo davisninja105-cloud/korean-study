@@ -51,8 +51,16 @@ blocked: 0
   reason: "User reported: this isn't possible on mobile, the Reading Practice and Cards headers disappear when you scroll"
   severity: major
   test: 2
-  artifacts: []
-  missing: []
+  root_cause: "The Cards/Reading Practice segmented view-toggle div in components/CardsClient.tsx (~line 1337) has no sticky/fixed positioning at all — only the search+filter bar directly above it (~line 1292, `sticky top-0 z-10`) is pinned. On mobile, as the user scrolls within a group's list (window-scrolled via react-virtuoso's useWindowScroll), the toggle scrolls off-screen along with the rows, leaving no way to switch views without first scrolling back to the top. Confirmed via git history (commit fbcc95e, pre-Phase-31) that this non-sticky structure predates Phase 31 — not a virtualization regression. Phase 31 changed scale (auto-loading hundreds of rows), which turned this pre-existing structural gap into a routinely-triggered blocker. A secondary rough edge found in the same investigation: components/Nav.tsx's persistent header (line 23) and CardsClient's search bar are both independently `sticky top-0 z-10`, which will visually overlap once both are pinned."
+  artifacts:
+    - path: "components/CardsClient.tsx"
+      issue: "View-toggle div (~line 1337) lacks sticky positioning, so it scrolls out of reach on mobile once the search bar above it (~line 1292) has scrolled the toggle past the pinned search bar's boundary."
+    - path: "components/Nav.tsx"
+      issue: "Persistent header (line 23) uses `sticky top-0 z-10`, the same top offset as CardsClient's search bar, causing visual overlap once both are addressed as pinned elements."
+  missing:
+    - "Wrap the search bar and the view-toggle in a single sticky container (or give the toggle its own sticky position offset below the search bar's height) so both stay pinned together while scrolling."
+    - "Offset CardsClient's sticky search bar's `top` value to account for Nav.tsx's header height instead of both using `top-0`."
+  debug_session: ".planning/debug/sticky-headers-scroll-away-mobile.md"
 
 - truth: "A collapsed row still shows its reading-practice/sentence count without loading the sentences themselves (ROADMAP Success Criterion 4, second clause)"
   status: failed
