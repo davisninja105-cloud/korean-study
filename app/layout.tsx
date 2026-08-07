@@ -69,13 +69,24 @@ export default function RootLayout({
             function now, so it never awaits a DB read for buttonColor/rewardColor/
             readingTextScale/readingAid (LAYOUT-01: no blocking DB round trip on
             the cold path). Instead this script reads the ks_settings cookie
-            (written by PUT /api/settings alongside its Setting-table writes) and
-            corrects the CSS custom properties + hangul-spaced class before first
-            paint, exactly mirroring the theme-resolution script above. A missing
-            or malformed cookie silently falls through to the CSS :root defaults
-            (which already match DEFAULT_ACTION_COLOR/DEFAULT_REWARD_COLOR) — the
-            outer try/catch guarantees this script can never throw and block
-            render. */}
+            (written by PUT /api/settings alongside its Setting-table writes,
+            and re-seeded by app/settings/page.tsx on every /settings visit —
+            see CR-01 in 30-REVIEW-FIX.md) and corrects the CSS custom
+            properties + hangul-spaced class before first paint, exactly
+            mirroring the theme-resolution script above. A missing or
+            malformed cookie silently falls through to the CSS :root defaults
+            (which already match DEFAULT_ACTION_COLOR/DEFAULT_REWARD_COLOR) —
+            the outer try/catch guarantees this script can never throw and
+            block render.
+            KNOWN GAP: a browser session that (a) already had customized DB
+            settings before the ks_settings cookie mechanism shipped, AND
+            (b) never navigates to PUT /api/settings or GET /settings after
+            that deploy, will keep seeing the CSS :root defaults everywhere
+            except a page that triggers one of those two writers. Closing
+            this fully would mean seeding the cookie from middleware.ts on
+            any cookie-less request, but middleware runs on the Edge runtime
+            by default while lib/prisma.ts's local dev fallback needs Node.js
+            filesystem access — a deliberate follow-up, not a quick patch. */}
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var m=document.cookie.match(/(?:^|; )ks_settings=([^;]*)/);if(!m)return;var v=JSON.parse(decodeURIComponent(m[1]));var s=document.documentElement.style;if(v.buttonColor)s.setProperty('--button',v.buttonColor);if(v.buttonFg)s.setProperty('--button-foreground',v.buttonFg);if(v.rewardColor)s.setProperty('--reward',v.rewardColor);if(v.rewardFg)s.setProperty('--reward-foreground',v.rewardFg);if(v.readingTextScale)s.setProperty('--reading-scale',v.readingTextScale);if(v.readingAid)document.documentElement.classList.add('hangul-spaced');}catch(e){}})();`,
