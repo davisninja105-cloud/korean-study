@@ -179,7 +179,14 @@ See `.planning/milestones/v1.6-ROADMAP.md` for full phase details.
   4. Applying a lesson range on `/cards` returns the correct card set across the full deck, and a collapsed row still shows its reading-practice/sentence count without loading the sentences themselves.
   5. Add, edit, delete, swipe-to-delete, tap-to-gloss, group collapse, and the Reading practice view all still behave correctly against the paginated list; the existing e2e and unit suites stay green.
 
-**Plans**: TBD
+**Plans**: 4 plans
+
+Plans:
+- [ ] 31-01-PLAN.md — Backend cursor pagination (getCardsPage/getCardsGroupCounts) + react-virtuoso install + tracer: capped virtualized Vocabulary-group render + data-layer tests
+- [ ] 31-02-PLAN.md — Full Cards-view completion: all 4 groups, auto-load-on-scroll, debounced server-side search, lesson filter, search-flatten view
+- [ ] 31-03-PLAN.md — Backend: Reading Practice pagination endpoint (getSentencesPage) + single-card fetch endpoint (GET /api/cards/[id]) + tests
+- [ ] 31-04-PLAN.md — Reading Practice UI wiring + CardEditor on-demand fetch + FreshnessWatcher upsert-merge fix + baseline re-measurement/perf budget tightening + full regression
+
 **UI hint**: yes
 
 ### Phase 32: Study Load Round-Trip Collapse
@@ -282,7 +289,7 @@ Re-measure the baseline table after Phase 30 before starting Phase 31 — the nu
 | 28. Active Recall Study Mode | v1.7 | 2/2 | Complete | 2026-07-24 |
 | 29. Distractor Write-Side Retirement | v1.7 | 0/0 | Deferred (archived unexecuted — CLEANUP-03 open, unscheduled) | - |
 | 30. Instant Feedback & Cold-Start Unblocking | v1.8 | 4/4 | Complete    | 2026-08-06 |
-| 31. Cards List Pagination & Virtualization | v1.8 | 0/TBD | Not started | - |
+| 31. Cards List Pagination & Virtualization | v1.8 | 0/4 | Not started | - |
 | 32. Study Load Round-Trip Collapse | v1.8 | 0/TBD | Not started | - |
 | 33. Version-Gated Freshness Backstop | v1.8 | 0/TBD | Not started | - |
 | 34. Local-First Shell | v1.8 | 0/TBD | Not started | - |
