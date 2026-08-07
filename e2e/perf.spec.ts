@@ -26,12 +26,34 @@ test.beforeAll(async () => {
 // D-08 — generous guard rails, not targets. `/habits` is tightened (D-05):
 // this is the phase 30 re-measurement baseline for the rest of the v1.8
 // milestone — cleanest pure-round-trip signal for REGION-01's improvement.
-// `/`, `/study`, `/cards` stay at the original generous budget (D-06) since
-// their real bottlenecks aren't touched until Phases 31/32.
+// `/`, `/study` stay at the original generous budget (D-06) since their real
+// bottlenecks aren't touched until Phase 32. `/cards` is now tightened
+// (Phase 31, plan 04, Task 3) from a real POST-MIGRATION measurement against
+// this repo's 8-card e2e fixture:
+//   PRE-MIGRATION (31-01-SUMMARY.md, before any Phase 31 code changed the
+//     query shape): samples 264, 45, 51, 40, 41ms — median 45ms.
+//   POST-MIGRATION (this task, full phase's pagination/virtualization/
+//     Reading-Practice/Edit-sheet/FreshnessWatcher changes applied): samples
+//     264(198)*, 55, 34, 46, 41ms — median 46ms.
+//     * cold-start sample 1 varies run to run (198-201ms across 3 repeated
+//       measurements); the median (from samples 2-5, consistently 34-55ms)
+//       is unaffected by it and is what the budget below is computed from.
+// UNEXPECTED RESULT (documented per Task 3's instruction, not smoothed
+// over): the post-migration median (46ms) is NOT meaningfully better than
+// the pre-migration median (45ms) at this fixture's tiny scale (8-9 cards,
+// far below PAGE_SIZE=30 — every group fits in a single page either way, so
+// pagination has near-zero effect here). The real win this phase targets is
+// the ~1056-card production deck (previously an unbounded `findMany()` with
+// a full `sentences` include on every card; now a capped, sentence-free
+// page), which this e2e fixture is deliberately too small to exercise
+// (31-RESEARCH.md Pitfall 2). Budget is still computed from the honest
+// measured number, not a flattering guess:
+//   Math.ceil(46 * 1.5 / 100) * 100 = 100ms (50% headroom over the real
+//   measured median, rounded up to the nearest 100ms).
 const PAGE_BUDGETS_MS: Record<'/' | '/study' | '/cards' | '/habits', number> = {
   '/': 3000,
   '/study': 3000,
-  '/cards': 3000,
+  '/cards': 100,
   '/habits': 1500,
 }
 const API_BUDGET_MS = 1000 // D-09 — generous guard rail, not a target
