@@ -15,7 +15,7 @@
 
 ### Root Layout (P3.1)
 
-- [ ] **LAYOUT-01**: `RootLayout` renders synchronously — no `await` DB read blocks the initial HTML response; settings changes still apply on next navigation
+- [x] **LAYOUT-01**: `RootLayout` renders synchronously — no `await` DB read blocks the initial HTML response; settings changes still apply on next navigation
 
 ### Cards List Performance (P3.2)
 
@@ -78,7 +78,7 @@ All 21 v1 requirements map to exactly one phase. No orphans, no duplicates.
 | PERCEPT-01 | Phase 30 | Pending |
 | PERCEPT-02 | Phase 30 | Pending |
 | PERCEPT-03 | Phase 30 | Pending |
-| LAYOUT-01 | Phase 30 | Pending |
+| LAYOUT-01 | Phase 30 | Complete |
 | CARDS-01 | Phase 31 | Pending |
 | CARDS-02 | Phase 31 | Pending |
 | CARDS-03 | Phase 31 | Pending |
