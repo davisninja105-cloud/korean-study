@@ -11,6 +11,7 @@ import { resolveDependencyEdges } from '@/lib/link-dependencies'
 import { relinkAllDependencies } from '@/lib/relink-dependencies'
 import { lessonExcerpt } from '@/lib/lesson-excerpt'
 import { prisma } from '@/lib/prisma'
+import { bumpStudyCacheVersion } from '@/lib/settings'
 
 // Cap how many new lessons we process in a single request so a large backlog
 // can't blow past the function timeout. Remaining lessons are drained on the
@@ -371,6 +372,25 @@ export async function runSync(documentId: string): Promise<SyncResult> {
         relinkMsg
       )
     }
+  }
+
+  // Phase 32 (STUDY-03): a SECOND unconditional cache-invalidation bump,
+  // independent of the auto-relink gate above. Fires regardless of
+  // failures.length/newLessons because the per-lesson inline edge/card
+  // creation earlier in this function (the two-phase dependency-linking step)
+  // can persist new cards and edges even on a run where the end-of-function
+  // auto-relink is gated off (32-RESEARCH.md Assumption A5) — those still
+  // need to invalidate lib/study-cache.ts's snapshot. When the auto-relink
+  // block above DID run, this double-bumps — inert, since the token is
+  // compared only for inequality, never counted.
+  try {
+    await bumpStudyCacheVersion()
+  } catch (bumpErr: unknown) {
+    const bumpMsg = bumpErr instanceof Error ? bumpErr.message : 'Unknown error'
+    console.warn(
+      '[sync] studyCacheVersion bump failed (non-fatal — one stale-cache request until the next bump):',
+      bumpMsg
+    )
   }
 
   return {
