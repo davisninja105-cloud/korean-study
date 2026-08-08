@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Perceived & Real Performance
 current_phase: 32
-current_phase_name: Study Load Round-Trip Collapse
+current_phase_name: study-load-round-trip-collapse
 status: executing
 stopped_at: Phase 31 UI-SPEC approved
-last_updated: "2026-08-08T16:52:04.529Z"
-last_activity: 2026-08-07
-last_activity_desc: Phase 31 complete, transitioned to Phase 32
+last_updated: "2026-08-08T16:55:55.752Z"
+last_activity: 2026-08-08
+last_activity_desc: Phase 32 execution started
 progress:
   total_phases: 6
   completed_phases: 2
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-06)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 31 — cards-list-pagination-virtualization
+**Current focus:** Phase 32 — study-load-round-trip-collapse
 
 ## Current Position
 
-Phase: 32 — Study Load Round-Trip Collapse
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-08-07 — Phase 31 complete, transitioned to Phase 32
+Phase: 32 (study-load-round-trip-collapse) — EXECUTING
+Plan: 1 of 4
+Status: Executing Phase 32
+Last activity: 2026-08-08 — Phase 32 execution started
 
 ## Performance Metrics
 
