@@ -82,6 +82,11 @@ export interface StudyInvariants {
 
 const globalForStudyCache = globalThis as unknown as {
   studyCache: StudyInvariants | undefined
+  // WR-03 fix (32-REVIEW.md): tracks a single in-flight refill so concurrent
+  // callers observing a miss for the SAME version share one physical query
+  // instead of each independently paying the round trip — see
+  // refreshStudyCache() below.
+  studyCacheInFlight: { version: string | null; promise: Promise<StudyInvariants> } | undefined
 }
 
 /** Returns the current snapshot, or undefined if never populated. No I/O. */
@@ -137,8 +142,38 @@ interface RawEdge {
  * own `[study-cache]` prefix) because tests/study-cards.test.ts's and
  * tests/study-cache.test.ts's regression guards for that reliability contract
  * key off that exact prefix.
+ *
+ * WR-03 fix (32-REVIEW.md): this exported entry point de-duplicates
+ * concurrent callers — two /study requests arriving concurrently against a
+ * cold (or just-invalidated) cache used to both observe a miss and both
+ * independently call the actual refill below, each paying the extra round
+ * trip (not a correctness bug, since both writes carry the same version and
+ * equivalent data, but it silently doubled the cold-miss cost under
+ * concurrent load). Callers observing a miss for the SAME version now await
+ * one shared in-flight promise instead. A DIFFERENT version (e.g. a version
+ * bump landing mid-refill) still starts its own fresh refill rather than
+ * reusing a stale in-flight one.
  */
 export async function refreshStudyCache(version: string | null): Promise<StudyInvariants> {
+  const inFlight = globalForStudyCache.studyCacheInFlight
+  if (inFlight && inFlight.version === version) {
+    return inFlight.promise
+  }
+
+  const promise = doRefreshStudyCache(version)
+  globalForStudyCache.studyCacheInFlight = { version, promise }
+  try {
+    return await promise
+  } finally {
+    // Only clear the slot if it still holds THIS call's promise — a newer
+    // call (a different version) may already have replaced it.
+    if (globalForStudyCache.studyCacheInFlight?.promise === promise) {
+      globalForStudyCache.studyCacheInFlight = undefined
+    }
+  }
+}
+
+async function doRefreshStudyCache(version: string | null): Promise<StudyInvariants> {
   let rows: InvariantsRow[]
   try {
     rows = await prisma.$queryRaw<InvariantsRow[]>`
@@ -187,4 +222,8 @@ export async function refreshStudyCache(version: string | null): Promise<StudyIn
 /** Test-only: clears the holder so cases cannot leak snapshot state into one another. */
 export function resetStudyCacheForTests(): void {
   globalForStudyCache.studyCache = undefined
+  // WR-03 fix (32-REVIEW.md): also clear any in-flight-refill bookkeeping so
+  // a promise left over from a prior test cannot be mistaken for a live
+  // in-flight refill in a later, unrelated test.
+  globalForStudyCache.studyCacheInFlight = undefined
 }
