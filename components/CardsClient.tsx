@@ -70,6 +70,7 @@ const COPY = {
   batchLoadError: "Couldn't load more cards. Check your connection and try again.",
   filterNoMatches: 'No cards match this filter.',
   queryError: "Couldn't search right now. Try again.",
+  deleteError: "Couldn't delete this card. Check your connection and try again.",
   noCardsAtAll: 'No cards yet. Sync your Google Doc to get started.',
   noSentencesYet: 'No example sentences yet. Sync a lesson to generate them.',
   noSentencesFilterMatch: 'No example sentences match your filter.',
@@ -312,6 +313,13 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   // (distinct from an ordinary scroll-triggered batch-load failure, which
   // stays inline per-group with "Couldn't load more cards…" copy).
   const [queryError, setQueryError] = useState<string | null>(null)
+
+  // WR-06: a failed delete previously only `console.error`'d — the swiped
+  // row just silently reappeared with no explanation. Mirrors the
+  // queryError banner pattern (own state, own copy, dismissible), but kept
+  // separate since "Try again" for a delete means retrying THAT specific
+  // card's delete, not re-running the current query.
+  const [deleteError, setDeleteError] = useState<string | null>(null)
 
   // Edit sheet state. CardsClient no longer holds sentences for any loaded
   // list row (CARDS-01 drops `sentences` from the list query's `select`) —
@@ -857,10 +865,14 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
     if (deletingIds.has(id)) return
     if (!confirm('Delete this card?')) return
     setDeletingIds((prev) => new Set(prev).add(id))
+    setDeleteError(null)
     try {
       const res = await fetch(`/api/cards/${id}`, { method: 'DELETE' })
       if (!res.ok) {
+        // WR-06: surface the failure — the swiped row otherwise just
+        // silently reappears with no explanation.
         console.error('Delete failed:', res.status)
+        setDeleteError(COPY.deleteError)
         return
       }
       let deletedType: string | null = null
@@ -893,6 +905,7 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       if (editingId === id) closeEdit()
     } catch (err) {
       console.error('Delete failed (network):', err)
+      setDeleteError(COPY.deleteError)
     } finally {
       setDeletingIds((prev) => { const s = new Set(prev); s.delete(id); return s })
     }
@@ -1430,6 +1443,22 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
                 className="text-sm font-semibold text-button hover:underline"
               >
                 Try again
+              </button>
+            </div>
+          )}
+
+          {/* WR-06: dismissible banner for a failed delete — reuses the
+              queryError banner's visual pattern, but its own state (a
+              delete failure isn't a search failure, and "try again" here
+              just clears the banner rather than re-running the query). */}
+          {deleteError && (
+            <div className="text-center py-4 flex flex-col gap-2 items-center">
+              <p className="text-sm text-red-500 dark:text-red-400">{deleteError}</p>
+              <button
+                onClick={() => setDeleteError(null)}
+                className="text-sm font-semibold text-button hover:underline"
+              >
+                Dismiss
               </button>
             </div>
           )}
