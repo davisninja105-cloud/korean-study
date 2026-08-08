@@ -95,6 +95,28 @@ export async function PUT(
     ) {
       return NextResponse.json({ error: 'sentences must be an array of objects' }, { status: 400 })
     }
+    // WR-02: field-shape validation for the nested sentences[] entries — a
+    // non-string korean/targetForm/translation (e.g. a number or null)
+    // previously passed this outer array/object check unchanged, reached
+    // Prisma via `s.korean ?? ''` (which lets non-nullish non-strings
+    // through as-is), and threw a type-mismatch error caught only by the
+    // generic 500 handler below.
+    if (
+      Array.isArray(data.sentences) &&
+      data.sentences.some((s: unknown) => {
+        const rec = s as Record<string, unknown>
+        return (
+          typeof rec.korean !== 'string' ||
+          typeof rec.targetForm !== 'string' ||
+          typeof rec.translation !== 'string'
+        )
+      })
+    ) {
+      return NextResponse.json(
+        { error: 'each sentence must have korean/targetForm/translation strings' },
+        { status: 400 }
+      )
+    }
 
     // WR-03: update scalar card fields (when front changes, keep normalizedFront
     // in sync) and replace-all sentences in a SINGLE transaction, so a mid-flow
