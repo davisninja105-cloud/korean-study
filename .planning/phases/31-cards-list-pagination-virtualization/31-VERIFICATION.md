@@ -1,46 +1,40 @@
 ---
 phase: 31-cards-list-pagination-virtualization
-verified: 2026-08-07T21:30:00Z
+verified: 2026-08-08T01:00:00Z
 status: gaps_found
-score: 21/23 must-haves verified
-behavior_unverified: 1
+score: 20/24 must-haves verified
+behavior_unverified: 0
 overrides_applied: 1
 overrides:
   - must_have: "Keyboard Tab navigation and a screen reader can still reach every rendered card row and its Edit control inside the virtualized Vocabulary group (31-01 must_haves.truths, CARDS-02 accessibility backstop truth)"
-    reason: "Formally waived by user decision during 31-UAT (2026-08-07, test 3): known keyboard/screen-reader focus-reachability gap in the virtualized Vocabulary group is accepted as-is for this phase, not scheduled for a fix. Recorded in WINDOWS.md entry #1 (status: waived) with reason, recorded_at, and resolved_at timestamps — a durable, formal project-level record of the same override contract this workflow's `overrides:` frontmatter captures."
+    reason: "Formally waived by user decision during 31-UAT (2026-08-07, test 3): known keyboard/screen-reader focus-reachability gap in the virtualized Vocabulary group is accepted as-is for this phase, not scheduled for a fix. Recorded in WINDOWS.md entry #1 (status: waived) with reason, recorded_at, and resolved_at timestamps."
     accepted_by: "user (via 31-UAT.md test 3 + gsd-tools windows waive)"
     accepted_at: "2026-08-07T21:12:26.182Z"
 re_verification:
-  previous_status: human_needed
-  previous_score: 20/22
+  previous_status: gaps_found
+  previous_score: 21/23
   gaps_closed:
-    - "G-31-2: on mobile, the Cards/Reading Practice toggle scrolled out of reach once a user scrolled within the Vocabulary group — closed by 31-05 (components/Nav.tsx --nav-height + components/CardsClient.tsx merged sticky wrapper), proven by a new permanent regression spec (e2e/cards-sticky-header.spec.ts), independently re-run this session and confirmed passing."
-    - "All-4-groups auto-load at scale (previously behavior-unverified) — closed via completed human UAT (31-UAT.md test 1: pass), recorded as WINDOWS.md entry #5 (status: fixed)."
-    - "Keyboard/screen-reader reachability of the virtualized Vocabulary group (previously a failed must-have) — formally waived by recorded human decision (31-UAT.md test 3, WINDOWS.md entry #1: waived), now carried as an accepted override rather than an open gap."
-  gaps_remaining:
-    - "No per-card sentence-count signal exists anywhere in the codebase (ROADMAP Success Criterion 4, second clause) — unchanged since the previous verification; not addressed by 31-05 (out of scope for that gap-closure plan) or any other plan in this phase."
-  regressions: []
+    - "SC4 second clause (per-card sentence-count signal): closed by 31-06 — `lib/cards-list.ts` `cardSelect` now requests `_count: { select: { sentences: true } }`, mapped to `CardDTO.sentenceCount` in both `getCardsPage` and `getSentencesPage`; `renderCardRow` shows an unconditional 'N sentence(s)' badge. Confirmed by direct code read this session (lib/cards-list.ts:32,156,256; lib/dto.ts:75) and by `tests/cards-list.test.ts`'s 3 new assertions (part of this session's 303/303 `npm test` run)."
+    - "D-08 tab-switch scroll/state preservation (previously behavior-unverified): closed by 31-06's new `e2e/cards-tab-switch-scroll.spec.ts`. Re-ran directly this session (not taken on SUMMARY's word) — 2/2 passing."
+  gaps_remaining: []
+  regressions:
+    - "Three NEW Critical defects (CR-01, CR-02, CR-03), all in the card-edit save flow, found by a fresh code review (31-REVIEW.md, committed after 31-06) and independently confirmed against the current codebase this session. None existed as open gaps in the previous VERIFICATION.md — they were latent in `handleSave`/`merge()` (and, for CR-03, directly introduced by 31-06's own new `sentenceCount` field) and were not caught by the previous verification pass because that pass checked for presence/wiring of the edit flow, not its behavioral correctness on these three specific paths. See Gaps below and the dedicated Code Review Cross-Reference section."
 gaps:
-  - truth: "A collapsed row still shows its reading-practice/sentence count without loading the sentences themselves (ROADMAP Success Criterion 4, second clause)"
+  - truth: "Add, edit, delete, swipe-to-delete, tap-to-gloss, group collapse, and the Reading practice view all still behave correctly against the paginated list (ROADMAP Success Criterion 5, edit sub-clause)"
     status: failed
-    reason: "No per-card sentence-count signal exists anywhere in the codebase. Re-confirmed by grep this session across lib/cards-list.ts, app/api/cards/route.ts, components/CardsClient.tsx, lib/dto.ts — zero hits for a per-card sentences _count/badge (the only _count usages found are the pre-existing type-level groupCounts aggregate, unrelated). Self-reported in 31-04-SUMMARY.md and tracked as WINDOWS.md entry #6, still status: open. Not scheduled or touched by 31-05 (that plan's scope was explicitly limited to G-31-2's sticky-header defect)."
+    reason: "Editing a card is broken in three independent, reproducible ways. CR-01: PUT /api/cards/[id] replaces all sentences via deleteMany+create on every save (app/api/cards/[id]/route.ts:116-134), regenerating every Sentence.id; CardsClient's Reading Practice patch (components/CardsClient.tsx:928-945) matches the updated card's sentences back to already-loaded Reading Practice rows by the OLD sentence id, so the id-based lookup (`updatedSentencesById.get(row.id)`) always misses and the sentence text (korean/targetForm/translation) shown in an already-loaded Reading Practice row never updates after an edit. CR-02: handleSave's setGroups update (components/CardsClient.tsx:892-917) patches a card in place inside whatever GROUP_KEYS bucket it was already found in — changing a card's type never removes it from the old bucket or adds it to the new one, and bumpGroupCount is never called (contrast handleAdd at line ~961-969, which does both correctly), so an edited card keeps rendering under the wrong type-group header with a stale badge color and unchanged group counts. CR-03: handleSave's merge() (components/CardsClient.tsx:892-908) spreads the pre-edit card (`...c`) and never re-derives `sentenceCount`; since `renderCardRow`'s `card.sentenceCount ?? card.sentences.length` (line 1106) prefers the cached (now-stale) sentenceCount whenever it is a defined number, adding/removing a sentence and saving leaves the displayed 'N sentences' badge showing the pre-edit count indefinitely — a direct regression against 31-06's own new feature."
     artifacts:
-      - path: "lib/cards-list.ts"
-        issue: "cardSelect (line 18) has no `_count: { select: { sentences: true } }` or equivalent per-card signal; getCardsGroupCounts has no per-card variant"
+      - path: "app/api/cards/[id]/route.ts"
+        issue: "PUT handler's sentence replace-all (deleteMany + create per entry, lines 116-134) regenerates every Sentence.id on every save, breaking any client-side id-based patch of already-loaded state (CR-01 root cause)"
       - path: "components/CardsClient.tsx"
-        issue: "renderCardRow has no sentence-count badge/indicator anywhere in its JSX"
+        issue: "handleSave's setGroups block (892-917) never relocates a card between type-group buckets on type change and never calls bumpGroupCount (CR-02); handleSave's merge() (892-908) never recomputes sentenceCount from the saved sentences array (CR-03); the Reading Practice patch (928-945) matches by pre-edit sentence id, which CR-01 makes permanently non-matching"
     missing:
-      - "A cheap per-card sentence-count signal (e.g. `_count: { select: { sentences: true } }` added to cardSelect) and a small UI badge/indicator in renderCardRow surfacing it, without loading the actual sentence rows"
+      - "Stable sentence ids across a PUT save (upsert-by-id instead of blanket delete+recreate in app/api/cards/[id]/route.ts), OR a full re-fetch fallback in the Reading Practice patch instead of a silent id-based no-op (CR-01)"
+      - "handleSave must remove the card from its old GROUP_KEYS bucket and insert it into groupKeyForType(updated.type)'s bucket when the type changed, plus call bumpGroupCount for both the old and new type (CR-02)"
+      - "handleSave's merge() must set sentenceCount: (updated.sentences ?? []).length instead of carrying forward the stale ...c spread value (CR-03)"
 deferred: []
-behavior_unverified_items:
-  - truth: "Switching between the Cards tab and the Reading Practice tab preserves each tab's own exact scroll position and loaded-batch state, with no re-fetch or reset, across a full round trip (Cards → Reading Practice → Cards) (31-04 must_haves.truths D-08)"
-    test: "On a dev server (or the app in production), scroll partway down the Cards tab's Vocabulary group, switch to Reading Practice, scroll it to a different depth, switch back to Cards, and confirm both tabs' scroll positions and already-loaded rows are exactly as left — no jump to top, no re-fetch, no lost rows in either direction."
-    expected: "Both Virtuoso instances restore their pre-switch scroll offset via getState()/restoreStateFrom exactly as documented in 31-RESEARCH.md Pattern 4; neither view's loaded-row state resets."
-    why_human: "31-05 closed the blocking reachability defect (G-31-2 — the toggle itself scrolling out of reach) with an automated regression spec, but that spec only asserts the toggle is visible/tappable and that a single tap switches the active view (aria-pressed becomes true) — it does not scroll each view to a distinct depth, switch back and forth, and assert the exact scroll offset is restored on return. 31-UAT.md test 2 (the only human attempt to exercise this) resulted in 'issue' (blocked by the now-fixed reachability bug) before the deeper scroll-preservation behavior could be exercised at all. Code inspection confirms getState()/restoreStateFrom are present and wired per the documented react-virtuoso contract (components/CardsClient.tsx lines 296-306, 686-696, 1394, 1424), but no automated or completed human check has yet exercised the actual round-trip restore behavior."
-human_verification:
-  - test: "Scroll the Cards tab partway down the Vocabulary group, switch to Reading Practice, scroll it to a different depth, switch back to Cards, then switch to Reading Practice again."
-    expected: "Both views restore their exact pre-switch scroll offset every time; neither view re-fetches or loses already-loaded rows on any leg of the round trip."
-    why_human: "No automated test exercises the full round-trip scroll-position/state preservation; 31-UAT.md test 2 was blocked by the (now-fixed) reachability bug before this could be exercised. See behavior_unverified_items above."
+behavior_unverified_items: []
+human_verification: []
 ---
 
 # Phase 31: Cards List Pagination & Virtualization Verification Report
@@ -50,25 +44,29 @@ human_verification:
 `sentences` relation out of the list read, window the rendered rows, and move search + lesson
 filtering server-side so correctness survives pagination.
 
-**Verified:** 2026-08-07T21:30:00Z
+**Verified:** 2026-08-08T01:00:00Z
 **Status:** gaps_found
-**Re-verification:** Yes — fresh re-verification against all 5 plans (31-01 through 31-05), overwriting
-the prior `human_needed` report that predated plan 31-05.
+**Re-verification:** Yes — fresh re-verification against all 6 plans (31-01 through 31-06), incorporating
+`31-REVIEW.md` (a fresh code review committed this session, after 31-06 and after the prior
+`gaps_found` VERIFICATION.md), superseding both the pre-31-06 verification and its own optimistic
+"SC5 ✓ VERIFIED" call.
 
 ## What changed since the previous verification
 
-The previous VERIFICATION.md (`human_needed`, 20/22, dated the same day) was produced before plan
-31-05 existed. Since then:
+The previous VERIFICATION.md (`gaps_found`, 21/23, dated before 31-06 existed) left one open gap
+(no per-card sentence-count signal) and one behavior-unverified item (D-08 tab-switch round-trip).
+Since then:
 
-- **31-UAT.md was completed** (3 tests: 1 pass, 1 issue → G-31-2, 1 formally skipped/waived).
-- **G-31-2** (mobile sticky-header defect blocking the Cards/Reading-Practice toggle) was diagnosed
-  (`.planning/debug/sticky-headers-scroll-away-mobile.md`) and closed by **plan 31-05**, which is now
-  complete with a SUMMARY.md.
-- **WINDOWS.md** was updated: entry #1 (keyboard/screen-reader reachability) → `waived`; entry #5
-  (at-scale auto-load) → `fixed`; entry #6 (per-card sentence-count signal) remains `open`.
+- **Plan 31-06 shipped**, closing both: a real `_count`-sourced `sentenceCount` field end-to-end, and
+  a new `e2e/cards-tab-switch-scroll.spec.ts` proving the D-08 round-trip. `.planning/REQUIREMENTS.md`
+  was updated to mark CARDS-01/02/03 `Complete`.
+- **A fresh, full code review (`31-REVIEW.md`) was then run against the post-31-06 codebase** and found
+  3 Critical defects, all in the card-edit save flow (`components/CardsClient.tsx` `handleSave`/`merge()`
+  interacting with `PUT /api/cards/[id]`). This verification independently re-derived and confirmed
+  all three defects by direct code reading (not by trusting the review's prose) — see the Code Review
+  Cross-Reference section below.
 
-This report re-verifies all 5 plans and the current codebase state end-to-end rather than assuming
-the prior report's findings still hold.
+**Net effect: two gaps closed, three new gaps opened.** The phase does not close clean this round.
 
 ## Goal Achievement
 
@@ -76,130 +74,157 @@ the prior report's findings still hold.
 
 | # | Truth | Status | Evidence |
 |---|-------|--------|----------|
-| 1 | Opening `/cards` paints first rows <1s; initial query capped, no `sentences` rows; `e2e/perf.spec.ts` passes at a tightened threshold | ✓ VERIFIED | `lib/cards-list.ts` `cardSelect` (line 18) has no `sentences` field, with an explicit comment "DROPPED from the list select per CARDS-01"; `getCardsPage` uses `take: params.take + 1` overfetch. Ran `npx playwright test e2e/perf.spec.ts --project=chromium` directly this session — 8/8 pass; `/cards` page-load samples 29-65ms (budget: `100`, confirmed via `grep "'/cards'" e2e/perf.spec.ts`, not the original generic `3000`). |
-| 2 | Scrolling stays smooth, DOM stays bounded rather than growing with every page loaded | ✓ VERIFIED | `components/CardsClient.tsx` renders through `<Virtuoso>` (react-virtuoso, confirmed real dependency) with composed `rows` and a `rangeChanged` handler driving per-group auto-load — DOM-bounding is inherent to react-virtuoso's windowing (single flat render path, no unbounded fallback). At-scale behavior additionally confirmed by completed human UAT (31-UAT.md test 1: **pass** — "Each group's rows keep appending... independent of the other groups' scroll state... DOM node count stays bounded throughout"), closing what the prior verification left as behavior-unverified. |
-| 3 | Typing a search term returns matches from the full deck (not just the loaded page), debounced so intermediate keystrokes don't each hit the server | ✓ VERIFIED | `lib/useDebouncedValue.ts` (300ms debounce) unit-tested; `buildCardsWhere()` in `lib/cards-list.ts` matches `front`/`back`/`notes`/sentence `korean`/`translation` server-side. `npx playwright test e2e/cards-search-clear.spec.ts` re-run directly this session — passes. |
-| 4 | Lesson-range filter returns the correct card set across the full deck, and a collapsed row still shows its reading-practice/sentence count without loading the sentences themselves | ⚠️ PARTIAL — first clause ✓ VERIFIED, second clause ✗ FAILED | `lessonFrom`/`lessonTo` wired through `buildCardsWhere()`, validated (`INTEGER_RE` + range check), unit-tested; filter-commit re-issues server queries. **However**, no per-card sentence-count signal exists anywhere — re-confirmed by grep this session across `lib/cards-list.ts`, `lib/dto.ts`, `app/api/cards/route.ts`, `components/CardsClient.tsx`: zero hits for any per-card sentence-count field or UI badge (the only `_count` usages present are the unrelated type-level `groupCounts` aggregate). See Gaps below. |
-| 5 | Add/edit/delete/swipe-to-delete/tap-to-gloss/group-collapse/Reading-Practice all still work; existing e2e/unit suites stay green | ✓ VERIFIED | Ran directly this session: `npm test` → 300/300 passing (27/27 files). `npm run lint` → 0 errors (1 pre-existing unrelated warning in `StudySession.tsx`). `npx playwright test e2e/cards-sticky-header.spec.ts` → 2/2 passing. `npx playwright test e2e/cards-search-clear.spec.ts e2e/smoke.spec.ts` → 6/6 passing. `npx playwright test e2e/freshness-fresh-paths.spec.ts e2e/freshness-gate.spec.ts e2e/freshness-router-cache.spec.ts e2e/freshness-client-shell.spec.ts` → 19/19 passing. `npx playwright test e2e/perf.spec.ts` → 8/8 passing. `SwipeRow`, `useWordTap`/`GlossProvider`, group-collapse toggle, and Reading Practice's independent `<Virtuoso>` all confirmed present and wired in `components/CardsClient.tsx`. |
+| 1 | Opening `/cards` paints first rows <1s; initial query capped, no `sentences` rows; `e2e/perf.spec.ts` passes at a tightened threshold | ✓ VERIFIED | `lib/cards-list.ts` `cardSelect` (line 32) requests `_count` but no `sentences` field ("DROPPED from the list select per CARDS-01"). Ran `npx playwright test e2e/perf.spec.ts --project=chromium` directly this session — 8/8 pass; `/api/stats` and `/api/activity` samples in the single-digit ms range, `/cards` budget tightened to 100ms per prior verification (`grep "'/cards'" e2e/perf.spec.ts` → `100`, not the original generic `3000`). |
+| 2 | Scrolling stays smooth, DOM stays bounded rather than growing with every page loaded | ✓ VERIFIED | `components/CardsClient.tsx` renders through `<Virtuoso>` with composed `rows` and a `rangeChanged`-driven per-group auto-load. At-scale behavior confirmed by completed human UAT (31-UAT.md test 1: pass) and `WINDOWS.md` entry #5 (`status: fixed`). No regression found this session (code path unchanged since prior verification). |
+| 3 | Typing a search term returns matches from the full deck, debounced so intermediate keystrokes don't each hit the server | ✓ VERIFIED | `lib/useDebouncedValue.ts` (300ms) unit-tested; `buildCardsWhere()` matches `front`/`back`/`notes`/sentence `korean`/`translation` server-side. Part of this session's 303/303 `npm test` run; unrelated to the new defects (no `runQuery`/search-state changes since the prior verification). |
+| 4 | Lesson-range filter returns the correct card set across the full deck, and a collapsed row still shows its reading-practice/sentence count without loading the sentences themselves | ✓ VERIFIED | Both clauses now hold. `lessonFrom`/`lessonTo` wired through `buildCardsWhere()`, validated, unit-tested. **Sentence-count clause, closed by 31-06:** `cardSelect._count: { select: { sentences: true } }` (lib/cards-list.ts:32) → mapped to `CardDTO.sentenceCount` in `getCardsPage` (line 156) and `getSentencesPage`'s nested card (line 256) → rendered in `renderCardRow` (components/CardsClient.tsx:1106,1125) — confirmed present and wired by direct code read this session. Note: the *initial-load* display of this count is correct; see Gap below for what happens to it *after an edit* (CR-03). |
+| 5 | Add, edit, delete, swipe-to-delete, tap-to-gloss, group collapse, and the Reading practice view all still behave correctly against the paginated list; the existing e2e and unit suites stay green | ✗ FAILED | **Suites do stay green** — `npm test` (303/303, re-run this session), `npm run lint` (0 errors, 1 pre-existing unrelated warning), all targeted e2e specs re-run this session pass. **But "behave correctly" does not hold for edit.** Three independently-confirmed Critical defects (CR-01, CR-02, CR-03 — see Code Review Cross-Reference below) make ordinary card edits produce silently-wrong displayed state with no error surfaced, and none of them are caught by the passing test suites because no test exercises these specific scenarios (type change, sentence add/remove + already-loaded Reading Practice row, sentence add/remove + sentence-count badge). Add, delete, swipe-to-delete, tap-to-gloss, and group-collapse-toggle-itself are unaffected and remain verified working (delete correctly prunes Reading Practice rows and calls bumpGroupCount, per components/CardsClient.tsx:870-881; handleAdd correctly resolves the new type's group and bumps its count, lines 961-969). |
 
-**Score:** 21/23 must-haves verified (1 present-but-behavior-unverified; 1 failed — see Gaps)
+**Score:** 4/5 ROADMAP Success Criteria fully verified; SC5 fails on its edit sub-clause.
 
-### Additional Plan-Level Must-Haves (31-01 through 31-05 frontmatter)
+### Code Review Cross-Reference (required per task instructions)
 
-| # | Truth | Status | Evidence |
-|---|-------|--------|----------|
-| 6 | Cursor page boundary landing exactly on a group's last row returns `hasMore:false` with no duplicated/skipped row | ✓ VERIFIED | `getCardsPage`'s `take+1` overfetch logic in `lib/cards-list.ts`; unit-tested in `tests/cards-list.test.ts`. |
-| 7 | Empty/single-element group edge cases behave correctly | ✓ VERIFIED | Unit-tested in `tests/cards-list.test.ts`. |
-| 8 | Deterministic ordering via `[{createdAt:'desc'},{id:'desc'}]` id-tiebreak | ✓ VERIFIED | Present verbatim in `getCardsPage`/`getSentencesPage`; unit-tested. |
-| 9 | `Cards (N)` toggle and every group header's count read from `groupCounts`, never a loaded-array length | ✓ VERIFIED | `components/CardsClient.tsx:1360` reads `groupCounts.total`; `e2e/cards-search-clear.spec.ts` re-run this session, still passes (CR-01 fix holds). |
-| 10 | A late-resolving stale search/filter response never overwrites a newer one | ✓ VERIFIED | `searchSeqRef`/`filterGenerationRef` guards present; `e2e/freshness-gate.spec.ts`'s `/cards open-sheet boundary refresh` re-run this session, still passes. |
-| 11 | Legacy client-side `.filter()` block fully removed | ✓ VERIFIED | `grep -c 'filteredCards = cards.filter'` → 0 in current `components/CardsClient.tsx`. |
-| 12 | Three distinct empty-state messages (no cards / zero search matches naming the query / zero filter matches) | ✓ VERIFIED | Literal strings confirmed present in `components/CardsClient.tsx`. |
-| 13 | Reading Practice tab fetches independently via `GET /api/cards/sentences`, not derived from Cards-tab state | ✓ VERIFIED | `grep -c "groups.vocabulary.loaded.flatMap"` → 0; `getSentencesPage()` + `app/api/cards/sentences/route.ts` present. |
-| 14 | Opening the Edit sheet fetches full sentences on demand via `GET /api/cards/[id]`; front/back/notes editable immediately | ✓ VERIFIED | `GET /api/cards/[id]` present, route-level-tested in `tests/cards-id-route.test.ts` (part of this session's 300/300 unit run). |
-| 15 | `FreshnessWatcher`'s `/cards` backstop is upsert-by-id, never a wholesale replace or delete-by-omission | ✓ VERIFIED | `FreshnessWatcher.tsx` line 119: `page && Array.isArray(page.cards)`; `e2e/freshness-fresh-paths.spec.ts` re-run this session, still passes. |
-| 16 | `e2e/perf.spec.ts`'s `/cards` budget is a real measured number, not the original generic `3000` | ✓ VERIFIED | `grep "'/cards'" e2e/perf.spec.ts` → `100`; not `3000`. |
-| 17 | All four type groups' expand-on-tap fetch and per-group scroll-proximity auto-load behave correctly against a realistically large deck | ✓ VERIFIED (via completed human UAT) | Previously behavior-unverified (8-9 card e2e fixture too small); now closed by 31-UAT.md test 1: **pass**. `WINDOWS.md` entry #5: `status: fixed`. |
-| 18 | Switching between Cards and Reading Practice tabs preserves each tab's own scroll position across a full round trip, with no re-fetch or reset (D-08) | ⚠️ PRESENT_BEHAVIOR_UNVERIFIED | The blocking reachability sub-defect (toggle unreachable on mobile) is fixed and proven (see row 21 below). The deeper round-trip scroll-preservation invariant itself (`getState`/`restoreStateFrom`) is present and correctly wired by code inspection, but no automated or completed human test exercises the actual restore behavior. See Human Verification below. |
-| 19 | Keyboard Tab navigation and a screen reader can still reach every rendered card row and its Edit control inside the virtualized Vocabulary group | ✓ PASSED (override) | Formally waived by recorded human decision during 31-UAT (2026-08-07, test 3) — see `overrides:` frontmatter above and `WINDOWS.md` entry #1 (`status: waived`). Re-confirmed by code inspection this session: still no roving-tabindex/scroll-into-view affordance in `renderCardRow`'s Edit control — the underlying limitation is unchanged, but it is now a formally accepted risk rather than an open gap. |
-| 20 | A collapsed row still shows its reading-practice/sentence count without loading the sentences themselves | ✗ FAILED | Unchanged since the prior verification. See Gaps below. |
-| 21 | On a short/mobile-width viewport, scrolling within the Vocabulary group keeps the Cards/Reading Practice toggle visible and tappable (G-31-2, 31-05) | ✓ VERIFIED | `e2e/cards-sticky-header.spec.ts` re-run directly this session (not taken on SUMMARY's word) — 2/2 pass. `components/CardsClient.tsx` lines 1288-1364 confirm the search bar and toggle are now children of one `sticky` wrapper (`style={{ top: 'var(--nav-height, 68px)' }}`), matching the plan and SUMMARY exactly. |
-| 22 | Tapping the toggle while scrolled successfully switches the active view (reachable AND functional) | ✓ VERIFIED | Same spec, `aria-pressed` assertion; passes. |
-| 23 | CardsClient's sticky bar docks beneath Nav's real measured height instead of overlapping it, via `--nav-height` | ✓ VERIFIED | `components/Nav.tsx` lines 20, 29-43 confirm `headerRef` + `useLayoutEffect` + `ResizeObserver` publish `--nav-height` on mount and on every resize, with cleanup on unmount — matches SUMMARY exactly. Spec's overlap `boundingBox()` assertion passes. |
+`31-REVIEW.md` (committed this session, post-31-06) found 3 Critical defects, all in
+`components/CardsClient.tsx` `handleSave`/`merge()` interacting with `PUT /api/cards/[id]`. Each was
+independently re-derived from the current codebase this session (not taken on the review's word):
 
-**Combined score:** 21/23 (rows 1,2,3,5,6-17,19,21,22,23 verified/passed-override = 21; row 18 behavior-unverified = 1; row 4/20 failed = 1, counted once as the single genuine gap since rows 4 and 20 describe the same underlying gap)
+| Finding | Confirmed? | Root cause (verified by direct code read) | Bearing on SC5 |
+|---|---|---|---|
+| **CR-01** — editing sentences never updates already-loaded Reading Practice rows | ✓ Confirmed | `app/api/cards/[id]/route.ts:116-134`: `sentenceOps` is unconditionally `[deleteMany, ...create(...)]` whenever `data.sentences` is an array — every `Sentence.id` is regenerated on every save. `components/CardsClient.tsx:928-945`'s Reading Practice patch does `updatedSentencesById.get(row.id)` where `row.id` is the pre-edit id — this lookup is provably always `undefined` after any sentence-bearing save, so the sentence-text patch is a permanent silent no-op (the parent card fields still patch correctly via `merge(row.card)`). The WR-03 comment directly above this code (added in an earlier fix pass) claims the id-based match works "since sentences may be reordered/added/removed" — it does not, because ids are never stable across a save in the first place. | Directly falsifies "the Reading practice view... behave[s] correctly" for the edit path. |
+| **CR-02** — editing a card's type does not relocate it between type-group buckets or update `groupCounts` | ✓ Confirmed | `components/CardsClient.tsx:892-917`: the `setGroups` update iterates `GROUP_KEYS` and patches the card **only inside whichever bucket it's already found in** (`next[key].loaded.map(...)`) — it never filters the card out of its old bucket or pushes it into `groupKeyForType(updated.type)`'s bucket, and `bumpGroupCount` (defined at line 509, correctly used by `handleAdd` at lines 961/969 and `handleDelete` at line 875) is never called anywhere in `handleSave`. Reproduction confirmed by code trace: change a `vocabulary` card to `grammar` and save — the card stays under the "Vocabulary" header with a `grammar`-colored badge (`typeBadgeClass(card.type)` reads the *new* type), and both group headers' counts are wrong until a reload. | Directly falsifies "group collapse... and... edit... behave correctly" — group membership visibly desyncs from the data. |
+| **CR-03** — editing a card's sentences does not refresh the cached `sentenceCount` badge | ✓ Confirmed | `components/CardsClient.tsx:1106`: `renderCardRow` computes `sentenceCount = card.sentenceCount ?? card.sentences.length` — a nullish-coalescing fallback that only yields to `sentences.length` when `sentenceCount` is `null`/`undefined`. `handleSave`'s `merge()` (lines 892-908) spreads `...c` (the stale pre-edit card, whose `sentenceCount` is always a defined number from the original list fetch) and never re-derives it, even though it *does* correctly rebuild the fresh `sentences` array. The stale cached count therefore always wins. Reproduction confirmed by code trace: a card showing "2 sentences", add a third, save — badge still reads "2 sentences" until a full reload. | This is a direct interaction with 31-06's own new field — a regression introduced by this phase's own gap-closure work, not a pre-existing/out-of-scope issue. |
+
+**Disposition: goal-blocking, not pre-existing/out-of-scope.** All three findings sit squarely inside
+Success Criterion 5's explicit text ("Add, edit, delete... and the Reading practice view all still
+behave correctly"). CR-03 is a direct regression against 31-06's own new sentence-count feature
+(itself part of this phase). CR-01 breaks the id-based Reading Practice patch that was *added in this
+phase* (31-04's WR-03 fix) — the patch mechanism exists and is wired, but its precondition (stable
+sentence ids across a save) was never true, so it has silently never worked since it was introduced.
+CR-02 is a gap in `handleSave`'s group-bucket bookkeeping that has existed since the grouped/paginated
+rendering model itself was introduced in 31-01/31-02 — the bug is old, but the *user-facing behavior
+it breaks* ("group collapse... behave correctly") is a Phase-31-authored success criterion being
+verified for the first time at real depth in this pass, not a criterion inherited from before Phase
+31 existed (pre-31, there was no type-group bucket concept to desync). None of the three can be waved
+off as "outside this phase's scope."
+
+**Why the prior verification missed these:** the previous `31-VERIFICATION.md` (pre-31-06) marked SC5
+`✓ VERIFIED` on the strength of test-suite-green + presence/wiring checks ("SwipeRow, useWordTap/
+GlossProvider, group-collapse toggle... all confirmed present and wired"). That is necessary but not
+sufficient — none of CR-01/02/03 are visible to a presence check or to the existing test suite, because
+no existing test exercises "edit a card's type," "edit a card's sentences with an already-loaded
+Reading Practice row for it," or "edit a card's sentence count." This pass corrects that gap by tracing
+the actual data flow through `handleSave`/`merge()` rather than relying on suite-green + grep.
 
 ### Required Artifacts
 
 | Artifact | Expected | Status | Details |
 |----------|----------|--------|---------|
-| `lib/cards-list.ts` | `getCardsPage()`, `getCardsGroupCounts()`, `getSentencesPage()`, `buildCardsWhere()` | ✓ VERIFIED | All four present, exported, unit-tested. |
-| `lib/dto.ts` | `CardsPageDTO`, `GroupCountsDTO`, `SentencePageDTO` | ✓ VERIFIED | Confirmed via imports in `lib/cards-list.ts` and usage across routes. |
-| `app/api/cards/route.ts` | Rewritten `GET` with query-param parsing/clamping/validation | ✓ VERIFIED | `Math.min(...)` take-clamp, `INTEGER_RE` lesson-range validation, try/catch present. |
-| `app/api/cards/[id]/route.ts` | `GET` returning full `CardDTO` incl. sentences | ✓ VERIFIED | Present, route-level tested. |
-| `app/api/cards/sentences/route.ts` | New route delegating to `getSentencesPage` | ✓ VERIFIED | Present, registered route. |
+| `lib/cards-list.ts` | `getCardsPage()`, `getCardsGroupCounts()`, `getSentencesPage()`, `buildCardsWhere()`, `cardSelect._count` | ✓ VERIFIED | All present, exported, unit-tested; `_count` aggregate confirmed at line 32. |
+| `lib/dto.ts` | `CardsPageDTO`, `GroupCountsDTO`, `SentencePageDTO`, `CardDTO.sentenceCount?` | ✓ VERIFIED | `sentenceCount?: number` confirmed at line 75. |
+| `app/api/cards/route.ts` | Rewritten `GET` with query-param parsing/clamping/validation | ✓ VERIFIED | Unchanged since prior verification, no regression found. |
+| `app/api/cards/[id]/route.ts` | `GET`/`PUT`/`DELETE` full-card CRUD | ⚠️ ORPHANED DEFECT | `GET`/`DELETE` correct. `PUT`'s sentence replace-all (lines 116-134) is the CR-01 root cause — present, wired, but produces incorrect downstream behavior. |
+| `app/api/cards/sentences/route.ts` | New route delegating to `getSentencesPage` | ✓ VERIFIED | Present, registered, unchanged. |
 | `lib/useDebouncedValue.ts` | Pure debounce hook | ✓ VERIFIED | Present, unit-tested. |
-| `components/CardsClient.tsx` | Per-group state, composed-row Virtuoso rendering, search/filter wiring, Reading Practice, Edit sheet quick-edit, merged sticky search+toggle unit (31-05) | ✓ VERIFIED | All confirmed present via direct code inspection this session. |
-| `components/Nav.tsx` | `--nav-height` CSS custom property publisher (31-05) | ✓ VERIFIED | `headerRef` + `useLayoutEffect` + `ResizeObserver`, confirmed present and correct. |
-| `components/FreshnessWatcher.tsx` | `CardsPageDTO`-shaped `/cards` backstop check | ✓ VERIFIED | Confirmed fixed; e2e re-run passes. |
-| `e2e/cards-sticky-header.spec.ts` | G-31-2 regression proof (31-05) | ✓ VERIFIED | Present, re-run directly this session, passes (toggle-in-viewport, functional switch, no header overlap). |
-| `tests/cards-list.test.ts`, `tests/cards-id-route.test.ts`, `tests/use-debounced-value.test.ts` | Unit/route test coverage | ✓ VERIFIED | All ran directly this session as part of `npm test` (300/300). |
-| `e2e/perf.spec.ts`, `e2e/freshness-fresh-paths.spec.ts` | Tightened budget, extended upsert regression | ✓ VERIFIED | Ran directly this session, both pass. |
+| `components/CardsClient.tsx` | Per-group state, composed-row Virtuoso rendering, search/filter wiring, Reading Practice, Edit sheet, sticky search+toggle unit, sentence-count badge | ⚠️ PARTIAL | Everything except `handleSave`'s three sub-behaviors (CR-01/02/03) confirmed correct. |
+| `components/Nav.tsx` | `--nav-height` CSS custom property publisher | ✓ VERIFIED | Unchanged since prior verification. |
+| `e2e/cards-tab-switch-scroll.spec.ts` | D-08 round-trip regression proof (31-06) | ✓ VERIFIED | Present, re-run directly this session — 2/2 passing. |
+| `tests/cards-list.test.ts` | Unit coverage incl. `_count`/sentenceCount mapping | ✓ VERIFIED | Ran directly this session as part of `npm test` (303/303). |
+| `e2e/perf.spec.ts` | Tightened `/cards` budget | ✓ VERIFIED | Ran directly this session, 8/8 pass. |
+| `.planning/REQUIREMENTS.md` | CARDS-01/02/03 status synced to codebase state | ✓ VERIFIED (at the requirement-description level) | Confirmed `Complete` for all three; the individual requirement descriptions (capped query, virtualized scroll, server-side search/filter) are narrowly worded and genuinely satisfied — SC5's edit-flow defects are a broader, cross-cutting ROADMAP success criterion not captured by any single CARDS-0x requirement string, so this is not itself a documentation-accuracy gap. See Gaps for the actual blocking issue. |
 
 ### Key Link Verification
 
 | From | To | Via | Status | Details |
 |------|-----|-----|--------|---------|
-| `app/cards/page.tsx` | `lib/cards-list.ts` | `getCardsPage`/`getCardsGroupCounts` via `Promise.all` | ✓ WIRED | Confirmed by code inspection. |
-| `app/api/cards/route.ts` | `lib/cards-list.ts` | `GET` delegates to `getCardsPage`/`getCardsGroupCounts` | ✓ WIRED | Confirmed. |
-| `components/CardsClient.tsx` | `react-virtuoso` | Flat `<Virtuoso>` renders composed rows | ✓ WIRED | Confirmed, two instances (Cards + Reading Practice). |
-| `components/CardsClient.tsx` | `app/api/cards/route.ts` | Debounced search/filter fetches `fetch('/api/cards?...')` | ✓ WIRED | Confirmed. |
-| `app/api/cards/sentences/route.ts` | `lib/cards-list.ts` | `GET` delegates to `getSentencesPage` | ✓ WIRED | Confirmed. |
-| `components/CardsClient.tsx` (Edit sheet) | `app/api/cards/[id]/route.ts` | `fetch(\`/api/cards/${id}\`)` on sheet open | ✓ WIRED | Confirmed. |
-| `components/FreshnessWatcher.tsx` | `components/CardsClient.tsx` | `useFreshPayload()` → upsert-by-id merge | ✓ WIRED | Confirmed and e2e-proven non-vacuous. |
-| `components/Nav.tsx` (header ResizeObserver) | `components/CardsClient.tsx` (sticky wrapper) | `document.documentElement` CSS custom property `--nav-height`, consumed via `style={{ top: 'var(--nav-height, 68px)' }}` | ✓ WIRED | Confirmed by direct code read of both files this session; e2e overlap assertion passes. |
+| `app/cards/page.tsx` | `lib/cards-list.ts` | `getCardsPage`/`getCardsGroupCounts` via `Promise.all` | ✓ WIRED | Unchanged. |
+| `components/CardsClient.tsx` | `react-virtuoso` | Flat `<Virtuoso>` renders composed rows | ✓ WIRED | Confirmed, two instances. |
+| `components/CardsClient.tsx` (Edit sheet save) | `app/api/cards/[id]/route.ts` (PUT) | `fetch` → `handleSave(updated)` → `setGroups`/`setSearchResults`/`setReadingPractice` merge | ⚠️ WIRED BUT INCORRECT | The link exists and fires, but its merge logic is wrong on 3 sub-paths (CR-01/02/03) — see Gaps. |
+| `components/CardsClient.tsx` (Reading Practice row) | `updated.sentences[].id` (PUT response) | Id-based lookup in `handleSave`'s Reading Practice patch | ✗ NOT EFFECTIVELY WIRED | Lookup key (`row.id`) never matches the response's regenerated ids (CR-01) — always misses. |
+| `lib/cards-list.ts` `cardSelect._count` | `components/CardsClient.tsx` `renderCardRow`'s badge | `CardDTO.sentenceCount` (initial load) | ✓ WIRED | Correct on initial load; goes stale after an edit (CR-03) because `handleSave`'s `merge()` never re-derives it. |
 
 ### Behavioral Spot-Checks / Direct Test Runs (this session)
 
 | Behavior | Command | Result | Status |
 |----------|---------|--------|--------|
-| Unit test suite | `npm test` | 300/300 passing, 27/27 files | ✓ PASS |
+| Unit test suite | `npm test` | 303/303 passing, 27/27 files | ✓ PASS |
 | Lint | `npm run lint` | 0 errors, 1 pre-existing unrelated warning (`StudySession.tsx`) | ✓ PASS |
-| G-31-2 regression spec | `npx playwright test e2e/cards-sticky-header.spec.ts --project=chromium` | 2/2 passing | ✓ PASS |
-| Search-clear / smoke e2e | `npx playwright test e2e/cards-search-clear.spec.ts e2e/smoke.spec.ts --project=chromium` | 6/6 passing | ✓ PASS |
-| Perf e2e | `npx playwright test e2e/perf.spec.ts --project=chromium` | 8/8 passing; `/cards` 29-65ms vs. 100ms budget | ✓ PASS |
-| Freshness suite | `npx playwright test e2e/freshness-fresh-paths.spec.ts e2e/freshness-gate.spec.ts e2e/freshness-router-cache.spec.ts e2e/freshness-client-shell.spec.ts --project=chromium` | 19/19 passing | ✓ PASS |
+| Perf e2e | `npx playwright test e2e/perf.spec.ts --project=chromium` | 8/8 passing | ✓ PASS |
+| D-08 tab-switch e2e | `npx playwright test e2e/cards-tab-switch-scroll.spec.ts --project=chromium` | 2/2 passing | ✓ PASS |
+| CR-01 root cause (PUT sentence replace-all) | Direct code read: `app/api/cards/[id]/route.ts:116-134` | Confirmed: unconditional `deleteMany` + `create` per entry, no id preservation | ✗ DEFECT CONFIRMED |
+| CR-02 root cause (no bucket relocation / bumpGroupCount) | Direct code read: `components/CardsClient.tsx:892-917`, cf. `961-969` | Confirmed: `handleSave` never calls `bumpGroupCount`; `setGroups` never removes/re-adds across `GROUP_KEYS` | ✗ DEFECT CONFIRMED |
+| CR-03 root cause (stale sentenceCount) | Direct code read: `components/CardsClient.tsx:892-908`, `1106` | Confirmed: `merge()`'s `...c` spread carries forward the stale `sentenceCount`; no re-derivation line present | ✗ DEFECT CONFIRMED |
+
+No test in the repo exercises any of the three CR-0x scenarios (confirmed via `grep -rn "handleSave" tests/ e2e/` → no matches); they are real, unguarded gaps in test coverage as well as in behavior.
 
 ### Requirements Coverage
 
 | Requirement | Source Plan(s) | Description | Status | Evidence |
 |-------------|-----------------|--------------|--------|----------|
-| CARDS-01 | 31-01, 31-03, 31-04 | Capped, sentence-free `/cards` initial query | ✓ SATISFIED | REQUIREMENTS.md marks Complete; codebase confirms `getCardsPage` capped + sentence-free, `GET /api/cards/[id]`/`GET /api/cards/sentences` provide on-demand sentence access. |
-| CARDS-02 | 31-01, 31-02, 31-04, 31-05 | Smooth virtualized scrolling, no unbounded DOM growth | ⚠️ SUBSTANTIALLY MET, REQUIREMENTS.md TRACKING STALE | The literal requirement text (DOM-bounding/smoothness) is met (react-virtuoso in place, at-scale UAT passed). Both blockers that previously kept this Pending are now resolved: the accessibility gap is formally waived (WINDOWS.md #1), and G-31-2 (the mobile toggle-reachability defect, also filed against CARDS-02 in 31-05's frontmatter) is closed with a passing regression test. **`REQUIREMENTS.md` (last touched at the pre-31-05, pre-UAT commit `0a10bed`) still lists CARDS-02 as `Pending`** — this is a documentation-sync gap, not a code gap: the tracking file was not updated after the UAT session or 31-05. One item remains genuinely unresolved and outstanding regardless: D-08's full round-trip scroll-preservation behavior is still unverified (see Human Verification). Recommend updating REQUIREMENTS.md to reflect current WINDOWS.md state as part of closing this phase. |
-| CARDS-03 | 31-01, 31-02 | Server-side search/lesson filter, debounced | ✓ SATISFIED | REQUIREMENTS.md marks Complete; codebase and tests confirm. |
+| CARDS-01 | 31-01, 31-03, 31-04, 31-06 | Capped, sentence-free `/cards` initial query | ✓ SATISFIED | REQUIREMENTS.md marks Complete; codebase confirms — this requirement's literal text does not cover post-edit behavior. |
+| CARDS-02 | 31-01, 31-02, 31-04, 31-05, 31-06 | Smooth virtualized scrolling, no unbounded DOM growth | ✓ SATISFIED | REQUIREMENTS.md marks Complete; codebase and UAT confirm — this requirement's literal text does not cover post-edit behavior either. |
+| CARDS-03 | 31-01, 31-02, 31-06 | Server-side search/lesson filter, debounced | ✓ SATISFIED | REQUIREMENTS.md marks Complete; codebase and tests confirm. |
 
-No orphaned requirements — all three phase-31 requirement IDs (CARDS-01/02/03) appear in at least one plan's `requirements` frontmatter (31-05 also declares `[CARDS-02]`) and are individually addressed above.
+No orphaned requirements — all three phase-31 requirement IDs appear in at least one plan's
+`requirements` frontmatter and are individually addressed above. **Note:** none of CARDS-01/02/03's
+requirement-level descriptions in REQUIREMENTS.md mention edit-flow correctness, so their "Complete"
+status is not itself inaccurate — but ROADMAP Success Criterion 5 (a broader, requirement-ID-agnostic
+phase-level truth) is not satisfied, which is why this phase's overall status is `gaps_found` despite
+all three named requirements reading `Complete`. Requirement-level tracking and ROADMAP-level goal
+achievement are not the same measurement, and this is exactly the case where they diverge.
 
 ### Anti-Patterns Found
 
-No `TBD`/`FIXME`/`XXX`/`HACK`/`PLACEHOLDER` debt markers found in the files this phase modified (including 31-05's `components/Nav.tsx`, `components/CardsClient.tsx`, `e2e/cards-sticky-header.spec.ts`). No empty-implementation stubs found. The project's own `WINDOWS.md` ledger transparently tracks the one remaining open gap (#6, sentence-count signal) — this is the correct process artifact for tracking it, not a hidden debt marker. One process/documentation gap noted above: `REQUIREMENTS.md`'s CARDS-02 line is stale relative to `WINDOWS.md`'s current state.
+No `TBD`/`FIXME`/`XXX`/`HACK`/`PLACEHOLDER` debt markers found in the files this phase modified. No
+empty-implementation stubs found. `WINDOWS.md` entry #6 (per-card sentence-count signal) is stale:
+its `status` still reads `open` even though 31-06 closed the underlying gap (confirmed by code and
+tests this session) — 31-06-PLAN.md explicitly deferred closing the ledger entry itself to "the
+standard post-execution verification workflow," i.e., this step. **This report does not itself edit
+WINDOWS.md** (out of this agent's stated deliverables — VERIFICATION.md only) but flags both actions
+for whoever closes out this phase: (1) mark WINDOWS.md entry #6 `fixed`, and (2) file 3 new WINDOWS.md
+entries for CR-01/CR-02/CR-03 so they are tracked in the project's standard defect ledger rather than
+living only in `31-REVIEW.md`.
 
 ## Gaps Summary
 
-One must-have genuinely fails as shipped, unchanged since the prior verification and untouched by
-31-05 (whose scope was deliberately limited to G-31-2):
+**One must-have genuinely fails as shipped:** ROADMAP Success Criterion 5's edit sub-clause. Three
+independently-confirmed Critical defects (CR-01, CR-02, CR-03), all in
+`components/CardsClient.tsx`'s `handleSave`/`merge()` and the `PUT /api/cards/[id]` route it calls,
+mean an ordinary "edit a card" action can silently show wrong data to the user:
 
-1. **No per-card sentence-count signal** (ROADMAP Success Criterion 4's second clause). Grep across
-   every relevant file confirms zero implementation. Low-effort to close (a
-   `_count: { select: { sentences: true } }` addition to `cardSelect` plus a small badge in
-   `renderCardRow`) but was never scheduled in any of the five plans that shipped this phase. Tracked
-   honestly as `WINDOWS.md` entry #6 (`status: open`).
+1. **CR-01:** an already-loaded Reading Practice row's sentence text never updates after editing that
+   card's sentences (id-based patch permanently misses because the PUT route regenerates every
+   sentence id on every save).
+2. **CR-02:** changing a card's type never moves it to the correct type-group section or updates
+   either group's header count.
+3. **CR-03:** adding/removing a sentence and saving leaves the "N sentences" badge showing the
+   stale pre-edit count — a direct regression against 31-06's own new feature shipped in this same
+   phase.
 
-One item remains present-and-wired but not yet behaviorally proven at full round-trip depth: D-08's
-tab-switch scroll-position preservation. The blocking reachability defect (G-31-2) that previously
-prevented even attempting this check is now fixed and independently re-verified in this session
-(`e2e/cards-sticky-header.spec.ts` passes). What remains unverified is narrower and more specific than
-before: does `getState()`/`restoreStateFrom` actually restore the exact scroll offset across a full
-Cards → Reading Practice → Cards round trip. No code defect was found by inspection — the wiring
-matches react-virtuoso's documented contract — but no automated or completed human test exercises the
-actual restore behavior yet.
+None of these are caught by the passing 303/303 unit suite or the passing e2e specs, because no
+existing test exercises any of these three specific scenarios — this is a genuine, unguarded gap in
+both behavior and test coverage, not a false alarm from an overly strict review.
 
 **What closed since the last verification:**
-- G-31-2 (mobile sticky-header toggle unreachable) — closed by 31-05, durable automated regression proof.
-- At-scale all-four-groups auto-load — closed via completed human UAT (test 1: pass).
-- Keyboard/screen-reader reachability — formally waived by recorded human decision, no longer an open gap.
+- Per-card sentence-count signal on initial load (ROADMAP SC4's second clause) — closed by 31-06,
+  confirmed present/wired/tested this session.
+- D-08 tab-switch round-trip scroll/state preservation — closed by 31-06's new e2e spec, re-run and
+  confirmed passing this session.
+
+**What's newly broken:** the three CR-0x defects above. None were flagged as open gaps in the prior
+verification pass, because that pass verified presence/wiring and suite-green status for the edit
+flow rather than tracing `handleSave`'s actual data flow.
 
 **Recommendation:** This phase's core engineering goal — capping the query, dropping sentences from
-the list read, windowing the render, and moving search/filter server-side — is real, well-tested, and
-verified working end-to-end (Success Criteria 1, 2, 3, and 5, plus SC4's first clause, all hold). Two
-items remain before this phase can close with zero open items:
-1. Schedule a small follow-up (or accept as a formally waived gap) for the per-card sentence-count
-   signal — the only genuine, code-level gap remaining.
-2. Get a human to do the specific, narrow D-08 round-trip scroll-preservation check now that the
-   reachability blocker is gone (should take under a minute given the toggle is now reliably reachable).
-3. Update `REQUIREMENTS.md`'s CARDS-02 line to reflect the current `WINDOWS.md` state (documentation
-   sync only, no code change needed) once items 1-2 are resolved.
+the list read, windowing the render, moving search/filter server-side, and now also surfacing a
+per-card sentence count without loading sentences — is real, well-tested, and verified working
+end-to-end (Success Criteria 1-4 all hold). The phase cannot close clean until CR-01/CR-02/CR-03 are
+fixed (a small, well-scoped patch to `handleSave`'s `merge()`/`setGroups` block and, for CR-01, either
+an id-stable PUT sentence upsert or a full-refetch fallback in the Reading Practice patch — the
+review's own suggested fixes are directly actionable). Recommend a `31-07` gap-closure plan targeting
+exactly these three findings, followed by a re-verification pass that includes at least one automated
+regression test per defect (type-change relocation, sentence-count-after-edit, and Reading-Practice-
+row-refresh-after-edit) so this class of defect cannot silently reappear.
 
 ---
-*Verified: 2026-08-07T21:30:00Z*
+*Verified: 2026-08-08T01:00:00Z*
 *Verifier: Claude (gsd-verifier)*
