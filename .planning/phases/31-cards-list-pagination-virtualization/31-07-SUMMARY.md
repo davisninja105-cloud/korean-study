@@ -249,3 +249,11 @@ None - no external service configuration required.
 ---
 *Phase: 31-cards-list-pagination-virtualization*
 *Completed: 2026-08-08*
+
+## Self-Check: PASSED
+- FOUND: e2e/cards-edit-regression.spec.ts
+- FOUND: .planning/phases/31-cards-list-pagination-virtualization/31-07-SUMMARY.md
+- FOUND commit: 1f2311c
+- FOUND commit: 376663d
+- FOUND commit: a6a32a6
+- FOUND commit: 6d70a1e
