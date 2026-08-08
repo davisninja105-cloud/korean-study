@@ -2,7 +2,7 @@
 phase: 31-cards-list-pagination-virtualization
 reviewed: 2026-08-07T00:00:00Z
 depth: standard
-files_reviewed: 17
+files_reviewed: 19
 files_reviewed_list:
   - app/api/cards/[id]/route.ts
   - app/api/cards/route.ts
@@ -11,7 +11,9 @@ files_reviewed_list:
   - components/CardsClient.tsx
   - components/FreshnessWatcher.tsx
   - components/Nav.tsx
+  - e2e/cards-search-clear.spec.ts
   - e2e/cards-sticky-header.spec.ts
+  - e2e/cards-tab-switch-scroll.spec.ts
   - e2e/freshness-fresh-paths.spec.ts
   - e2e/perf.spec.ts
   - lib/cards-list.ts
@@ -23,10 +25,10 @@ files_reviewed_list:
   - tests/cards-list.test.ts
   - tests/use-debounced-value.test.ts
 findings:
-  critical: 0
-  warning: 3
+  critical: 3
+  warning: 2
   info: 3
-  total: 6
+  total: 8
 status: issues_found
 ---
 
@@ -34,150 +36,158 @@ status: issues_found
 
 **Reviewed:** 2026-08-07
 **Depth:** standard
-**Files Reviewed:** 17 (some files listed above, e.g. `package.json`/`package-lock.json`, contain no reviewable behavior and were inspected for supply-chain/version-drift only)
+**Files Reviewed:** 19 (of 20 listed; `package-lock.json` is a lockfile with no reviewable logic and was checked only for the `react-virtuoso` entry's presence/version)
 **Status:** issues_found
 
 ## Summary
 
-This is a full, independent re-review of the entire current file list for this phase,
-including `components/Nav.tsx` and `e2e/cards-sticky-header.spec.ts` (new/changed in
-gap-closure plan 31-05, fixing the G-31-2 mobile sticky-header bug). A prior review pass
-on the earlier subset of this file list (31-01 through 31-04) found one Critical
-(`CR-01`, clearing the search box left `groupCounts` permanently stale) and four Warnings
-(`WR-01`–`WR-04`); I verified all five are genuinely fixed in the current code
-(`wasSearchActiveRef`/`searchJustCleared` guards the search→grouped transition;
-`lessonFrom`/`lessonTo` now go through `INTEGER_RE` validation in both new routes; `POST
-/api/cards` now has full `try/catch` + field validation; the PUT/sentence-replace path is
-now a single `$transaction`; `CardEditorShape.sentences` and `handleSave`'s merge now
-reconstruct the full `SentenceDTO` shape explicitly). I also found a dedicated regression
-test, `e2e/cards-search-clear.spec.ts` (not in this phase's file list but present in the
-repo), closing the previously-flagged test gap for that fix — so none of the prior
-findings are repeated below.
+This is a fresh, complete re-review of all six plans in phase 31 (pagination, virtualization, D-07 Reading Practice, D-08 tab-state preservation, and the 31-06 gap-closure sentence-count signal), superseding the prior `31-REVIEW.md`/`31-REVIEW-FIX.md` pass. The server-side pagination layer (`lib/cards-list.ts`, the two API routes) is solid — cursor math, `hasMore` overfetch-by-one detection, and the shared `where`-builder are all correct and covered by real unit tests. `useDebouncedValue`/`Debouncer` is clean and well-tested.
 
-Independently re-reading everything fresh, I found no new Critical/Blocker-level defect.
-Three new Warnings: (1) `Nav.tsx`'s `--nav-height` CSS custom property — which
-`CardsClient.tsx`'s newly-added sticky bar depends on for correct positioning beneath the
-top header — is only set by a post-hydration `useLayoutEffect`, unlike this same
-codebase's own `--sab` value, which is deliberately set by a pre-paint inline `<script>`
-specifically to avoid this class of first-paint flash; (2) the `PUT`/`POST` `/api/cards`
-sentence-shape validation checks each array element is a non-null object but never checks
-that `korean`/`targetForm`/`translation` are strings, so a request with e.g. `korean: 123`
-passes validation and then throws an uncaught `PrismaClientValidationError` inside the
-route, surfacing as a generic 500 instead of the clean 400 the rest of this validation is
-designed to produce; (3) `CardsClient.tsx`'s `handleSave` optimistic merge never updates
-`normalizedFront`/`updatedAt` on the locally-patched card, so after editing a card's
-`front` the in-memory row's `normalizedFront` silently keeps stale pre-edit data until the
-next full refresh. Three Info-level items round out the findings (an incomplete DTO type,
-a documented-but-real search-scope inconsistency between the Cards and Reading Practice
-tabs, and an unvalidated `type` query param).
+The client (`components/CardsClient.tsx`) is where the real defects live. The core problem is that `handleSave`'s optimistic-merge logic, which patches already-loaded rows after a successful `PUT /api/cards/[id]`, makes three separate incorrect assumptions about what the PUT response looks like and how state must be reconciled — each one produces silently-wrong data shown to the user after a completely ordinary "edit a card" action, with no error surfaced. These are the three Critical findings below. A fourth defect sits in the PUT route itself (an API-contract inconsistency versus GET/POST). Two lower-severity robustness/duplication issues round out the report.
 
-## Warnings
+## Critical Issues
 
-### WR-01: `--nav-height` is only set after client hydration, unlike this codebase's own pre-paint precedent for the identical problem
+### CR-01: Editing a card's sentences never updates already-loaded Reading Practice rows (sentence IDs are regenerated server-side on every save)
 
-**File:** `components/Nav.tsx:29-43`, `components/CardsClient.tsx:1295-1298`
+**File:** `app/api/cards/[id]/route.ts:116-134` (root cause) and `components/CardsClient.tsx:928-945` (broken consumer)
 
-**Issue:** `CardsClient.tsx`'s sticky search/filter/view-toggle bar (added by this phase to
-fix G-31-2) is positioned via:
-
-```tsx
-<div
-  className="sticky z-10 -mx-4 px-4 pt-3 pb-3 bg-background border-b border-border/60 flex flex-col gap-3"
-  style={{ top: 'var(--nav-height, 68px)' }}
->
-```
-
-`--nav-height` is published by `Nav.tsx` exclusively from a `useLayoutEffect`:
-
-```tsx
-useLayoutEffect(() => {
-  const node = headerRef.current
-  if (!node) return
-  const setNavHeight = () => {
-    document.documentElement.style.setProperty('--nav-height', `${node.offsetHeight}px`)
-  }
-  setNavHeight()
-  const ro = new ResizeObserver(setNavHeight)
-  ro.observe(node)
-  return () => ro.disconnect()
-}, [])
-```
-
-This only runs once React has hydrated on the client. The initial server-rendered HTML the
-browser paints first has no `--nav-height` set at all, so the sticky bar renders at the
-`68px` fallback until hydration completes and the effect fires — if the real header height
-differs from `68px` (e.g. a device with a non-zero `env(safe-area-inset-top)`, a longer
-locale string, or a different font-metrics fallback before the self-hosted Pretendard
-Variable font finishes loading), the sticky bar visibly snaps to its correct position
-after hydration rather than being correctly positioned from first paint. This is exactly
-the class of bug `app/layout.tsx`'s own `--sab` value already guards against with a
-pre-paint inline `<script>` (`document.documentElement.style.setProperty('--sab', sab ||
-'0px')`, run before React ever mounts) — the codebase has an established pattern for this
-exact problem that `--nav-height` doesn't follow.
-
-**Fix:** Either (a) hardcode a `top` value in CSS that matches the header's actual
-worst-case rendered height instead of relying on JS at all (the header's contents are
-static enough that this may be feasible), or (b) mirror the `--sab` pattern: measure/set
-`--nav-height` from a pre-paint inline `<script>` in `app/layout.tsx` using
-`getBoundingClientRect()`/a known fixed header structure, and keep `Nav.tsx`'s
-`ResizeObserver` only for post-mount corrections (orientation change, font swap), not as
-the sole source of the initial value.
-
-### WR-02: Sentence field types (`korean`/`targetForm`/`translation`) are never validated before reaching Prisma
-
-**File:** `app/api/cards/[id]/route.ts:91-97, 116-130`, `app/api/cards/route.ts:89-95, 104-115`
-
-**Issue:** Both `PUT /api/cards/[id]` and `POST /api/cards` validate that `sentences` is
-an array of non-null objects:
+**Issue:** `PUT /api/cards/[id]` replaces a card's sentences with `deleteMany` followed by `sentence.create()` for every entry, unconditionally, whenever the request body contains a `sentences` array:
 
 ```ts
-if (
-  data.sentences !== undefined &&
-  (!Array.isArray(data.sentences) ||
-    data.sentences.some((s: unknown) => typeof s !== 'object' || s === null))
-) {
-  return NextResponse.json({ error: 'sentences must be an array of objects' }, { status: 400 })
+// app/api/cards/[id]/route.ts
+return [
+  prisma.sentence.deleteMany({ where: { cardId: id } }),
+  ...sentenceData.map((s) => prisma.sentence.create({ data: s })),
+]
+```
+
+Every `Sentence.id` is freshly generated on every save — even for a sentence whose text the user never touched. `CardsClient.tsx`'s own top-of-file comment confirms `CardEditor`'s `handleSave` "unconditionally PUTs whatever `sentences` array it was seeded with", so this path runs on essentially every card edit that has sentences.
+
+`handleSave`'s Reading Practice patch then tries to match by the *old* sentence id:
+
+```ts
+setReadingPractice((prev) => {
+  if (!prev.loaded.some((s) => s.card.id === updated.id)) return prev
+  const updatedSentencesById = new Map((updated.sentences ?? []).map((s) => [s.id, s]))
+  return {
+    ...prev,
+    loaded: prev.loaded.map((row) => {
+      if (row.card.id !== updated.id) return row
+      const matched = updatedSentencesById.get(row.id)   // row.id is the OLD sentence id
+      return {
+        ...row,
+        card: merge(row.card),
+        ...(matched ? { korean: matched.korean, targetForm: matched.targetForm, translation: matched.translation } : {}),
+      }
+    }),
+  }
+})
+```
+
+Because the PUT response's sentences all carry *new* ids, `updatedSentencesById.get(row.id)` is always `undefined` — `matched` never resolves, so the sentence text patch (`korean`/`targetForm`/`translation`) is a permanent no-op. The parent `card` fields (front/back/type/notes) *do* get patched via `merge(row.card)`, but the sentence text visible in an already-loaded Reading Practice row stays stale indefinitely (until a full reload or a fresh `/api/cards/sentences` fetch). The WR-03 comment directly above this code explicitly claims this id-based matching works "since sentences may be reordered/added/removed in the editor" — it does not, because the ids themselves are never stable across a save.
+
+**Fix:** Make sentence ids stable across an edit — e.g. have the PUT handler upsert by id for entries the client echoes back (only inserting new rows / deleting removed ones), instead of blanket delete+recreate:
+
+```ts
+// app/api/cards/[id]/route.ts — replace the delete-all+create-all block
+const existing = await prisma.sentence.findMany({ where: { cardId: id }, select: { id: true } })
+const existingIds = new Set(existing.map((s) => s.id))
+const incoming = data.sentences as { id?: string; korean: string; targetForm: string; translation: string }[]
+const keepIds = new Set(incoming.filter((s) => s.id && existingIds.has(s.id)).map((s) => s.id!))
+
+const sentenceOps = [
+  prisma.sentence.deleteMany({ where: { cardId: id, id: { notIn: [...keepIds] } } }),
+  ...incoming.map((s, i) =>
+    s.id && existingIds.has(s.id)
+      ? prisma.sentence.update({
+          where: { id: s.id },
+          data: { korean: s.korean ?? '', targetForm: s.targetForm ?? '', translation: s.translation ?? '', orderIndex: i },
+        })
+      : prisma.sentence.create({
+          data: { korean: s.korean ?? '', targetForm: s.targetForm ?? '', translation: s.translation ?? '', cardId: id, orderIndex: i },
+        })
+  ),
+]
+```
+(Requires `CardEditor` to round-trip each sentence's existing `id` in its save payload, which the loaded `SentenceDTO` already carries.) Until this is fixed, `handleSave`'s Reading Practice patch should fall back to a full re-fetch of that card's sentence rows rather than a silent no-op merge.
+
+### CR-02: Editing a card's type does not relocate it between type-group buckets or update `groupCounts`
+
+**File:** `components/CardsClient.tsx:892-917`
+
+**Issue:** `handleSave`'s `merge()` writes the new `type` onto the card object, but the enclosing `setGroups` update replaces the card **in place, inside whichever `GROUP_KEYS` bucket it was already found in** — it never removes it from the old bucket or inserts it into the new one:
+
+```ts
+setGroups((prev) => {
+  const next = { ...prev }
+  for (const key of GROUP_KEYS) {
+    if (next[key].loaded.some((c) => c.id === updated.id)) {
+      next[key] = { ...next[key], loaded: next[key].loaded.map((c) => (c.id === updated.id ? merge(c) : c)) }
+    }
+  }
+  return next
+})
+```
+
+Nor does `handleSave` call `bumpGroupCount` anywhere. Contrast with `handleAdd` (line ~961-969), which correctly resolves `groupKeyForType(created.type)` and calls `bumpGroupCount(created.type, 1)`.
+
+Reproduction: open a `vocabulary` card in the Edit sheet, change its type to `grammar`, save. The card keeps rendering under the "Vocabulary" section header (with a now-mismatched `grammar`-colored badge from `typeBadgeClass(card.type)`), the "Vocabulary N cards" header count is unchanged, and the "Grammar N cards" header count is also unchanged even though the card conceptually left/joined those groups. This persists until a full page reload or a `FreshnessWatcher` boundary refresh re-syncs state from the server.
+
+**Fix:**
+```ts
+const handleSave = (updated: CardEditorShape) => {
+  const merge = (c: CardDTO): CardDTO => ({ ...c, /* ...same as today... */ })
+  const oldKeyEntry = GROUP_KEYS
+    .map((key) => ({ key, card: groups[key].loaded.find((c) => c.id === updated.id) }))
+    .find((e) => e.card)
+  const newKey = groupKeyForType(updated.type)
+
+  setGroups((prev) => {
+    const next = { ...prev }
+    for (const key of GROUP_KEYS) {
+      next[key] = { ...next[key], loaded: next[key].loaded.filter((c) => c.id !== updated.id) }
+    }
+    if (oldKeyEntry?.card) {
+      const mergedCard = merge(oldKeyEntry.card)
+      next[newKey] = { ...next[newKey], loaded: [mergedCard, ...next[newKey].loaded] }
+    }
+    return next
+  })
+  if (oldKeyEntry && oldKeyEntry.key !== newKey) {
+    bumpGroupCount(oldKeyEntry.card!.type, -1)
+    bumpGroupCount(updated.type, 1)
+  }
+  // ...rest unchanged (searchResults / readingPractice / closeEdit)
 }
 ```
 
-but never check the *type* of each object's `korean`/`targetForm`/`translation` fields —
-they're written straight through with only a nullish fallback:
+### CR-03: Editing a card's sentences (add/remove) does not refresh the cached `sentenceCount` used by the "N sentences" badge
+
+**File:** `components/CardsClient.tsx:892-908` (`merge`) and `1105-1106` (`renderCardRow`)
+
+**Issue:** `renderCardRow` reads the displayed sentence count via:
 
 ```ts
-korean: s.korean ?? '',
-targetForm: s.targetForm ?? '',
-translation: s.translation ?? '',
+const sentenceCount = card.sentenceCount ?? card.sentences.length
 ```
 
-A request body like `{"sentences":[{"korean":123,"targetForm":null,"translation":{}}]}`
-passes the "array of objects" check (each element is a non-null object) and reaches
-`prisma.sentence.create()`/the transaction with a non-string `korean` value. Prisma Client
-throws a `PrismaClientValidationError` for the type mismatch — which is **not** a
-`Prisma.PrismaClientKnownRequestError`, so it isn't caught by either route's existing
-`P2002` special-case — falling through to the generic `catch` and a 500 ("Failed to update
-card" / "Failed to create card") instead of the clean 400 this validation block is
-otherwise designed to produce for exactly this class of malformed input.
-
-**Fix:** Extend the existing shape check to also validate field types, mirroring the
-`front`/`back` string checks already present elsewhere in the same handlers:
+`sentenceCount` is a nullish-coalescing fallback — it is only bypassed when `sentenceCount` is `null`/`undefined`. But `handleSave`'s `merge()` spreads the pre-edit card (`...c`) and never re-derives `sentenceCount`:
 
 ```ts
-data.sentences.some((s: unknown) =>
-  typeof s !== 'object' || s === null ||
-  ('korean' in s && typeof (s as Record<string, unknown>).korean !== 'string') ||
-  ('targetForm' in s && typeof (s as Record<string, unknown>).targetForm !== 'string') ||
-  ('translation' in s && typeof (s as Record<string, unknown>).translation !== 'string')
-)
+const merge = (c: CardDTO): CardDTO => ({
+  ...c,                    // stale sentenceCount carried forward unchanged
+  type: updated.type,
+  front: updated.front,
+  back: updated.back,
+  notes: updated.notes ?? null,
+  sentences: (updated.sentences ?? []).map((s, i) => ({ ... })),  // fresh, correct array
+})
 ```
 
-### WR-03: `handleSave`'s optimistic merge leaves `normalizedFront`/`updatedAt` stale on the locally-patched card
+Since `c.sentenceCount` is a defined number (not null/undefined) from the original list fetch, it always wins over the freshly-correct `sentences.length`. Reproduction: open a card that shows "2 sentences", add a third sentence in the editor, save. The row still displays "2 sentences" (the cached, pre-edit count) even though `card.sentences.length` is now genuinely 3, until a full reload.
 
-**File:** `components/CardsClient.tsx:892-908`
-
-**Issue:** After a successful `PUT /api/cards/[id]`, `handleSave` patches the matching
-in-memory `CardDTO` in `groups`/`searchResults`/`readingPractice` via:
-
-```tsx
+**Fix:**
+```ts
 const merge = (c: CardDTO): CardDTO => ({
   ...c,
   type: updated.type,
@@ -185,81 +195,104 @@ const merge = (c: CardDTO): CardDTO => ({
   back: updated.back,
   notes: updated.notes ?? null,
   sentences: (updated.sentences ?? []).map((s, i) => ({ ... })),
+  sentenceCount: (updated.sentences ?? []).length,
 })
 ```
 
-`...c` spreads the **pre-edit** card as the base, and only `type`/`front`/`back`/`notes`/
-`sentences` are overwritten. `normalizedFront` (computed server-side from the new `front`
-via `normalizeFront()`) and `updatedAt` are never touched, so they keep their pre-edit
-values in every client-held copy of this card (`grep -n "normalizedFront"
-components/CardsClient.tsx` returns zero matches — it is genuinely never referenced or
-reconciled anywhere in this file). This is currently invisible in the UI (nothing renders
-`normalizedFront`/`updatedAt` on a card row), but it is a real, silent violation of the
-`CardDTO` contract that will resurface the moment any future feature reads either field
-from client state (e.g. a client-side "is this front already taken?" duplicate check, or
-a "recently edited" sort) — the exact same class of latent-but-real bug the already-fixed
-`WR-04` in the prior review addressed for the `sentences` sub-shape.
+## Warnings
 
-**Fix:** Either have the PUT response and `merge()` explicitly carry `normalizedFront`
-through (`CardEditorShape` doesn't declare it today, but the wire response does), or
-recompute it client-side consistently with the server (`normalizeFront(updated.front)`,
-using the same `lib/card-key.ts` helper already imported by the API routes), and set
-`updatedAt: new Date().toISOString()` (read in the event handler, not render — purity-safe
-here, same as the existing `sentences` fallback on the very next lines).
+### WR-01: `PUT /api/cards/[id]`'s success response omits `lesson`, unlike GET and POST — violates the CardDTO contract
+
+**File:** `app/api/cards/[id]/route.ts:136-142`
+
+**Issue:** GET (line 25-29) and POST (`app/api/cards/route.ts:118-122`) both `include: { ..., lesson: { select: { title, createdAt, orderIndex } }, ... }` and hand-build an ISO-serialized DTO. The PUT handler's final re-fetch omits `lesson` entirely from its `include`:
+
+```ts
+const card = await prisma.card.findUniqueOrThrow({
+  where: { id },
+  include: { review: true, sentences: sentencesInclude },   // no `lesson`
+})
+return NextResponse.json(card)
+```
+
+`CardDTO.lesson` is typed as a required (non-optional) `LessonRefDTO | null` field, but this response's JSON body has no `lesson` key at all (not even `null` — Prisma simply omits an un-included relation, and `JSON.stringify` drops `undefined` properties). The current client code happens not to break because `CardEditorShape` (what `handleSave` actually types the response as) never reads `.lesson`, but any other/future consumer of this endpoint that trusts the documented `CardDTO` shape (e.g. TypeScript code doing `response.lesson.orderIndex`) would get a runtime `undefined` crash instead of the `null` the type promises. This also silently skips the manual `.toISOString()` DTO-construction pattern GET/POST both use (works today only because `JSON.stringify` happens to auto-serialize native `Date` via `toJSON()`, which is incidental, not defensive).
+
+**Fix:**
+```ts
+const card = await prisma.card.findUniqueOrThrow({
+  where: { id },
+  include: {
+    review: true,
+    lesson: { select: { title: true, createdAt: true, orderIndex: true } },
+    sentences: sentencesInclude,
+  },
+})
+const dto = {
+  ...card,
+  createdAt: card.createdAt.toISOString(),
+  updatedAt: card.updatedAt.toISOString(),
+  lesson: card.lesson ? { ...card.lesson, createdAt: card.lesson.createdAt.toISOString() } : null,
+  review: card.review ? { ...card.review, nextReview: card.review.nextReview.toISOString(), lastReview: card.review.lastReview?.toISOString() ?? null } : null,
+  sentences: card.sentences.map((s) => ({ ...s, createdAt: s.createdAt.toISOString(), updatedAt: s.updatedAt.toISOString() })),
+}
+return NextResponse.json(dto)
+```
+
+### WR-02: Auto-load-on-scroll retries a persistently-failing batch without checking the section's own error state
+
+**File:** `components/CardsClient.tsx:559-563` (`fetchGroupNextPage`), `674-677` (`fetchReadingPracticeNextPage`), `1043-1063` (`handleRangeChanged`), `1088-1095` (`handleReadingRangeChanged`)
+
+**Issue:** None of these guard conditions check the section's `error` flag:
+
+```ts
+const fetchGroupNextPage = (key: GroupKey) => {
+  const g = groups[key]
+  if (!g || g.loading || !g.hasMore) return   // no `|| g.error` check
+  fetchGroupPage(key, g.nextCursor, 'append')
+}
+```
+```ts
+const fetchReadingPracticeNextPage = () => {
+  if (readingPractice.loading || !readingPractice.hasMore) return   // no `|| readingPractice.error` check
+  fetchReadingPracticePage(readingPractice.nextCursor, 'append')
+}
+```
+
+After a scroll-triggered batch fetch fails, `loading` resets to `false` but `hasMore`/`error` are left as-is (`error` set, `hasMore` still `true` from before the failed attempt). Any further `rangeChanged` event that lands near the same boundary (e.g. the user keeps scrolling, or the list re-measures) will silently re-issue the same request, overwriting the "Try again" error UI with a fresh loading state and potentially failing again — with no backoff. This defeats the purpose of the explicit "Try again" retry affordance and can hammer a genuinely-down endpoint on every boundary-crossing scroll event.
+
+**Fix:** Add the missing error guard to both auto-load gates, e.g.:
+```ts
+if (!g || g.loading || g.error || !g.hasMore) return
+```
+```ts
+if (readingPractice.loading || readingPractice.error || !readingPractice.hasMore) return
+```
 
 ## Info
 
-### IN-01: `CardsPageDTO` still doesn't declare the `groupCounts` field it actually carries on page-1 responses
+### IN-01: Pagination clamp constants (`DEFAULT_TAKE`, `MAX_TAKE`, `INTEGER_RE`) are duplicated verbatim across two route files
 
-**File:** `lib/dto.ts:74-78`, `components/FreshnessWatcher.tsx:115-123`
+**File:** `app/api/cards/route.ts:11-17` and `app/api/cards/sentences/route.ts:7-13`
 
-**Issue:** `GET /api/cards` attaches `groupCounts` to the JSON body whenever no cursor is
-supplied (`app/api/cards/route.ts:53-56`), but the exported `CardsPageDTO` type has no
-`groupCounts` field. `CardsClient.tsx` works around this locally with its own
-`CardsPageResponse = CardsPageDTO & { groupCounts?: GroupCountsDTO }`, but
-`FreshnessWatcher.tsx` still casts the raw backstop JSON directly to the incomplete type:
+**Issue:** The `DEFAULT_TAKE = 30`, `MAX_TAKE = 100`, `INTEGER_RE`, and the entire lesson-range-parsing + take-clamping block are copy-pasted identically between the two route files (and the `30` page-size value is duplicated a third and fourth time as `PAGE_SIZE` in `components/CardsClient.tsx:57` and `INITIAL_TAKE` in `app/cards/page.tsx:22`). A future change to the DoS clamp or the integer-validation regex in one file is easy to forget in the other three.
 
-```ts
-const page = result as CardsPageDTO | null
-```
+**Fix:** Extract a shared `lib/pagination.ts` (or similar) exporting `DEFAULT_TAKE`, `MAX_TAKE`, `INTEGER_RE`, and a `parseTakeParam(searchParams)` / `parseLessonRange(searchParams)` helper; import from all four call sites.
 
-Still harmless today (nothing in `FreshnessWatcher` reads `page.groupCounts`), but the
-exported type remains misleading about the real wire shape.
+### IN-02: `sentencesInclude` constant duplicated identically in two API route files
 
-**Fix:** Move `CardsPageResponse` into `lib/dto.ts` as the canonical type (e.g.
-`groupCounts?: GroupCountsDTO` added directly to `CardsPageDTO`), used by both consumers.
+**File:** `app/api/cards/[id]/route.ts:6` and `app/api/cards/route.ts:7`
 
-### IN-02: Reading Practice's search scope still silently diverges from the Cards tab's search scope
+**Issue:** `const sentencesInclude = { orderBy: { orderIndex: 'asc' } } as const` is defined independently in both files with no shared source.
 
-**File:** `lib/cards-list.ts:195-214` (`getSentencesPage`)
+**Fix:** Move to `lib/cards-list.ts` (which already owns the parallel `cardSelect` constant) and import it from both routes.
 
-**Issue:** `getCardsPage`'s search matches `front`, `back`, `notes`, and sentence
-`korean`/`translation`. `getSentencesPage`'s search matches only the sentence's own
-`korean`/`translation`, not the parent card's `front`/`back`/`notes`. This remains
-documented as intentional in the code's own comment, but the same shared search box can
-still show card X in the Cards tab (matched via `front`) while showing zero of card X's
-sentences in Reading Practice (no sentence-text match) — a real, reproducible UX
-inconsistency worth confirming is still the intended product decision.
+### IN-03: `GET /api/cards`'s `type` query param is not validated against the allowed enum
 
-**Fix:** No code change needed if intentional; otherwise extend `getSentencesPage`'s
-`where.OR` to also match through `card: { OR: [{ front: {...} }, { back: {...} }, ...] }`.
+**File:** `app/api/cards/route.ts:22`
 
-### IN-03: `type` query param on `GET /api/cards` has no allow-list validation
+**Issue:** `const type = searchParams.get('type') ?? 'all'` is passed straight through to `getCardsPage`/`getCardsGroupCounts` with no validation, unlike `POST /api/cards` (lines 80-82) which explicitly checks `['vocabulary', 'grammar', 'phrase'].includes(type)` and `lessonFrom`/`lessonTo` on the same GET route which are strictly validated via `INTEGER_RE`. An arbitrary `type=foo` value silently produces a correct-but-unhelpful zero-row result (`where.type = 'foo'`) rather than a `400`, inconsistent with the validation posture used everywhere else in this same handler.
 
-**File:** `app/api/cards/route.ts:22`, `lib/cards-list.ts:80-84`
-
-**Issue:** `type` is read straight from the query string with a default of `'all'` and no
-validation against the known set (`'all' | 'vocabulary' | 'grammar' | 'phrase' |
-'other'`) — contrast with `POST /api/cards`'s body, which explicitly 400s on an
-unrecognized `type`. An unrecognized `GET` `type` value (e.g. `?type=foobar`) silently
-falls into `buildCardsWhere`'s `where.type = params.type` branch and returns an empty
-page rather than a clean 400, which can look like "the deck has zero cards of this type"
-rather than "the request was malformed" — a minor client-debuggability gap, not a
-functional bug (this is a purely-internal API called only by this app's own client with a
-fixed set of type values today).
-
-**Fix:** Validate `type` against `['all', 'vocabulary', 'grammar', 'phrase', 'other']` and
-return 400 for anything else, mirroring `POST`'s existing enum check.
+**Fix:** Validate against `['vocabulary', 'grammar', 'phrase', 'other', 'all']` and return 400 for anything else, mirroring the lesson-range validation already present in the same function.
 
 ---
 
