@@ -36,6 +36,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
     (card.sentences ?? []).map((s) => ({ ...s }))
   )
   const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   // ── Sentence helpers ────────────────────────────────────────────────────────
   const addSentence = () => {
@@ -72,6 +73,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
   // ── Save ─────────────────────────────────────────────────────────────────
   const handleSave = async () => {
     setSaving(true)
+    setSaveError(null)
     try {
       const res = await fetch(`/api/cards/${card.id}`, {
         method: 'PUT',
@@ -86,11 +88,17 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
             .map(({ id, korean, targetForm, translation }) => ({ id, korean, targetForm, translation })),
         }),
       })
-      if (!res.ok) throw new Error(`Save failed: ${res.status}`)
+      if (!res.ok) {
+        // CR-01: surface the server's friendly error message (e.g. the
+        // normalizedFront-collision 400) instead of throwing it away.
+        const body = await res.json().catch(() => null)
+        throw new Error(body?.error ?? `Save failed: ${res.status}`)
+      }
       const updated = await res.json()
       onSave(updated)
     } catch (err) {
       console.error('CardEditor save failed:', err)
+      setSaveError(err instanceof Error ? err.message : 'Could not save card. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -218,6 +226,13 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
           + Add sentence
         </button>
       </div>
+
+      {/* CR-01: surface save failures (network/400/500) — without this the
+          Save button just re-enables silently and the user may assume their
+          edit persisted. */}
+      {saveError && (
+        <p className="text-sm text-red-500 dark:text-red-400">{saveError}</p>
+      )}
 
       {/* ── Action buttons ── */}
       <div className="flex gap-2 justify-between">
