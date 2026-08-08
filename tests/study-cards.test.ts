@@ -164,7 +164,7 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
     expect(errorSpy).toHaveBeenCalled()
     const calls = errorSpy.mock.calls
     const studyCardCall = calls.find(
-      (c) => typeof c[0] === 'string' && c[0].startsWith('[study-cards]')
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].startsWith('[study-cards]')
     )
     expect(studyCardCall).toBeDefined()
     expect(studyCardCall![1]).toBe(rejectionReason)
@@ -209,7 +209,7 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
     expect(cards).toHaveLength(1)
     // No [study-cards]-prefixed console.error on the clean path.
     const studyCardCall = errorSpy.mock.calls.find(
-      (c) => typeof c[0] === 'string' && c[0].startsWith('[study-cards]')
+      (c: unknown[]) => typeof c[0] === 'string' && c[0].startsWith('[study-cards]')
     )
     expect(studyCardCall).toBeUndefined()
   })
