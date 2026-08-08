@@ -63,16 +63,22 @@ test.beforeAll(async () => {
 //     what is measured, this is the same code, a fresh run): samples 22,
 //     34, 30, 43, 33ms — median 33ms.
 // Both readings land in the same ~30-38ms band — consistent, not cherry-
-// picked. Budget:
-//   Math.ceil(34 * 1.5 / 100) * 100 = 100ms (50% headroom over the real
+// picked. Budget (WR-02 fix, 32-REVIEW.md): both readings above are a
+// single local dev-machine run each — CI runners are typically shared/
+// slower and more variable than that, so this specifically tightened
+// budget uses a 3x headroom multiplier rather than `/cards`' 1.5x above
+// (whose median came from the same kind of single local run but had more
+// pre-existing runway before this phase touched it), to reduce the risk of
+// CI flakes unrelated to an actual regression:
+//   Math.ceil(34 * 3 / 100) * 100 = 200ms (3x headroom over the real
 //   measured median, rounded up to the nearest 100ms). Same caveat as
 //   `/cards`: this fixture (8 cards, far below the ~1056-card production
 //   deck) has near-zero per-request latency locally — the number here
 //   proves the budget change is traceable to a real measurement, not that
-//   100ms is achievable at production scale.
+//   200ms is achievable at production scale.
 const PAGE_BUDGETS_MS: Record<'/' | '/study' | '/cards' | '/habits', number> = {
   '/': 3000,
-  '/study': 100,
+  '/study': 200,
   '/cards': 100,
   '/habits': 1500,
 }
@@ -92,10 +98,14 @@ const PAGE_BUDGETS_MS: Record<'/' | '/study' | '/cards' | '/habits', number> = {
 //   POST-CHANGE (after tightening the budget below to 100ms, re-run to
 //     confirm it still passes — same code, a fresh run): samples 8, 6, 8,
 //     3, 3ms — median 6ms.
-// Budget: Math.ceil(6 * 1.5 / 100) * 100 = 100ms (50% headroom over the real
-// measured median, rounded up to the nearest 100ms). Same fixture-scale
-// caveat as `/study`/`/cards` above — this is a local-loopback, 8-card
-// measurement, not a production-latency claim.
+// Budget (WR-02 fix, 32-REVIEW.md — same 3x-multiplier rationale as `/study`
+// above, since this budget was also computed from a single local run):
+// Math.ceil(6 * 3 / 100) * 100 = 100ms (3x headroom over the real measured
+// median, rounded up to the nearest 100ms — the rounding floor means 3x
+// lands on the same 100ms the 1.5x multiplier would have, but the formula
+// now matches the wider-headroom philosophy applied to `/study`). Same
+// fixture-scale caveat as `/study`/`/cards` above — this is a
+// local-loopback, 8-card measurement, not a production-latency claim.
 const API_BUDGET_MS: Record<'/api/cards/due' | '/api/stats' | '/api/activity', number> = {
   '/api/cards/due': 100,
   '/api/stats': 1000,
