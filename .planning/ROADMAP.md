@@ -198,7 +198,7 @@ Plans:
 **Gap closure**
 
 - [x] 31-05-PLAN.md — gap closure: sticky Cards/Reading Practice toggle + Nav-header offset on mobile (G-31-2)
-- [ ] 31-06-PLAN.md — gap closure: per-card sentence-count signal (WINDOWS.md #6) + D-08 tab-switch regression spec + REQUIREMENTS.md doc sync
+- [x] 31-06-PLAN.md — gap closure: per-card sentence-count signal (WINDOWS.md #6) + D-08 tab-switch regression spec + REQUIREMENTS.md doc sync
 
 **UI hint**: yes
 
@@ -302,7 +302,7 @@ Re-measure the baseline table after Phase 30 before starting Phase 31 — the nu
 | 28. Active Recall Study Mode | v1.7 | 2/2 | Complete | 2026-07-24 |
 | 29. Distractor Write-Side Retirement | v1.7 | 0/0 | Deferred (archived unexecuted — CLEANUP-03 open, unscheduled) | - |
 | 30. Instant Feedback & Cold-Start Unblocking | v1.8 | 4/4 | Complete    | 2026-08-06 |
-| 31. Cards List Pagination & Virtualization | v1.8 | 5/5 | In Progress|  |
+| 31. Cards List Pagination & Virtualization | v1.8 | 6/6 | In Progress|  |
 | 32. Study Load Round-Trip Collapse | v1.8 | 0/TBD | Not started | - |
 | 33. Version-Gated Freshness Backstop | v1.8 | 0/TBD | Not started | - |
 | 34. Local-First Shell | v1.8 | 0/TBD | Not started | - |
