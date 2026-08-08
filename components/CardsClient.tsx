@@ -922,16 +922,28 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       card: groups[key].loaded.find((c) => c.id === updated.id),
     })).find((e) => e.card)
     const newKey = groupKeyForType(updated.type)
+    // CR-02: relocating into a destination bucket that has never been
+    // fetched (or was confirmed empty) must not splice in a lone row —
+    // that leaves `hasMore: false` with a non-empty `loaded`, permanently
+    // hiding any other real cards of that type. Trigger a real first-page
+    // fetch of the destination group instead; it will include this
+    // just-saved card (the PUT above has already persisted it).
+    const relocating = !!oldKeyEntry && oldKeyEntry.key !== newKey
+    const newGroupNeedsRealFetch =
+      relocating && groups[newKey].loaded.length === 0 && !groups[newKey].loading
     setGroups((prev) => {
       const next = { ...prev }
       for (const key of GROUP_KEYS) {
         next[key] = { ...next[key], loaded: next[key].loaded.filter((c) => c.id !== updated.id) }
       }
-      if (oldKeyEntry?.card) {
+      if (oldKeyEntry?.card && !newGroupNeedsRealFetch) {
         next[newKey] = { ...next[newKey], loaded: [merge(oldKeyEntry.card), ...next[newKey].loaded] }
       }
       return next
     })
+    if (newGroupNeedsRealFetch) {
+      fetchGroupPage(newKey, null, 'replace')
+    }
     // A same-type resave (or a card whose current bucket lookup came up
     // empty) must not touch counts at all.
     if (oldKeyEntry && oldKeyEntry.key !== newKey) {
@@ -982,10 +994,21 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       if (!res.ok) throw new Error(`Failed: ${res.status}`)
       const created: CardDTO = await res.json()
       const groupKey = groupKeyForType(created.type)
-      setGroups((prev) => ({
-        ...prev,
-        [groupKey]: { ...prev[groupKey], loaded: [created, ...prev[groupKey].loaded] },
-      }))
+      // CR-02: a group that has never been fetched (or was confirmed empty
+      // by a real fetch) has `loaded: []`. Splicing the lone new card
+      // directly into it would leave `hasMore: false` with a non-empty
+      // `loaded`, permanently hiding any other real cards of this type
+      // (toggleCollapse only fetches when `loaded.length === 0`, which is no
+      // longer true after this insert). Trigger a real first-page fetch
+      // instead — it will naturally include the just-created card.
+      if (groups[groupKey].loaded.length === 0 && !groups[groupKey].loading) {
+        fetchGroupPage(groupKey, null, 'replace')
+      } else {
+        setGroups((prev) => ({
+          ...prev,
+          [groupKey]: { ...prev[groupKey], loaded: [created, ...prev[groupKey].loaded] },
+        }))
+      }
       // E6 zero-one-many: auto-expand the target group so the user sees
       // confirmation their card was saved, even if it was collapsed.
       setCollapsed((prev) => ({ ...prev, [groupKey]: false }))
