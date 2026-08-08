@@ -476,6 +476,23 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
         const next = { ...prev }
         for (const card of freshCards.cards) {
           const key = groupKeyForType(card.type)
+          // WR-04: the card's type may have changed externally (e.g. edited
+          // from another tab/device) since it was loaded here — search every
+          // OTHER group for a stale, wrong-type row and drop it. Per the same
+          // "never authoritative for what else exists" rule this backstop
+          // already follows, the row is only ever REMOVED from its old
+          // bucket here, never inserted into the new one unless already
+          // loaded there (handled by the idx check below).
+          for (const otherKey of GROUP_KEYS) {
+            if (otherKey === key) continue
+            const otherGroup = next[otherKey]
+            if (otherGroup.loaded.some((c) => c.id === card.id)) {
+              next[otherKey] = {
+                ...otherGroup,
+                loaded: otherGroup.loaded.filter((c) => c.id !== card.id),
+              }
+            }
+          }
           const currentGroup = next[key]
           const idx = currentGroup.loaded.findIndex((c) => c.id === card.id)
           if (idx === -1) continue // not already loaded — never adopted from a partial payload
