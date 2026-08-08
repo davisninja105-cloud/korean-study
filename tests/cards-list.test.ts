@@ -47,6 +47,7 @@ function makeRow(id: string, overrides: Record<string, unknown> = {}) {
     lessonId: null,
     lesson: null,
     review: null,
+    _count: { sentences: 0 },
     ...overrides,
   }
 }
@@ -80,6 +81,44 @@ describe('getCardsPage', () => {
     for (const card of result.cards) {
       expect(card.sentences).toEqual([])
     }
+  })
+
+  // ── per-card sentence-count signal (31-06, WINDOWS.md entry #6) ───────────
+
+  it('requests a server-computed _count aggregate and maps it to sentenceCount', async () => {
+    ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      makeRow('1', { _count: { sentences: 3 } }),
+    ])
+
+    const result = await getCardsPage({
+      type: 'vocabulary',
+      cursor: null,
+      search: null,
+      lessonFrom: null,
+      lessonTo: null,
+      take: 30,
+    })
+
+    const callArgs = (prisma.card.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    expect(callArgs.select._count).toEqual({ select: { sentences: true } })
+    expect(result.cards[0].sentenceCount).toBe(3)
+  })
+
+  it('maps a 0-sentence card to sentenceCount: 0 (present, not undefined/omitted — CARDS-01 empty edge)', async () => {
+    ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      makeRow('2', { _count: { sentences: 0 } }),
+    ])
+
+    const result = await getCardsPage({
+      type: 'vocabulary',
+      cursor: null,
+      search: null,
+      lessonFrom: null,
+      lessonTo: null,
+      take: 30,
+    })
+
+    expect(result.cards[0].sentenceCount).toBe(0)
   })
 
   it('detects hasMore via the overfetch-by-one probe row and sets nextCursor to the last KEPT row', async () => {
@@ -395,6 +434,22 @@ describe('getSentencesPage', () => {
 
     const callArgs = (prisma.sentence.findMany as ReturnType<typeof vi.fn>).mock.calls[0][0]
     expect(callArgs.include).toEqual({ card: { select: expect.any(Object) } })
+  })
+
+  it('maps the nested card\'s _count aggregate to card.sentenceCount (31-06)', async () => {
+    ;(prisma.sentence.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      makeSentenceRow('1', { card: makeRow('card-1', { _count: { sentences: 2 } }) }),
+    ])
+
+    const result = await getSentencesPage({
+      cursor: null,
+      search: null,
+      lessonFrom: null,
+      lessonTo: null,
+      take: 30,
+    })
+
+    expect(result.sentences[0].card.sentenceCount).toBe(2)
   })
 
   it('detects hasMore via the overfetch-by-one probe row and sets nextCursor to the last KEPT row', async () => {
