@@ -153,6 +153,14 @@ None - no external service configuration required.
 - Full regression surface confirmed green in this session: `npm test` (303/303), `npm run build`, `npm run lint` (0 errors), and the targeted e2e set (`cards-sticky-header`, `cards-search-clear`, `smoke`, `perf`, plus the new `cards-tab-switch-scroll` spec) — 14/14 e2e passed, no regressions to any of Phase 31's prior plans (31-01 through 31-05).
 - Phase 31 itself being marked complete in `ROADMAP.md`/`STATE.md` is the orchestrator's responsibility after this wave, per this plan's explicit scope boundary (Task 3 deliberately did not touch either file).
 
+## Self-Check: PASSED
+
+- FOUND: e2e/cards-tab-switch-scroll.spec.ts
+- FOUND: .planning/phases/31-cards-list-pagination-virtualization/31-06-SUMMARY.md
+- FOUND: commit 8dd8159 (Task 1)
+- FOUND: commit f20326b (Task 2)
+- FOUND: commit 9d525c8 (Task 3)
+
 ---
 *Phase: 31-cards-list-pagination-virtualization*
 *Completed: 2026-08-08*
