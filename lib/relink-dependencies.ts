@@ -10,11 +10,21 @@
 // fallback script (scripts/relink-dependencies.mts) and local-resync's final
 // pass delegate to (IN-02 consolidation).
 //
-// Bounded for the Vercel 60s budget: exactly 2 reads + at most 1 write
-// regardless of deck size (~hundreds of cards). No per-edge round-trips.
+// Bounded for the Vercel 60s budget: exactly 2 reads + at most 2 writes
+// regardless of deck size (~hundreds of cards) — the edge createMany (at most
+// 1) plus the unconditional studyCacheVersion bump (exactly 1). No per-edge
+// round-trips.
+//
+// Phase 32 (STUDY-03): this function is also the single cache-invalidation
+// point for all three real mutating writers — the /api/sync route (via
+// runSync()), scripts/local-resync.mts, and scripts/relink-dependencies.mts —
+// because it is the only function all three call unconditionally. See the
+// unconditional bumpStudyCacheVersion() call at the end of
+// relinkAllDependencies() below.
 
 import { prisma } from '@/lib/prisma'
 import { computeMissingEdges } from '@/lib/link-dependencies'
+import { bumpStudyCacheVersion } from '@/lib/settings'
 
 export interface RelinkResult {
   cardsScanned: number
@@ -61,6 +71,25 @@ export async function relinkAllDependencies(): Promise<RelinkResult> {
     // constraint is the race backstop (see JSDoc above) — a conflicting
     // insert throws and is caught non-fatally by the runSync hook.
     await prisma.cardDependency.createMany({ data: missing })
+  }
+
+  // Phase 32 (STUDY-03): UNCONDITIONAL cache-invalidation bump — outside the
+  // `if (missing.length > 0)` guard above. This function is called
+  // unconditionally by all three real mutating writers (the /api/sync route
+  // via runSync(), scripts/local-resync.mts, scripts/relink-dependencies.mts),
+  // and a relink that created zero NEW edges may still follow a sync that
+  // created cards and lemmas — the lib/study-cache.ts snapshot must still be
+  // invalidated in that case. Non-fatal: a failed bump must never turn a
+  // successful relink into a thrown error, so it only costs the next request
+  // one extra stale-cache read until the next successful bump.
+  try {
+    await bumpStudyCacheVersion()
+  } catch (bumpErr: unknown) {
+    const bumpMsg = bumpErr instanceof Error ? bumpErr.message : 'Unknown error'
+    console.warn(
+      '[relink] studyCacheVersion bump failed (non-fatal — one stale-cache request until the next bump):',
+      bumpMsg
+    )
   }
 
   return {

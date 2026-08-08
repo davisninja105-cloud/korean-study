@@ -10,10 +10,17 @@ const SESSION_SIZE_KEY = 'sessionSize'
 const READING_SCALE_KEY = 'readingTextScale'
 const READING_AID_KEY = 'readingAid'
 const LAST_AUTO_SYNCED_KEY = 'lastAutoSyncedAt'
+// Phase 32 (STUDY-03): opaque change token invalidating lib/study-cache.ts's
+// in-memory invariant snapshot. Written ONLY by bumpStudyCacheVersion() below,
+// called ONLY from lib/sync.ts:runSync() and lib/relink-dependencies.ts:
+// relinkAllDependencies() — never from PUT /api/settings, which handles a
+// fixed, explicit key set and gains no branch for this one.
+const STUDY_CACHE_VERSION_KEY = 'studyCacheVersion'
 
-// Single source of truth for every Setting-table key name, exported so batched
-// call sites (app/layout.tsx, app/api/settings/route.ts, lib/dashboard.ts) can
-// build their `keys` array from these instead of re-typing string literals.
+// Single source of truth for every Setting-table key name. NOTE: getAllSettings()
+// below does NOT spread Object.values(this) — it uses an explicit array of the
+// eight user-facing keys, so adding studyCacheVersion here does not change what
+// GET /api/settings fetches or returns.
 export const SETTING_KEYS = {
   dailyGoalSeconds: GOAL_KEY,
   dayStartHour: DAY_START_KEY,
@@ -23,6 +30,7 @@ export const SETTING_KEYS = {
   readingTextScale: READING_SCALE_KEY,
   readingAid: READING_AID_KEY,
   lastAutoSyncedAt: LAST_AUTO_SYNCED_KEY,
+  studyCacheVersion: STUDY_CACHE_VERSION_KEY,
 } as const
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
@@ -214,6 +222,11 @@ export async function setRewardColor(hex: string): Promise<string> {
  * Batched equivalent of the 8-key Promise.all in GET /api/settings.
  * lastAutoSyncedAt is a raw pass-through (null if absent) — no parse function
  * needed, matching getLastAutoSyncedAt()'s existing contract.
+ *
+ * Deliberately uses an explicit array of the eight user-facing keys (NOT
+ * Object.values(SETTING_KEYS)) so that studyCacheVersion — a server-internal
+ * invalidation token, never a user-facing setting — cannot leak into this
+ * response just because a new key was added to SETTING_KEYS.
  */
 export async function getAllSettings(): Promise<{
   dailyGoalSeconds: number
@@ -225,7 +238,16 @@ export async function getAllSettings(): Promise<{
   readingAid: boolean
   lastAutoSyncedAt: string | null
 }> {
-  const map = await getSettings(Object.values(SETTING_KEYS))
+  const map = await getSettings([
+    SETTING_KEYS.dailyGoalSeconds,
+    SETTING_KEYS.dayStartHour,
+    SETTING_KEYS.buttonColor,
+    SETTING_KEYS.rewardColor,
+    SETTING_KEYS.sessionSize,
+    SETTING_KEYS.readingTextScale,
+    SETTING_KEYS.readingAid,
+    SETTING_KEYS.lastAutoSyncedAt,
+  ])
   return {
     dailyGoalSeconds: parseDailyGoalSeconds(map.get(SETTING_KEYS.dailyGoalSeconds)),
     dayStartHour: parseDayStartHour(map.get(SETTING_KEYS.dayStartHour)),
@@ -250,4 +272,33 @@ export async function getActivitySettings(): Promise<{
     dailyGoalSeconds: parseDailyGoalSeconds(map.get(SETTING_KEYS.dailyGoalSeconds)),
     dayStartHour: parseDayStartHour(map.get(SETTING_KEYS.dayStartHour)),
   }
+}
+
+/**
+ * Bump the `studyCacheVersion` change token — the single writer of the
+ * Setting row that lib/study-cache.ts's in-memory invariant snapshot uses to
+ * decide whether it is stale (Phase 32, STUDY-03).
+ *
+ * This is deliberately an OPAQUE change token compared only for inequality —
+ * `${Date.now()}-${randomSuffix}` — NOT the monotonic counter Phase 33's
+ * VERS-01 will introduce for the freshness backstop. A plain upsert (not a
+ * read-modify-write increment) is used specifically so two concurrent bumps
+ * (e.g. a sync and a relink landing in the same request) can never lose a
+ * change to a lost-update race: whichever upsert lands last simply wins with
+ * its own fresh token, and any caller-held stale token still compares unequal
+ * to it.
+ *
+ * Called unconditionally from lib/sync.ts:runSync() and
+ * lib/relink-dependencies.ts:relinkAllDependencies() — the only two mutating
+ * code paths that create/change CardDependency edges or the normalizedFront
+ * lemma set. Never called from PUT /api/settings.
+ */
+export async function bumpStudyCacheVersion(): Promise<string> {
+  const token = `${Date.now()}-${globalThis.crypto.randomUUID().slice(0, 8)}`
+  await prisma.setting.upsert({
+    where: { key: STUDY_CACHE_VERSION_KEY },
+    create: { key: STUDY_CACHE_VERSION_KEY, value: token },
+    update: { value: token },
+  })
+  return token
 }
