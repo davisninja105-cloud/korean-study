@@ -163,7 +163,15 @@ export async function getStudyCards(params: StudyCardsParams): Promise<StudyCard
       ORDER BY r.nextReview ASC
       LIMIT 1000
     `
-  } catch {
+  } catch (err) {
+    // WR-01 fix (32-REVIEW.md): previously `catch { throw new Error(...) }`
+    // discarded the actual driver/SQL error entirely — nothing was logged
+    // anywhere, unlike the invariants-refill catch in lib/study-cache.ts
+    // (and this file's own empty-pool version fallback catch below), both of
+    // which console.error the rejection reason before degrading/rethrowing.
+    // A production 500 from this primary due-card pool query now leaves a
+    // trace in server logs of *why*, matching its siblings.
+    console.error('[study-cards] pool query failed', err)
     throw new Error('Database error')
   }
 
