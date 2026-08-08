@@ -179,7 +179,7 @@ See `.planning/milestones/v1.6-ROADMAP.md` for full phase details.
   4. Applying a lesson range on `/cards` returns the correct card set across the full deck, and a collapsed row still shows its reading-practice/sentence count without loading the sentences themselves.
   5. Add, edit, delete, swipe-to-delete, tap-to-gloss, group collapse, and the Reading practice view all still behave correctly against the paginated list; the existing e2e and unit suites stay green.
 
-**Plans**: 6/6 plans executed
+**Plans**: 6/7 plans executed
 
 Plans:
 **Wave 1**
@@ -199,6 +199,7 @@ Plans:
 
 - [x] 31-05-PLAN.md — gap closure: sticky Cards/Reading Practice toggle + Nav-header offset on mobile (G-31-2)
 - [x] 31-06-PLAN.md — gap closure: per-card sentence-count signal (WINDOWS.md #6) + D-08 tab-switch regression spec + REQUIREMENTS.md doc sync
+- [ ] 31-07-PLAN.md — gap closure: fix CR-01/CR-02/CR-03 edit-flow defects (Reading Practice stale text, group-bucket relocation, stale sentenceCount badge) + mandatory fail-first-then-green e2e regression spec + WINDOWS.md ledger sync
 
 **UI hint**: yes
 
@@ -302,7 +303,7 @@ Re-measure the baseline table after Phase 30 before starting Phase 31 — the nu
 | 28. Active Recall Study Mode | v1.7 | 2/2 | Complete | 2026-07-24 |
 | 29. Distractor Write-Side Retirement | v1.7 | 0/0 | Deferred (archived unexecuted — CLEANUP-03 open, unscheduled) | - |
 | 30. Instant Feedback & Cold-Start Unblocking | v1.8 | 4/4 | Complete    | 2026-08-06 |
-| 31. Cards List Pagination & Virtualization | v1.8 | 6/6 | In Progress|  |
+| 31. Cards List Pagination & Virtualization | v1.8 | 6/7 | In Progress|  |
 | 32. Study Load Round-Trip Collapse | v1.8 | 0/TBD | Not started | - |
 | 33. Version-Gated Freshness Backstop | v1.8 | 0/TBD | Not started | - |
 | 34. Local-First Shell | v1.8 | 0/TBD | Not started | - |
