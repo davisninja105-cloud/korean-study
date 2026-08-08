@@ -167,10 +167,30 @@ export async function getStudyCards(params: StudyCardsParams): Promise<StudyCard
     throw new Error('Database error')
   }
 
-  // An empty pool yields no rows, so there is no version column to read —
-  // fall back to null and let the cache-miss path below handle it (never a
-  // second query to recover the version separately).
-  const version = rows.length > 0 ? rows[0].version : null
+  // An empty pool yields no rows, so there is no version column to read.
+  // CR-02 fix (32-REVIEW.md): falling back to a hard-coded `null` here (as
+  // opposed to reading the real DB-persisted studyCacheVersion) permanently
+  // pins the invariants cache behind a synthetic `null` version the first
+  // time the pool is empty — every subsequent empty-pool request then
+  // matches that `null`-stamped snapshot and never again compares against
+  // the real token, so a sync/relink that lands while the pool stays empty
+  // is silently never picked up. Pay one extra physical round trip ONLY on
+  // this already-rare empty-pool path (never on the warm, non-empty steady
+  // state this phase optimizes for) to read the real token instead.
+  let version: string | null
+  if (rows.length > 0) {
+    version = rows[0].version
+  } else {
+    try {
+      const versionRows = await prisma.$queryRaw<{ v: string | null }[]>`
+        SELECT value AS v FROM Setting WHERE key = 'studyCacheVersion'
+      `
+      version = versionRows[0]?.v ?? null
+    } catch (err) {
+      console.error('[study-cards] empty-pool version fallback query failed', err)
+      version = null
+    }
+  }
 
   // Cache-gated invariants: on a version match, use the snapshot's fields
   // directly (zero extra physical round trips — the whole point of this
