@@ -1,26 +1,35 @@
-// Regression tests for RELIABILITY-01: the known-lemmas query in
-// lib/study-cards.ts runs concurrently with the pool query via
-// Promise.allSettled. When the known-lemmas query rejects it silently
-// degrades to an empty Set — invisibly turning the unknownCount ranking
-// signal into "everything is unknown". These tests lock the now-observable
-// `[study-cards]`-prefixed log AND the pre-existing degradation contract
-// (pool failure still throws 'Database error'; happy path stays silent).
+// Regression tests for RELIABILITY-01: the known-lemmas query (now inside
+// lib/study-cache.ts's refreshStudyCache()) runs concurrently with the rest
+// of the invariant-snapshot refill via Promise.allSettled. When it rejects
+// it silently degrades to an empty Set — invisibly turning the unknownCount
+// ranking signal into "everything is unknown". These tests lock the
+// now-observable `[study-cards]`-prefixed log AND the pre-existing
+// degradation contract (pool failure still throws 'Database error'; happy
+// path stays silent).
 //
-// getStudyCards() now does a two-phase fetch: Phase A batches sessionSize +
-// a LIGHTWEIGHT pool query (select: id/review.nextReview/lesson.orderIndex)
-// + edges + knownLemmas via Promise.allSettled; Phase B re-fetches only the
-// chosen/ordered card ids with the full include shape. So
-// `prisma.card.findMany` is called up to THREE times per getStudyCards()
-// call in these tests (light pool, knownLemmas, full re-fetch) — the mock
-// implementation below distinguishes them by args shape:
-//   - light pool:   args.select.id === true
-//   - knownLemmas:  args.select.normalizedFront === true
+// getStudyCards() (Phase 32-03) does a raw-SQL Phase A — one prisma.$queryRaw
+// call returning the light pool (id/nextReview/orderIndex) plus the
+// studyCacheVersion token as a correlated scalar subquery column — followed
+// by a cache-gated invariant read (lib/study-cache.ts's getStudyCache() /
+// refreshStudyCache()) and a Phase B prisma.card.findMany re-fetch of only
+// the chosen/ordered card ids with the full include shape. So
+// `prisma.card.findMany` is called up to TWO times per getStudyCards() call
+// in these tests (knownLemmas — inside the cache refill — and the Phase B
+// full re-fetch) — the mock implementation below distinguishes them by args
+// shape:
+//   - knownLemmas:   args.select.normalizedFront === true
 //   - full re-fetch: args.include is present (no args.select)
 //
 // The prisma singleton is mocked via vi.mock('@/lib/prisma', ...), which
 // also neutralizes the real module body — so no DATABASE_URL is needed and
-// no real DB connection is attempted. getSessionSize() is never invoked
-// because every test passes an explicit sessionSize in StudyCardsParams.
+// no real DB connection is attempted. getSessionSize() is never read from
+// its result because every test passes an explicit sessionSize in
+// StudyCardsParams, which always overrides the cached value.
+//
+// resetStudyCacheForTests() runs in beforeEach so lib/study-cache.ts's
+// globalThis-held snapshot (module state that otherwise persists across
+// tests within this one file) cannot leak a prior test's refill into a
+// later test's cache-hit/miss decision.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
@@ -28,11 +37,18 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 // prisma singleton with vi.fn stubs we can program per-test.
 vi.mock('@/lib/prisma', () => ({
   prisma: {
+    $queryRaw: vi.fn(),
     card: {
       findMany: vi.fn(),
     },
     cardDependency: {
       findMany: vi.fn(),
+    },
+    lesson: {
+      findMany: vi.fn(),
+    },
+    setting: {
+      findUnique: vi.fn(),
     },
   },
 }))
@@ -40,6 +56,7 @@ vi.mock('@/lib/prisma', () => ({
 // Import AFTER the mock declaration (vitest hoists vi.mock above imports).
 import { prisma } from '@/lib/prisma'
 import { getStudyCards } from '@/lib/study-cards'
+import { resetStudyCacheForTests } from '@/lib/study-cache'
 
 // A minimal but serialization-complete pool card. It must survive:
 //   - selectSessionCards / sequenceCards (reads id, review.nextReview,
@@ -91,23 +108,26 @@ function makePoolCard() {
   }
 }
 
-// The Phase A lightweight pool shape: only id/review.nextReview/lesson.orderIndex
-// (what selectSessionCards/sequenceCards read). Derived from makePoolCard() so
-// the two fixtures never drift out of sync on id/nextReview.
-function makeLightPoolCard() {
+// The raw-SQL Phase A row shape: id/nextReview/orderIndex/version (what the
+// prisma.$queryRaw pool-plus-version-subquery query returns — see
+// lib/study-cards.ts's PoolRow interface). Derived from makePoolCard() so
+// the two fixtures never drift out of sync on id/nextReview. version is
+// always null here — resetStudyCacheForTests() in beforeEach guarantees a
+// cache miss regardless (getStudyCache() returns undefined), so the exact
+// version value is irrelevant to these tests.
+function makePoolRow() {
   const full = makePoolCard()
   return {
     id: full.id,
-    review: { nextReview: full.review.nextReview },
-    lesson: null,
+    nextReview: full.review.nextReview,
+    orderIndex: null,
+    version: null,
   }
 }
 
-// Distinguishes the three distinct prisma.card.findMany call shapes used by
-// the two-phase getStudyCards() pipeline (see file-header comment above).
-function isLightPoolArgs(args: { select?: { id?: boolean } }): boolean {
-  return !!args?.select?.id
-}
+// Distinguishes the two remaining distinct prisma.card.findMany call shapes
+// used by getStudyCards()'s cache-gated pipeline (see file-header comment
+// above) — the pool query moved to prisma.$queryRaw in Phase 32-03.
 function isKnownLemmasArgs(args: { select?: { normalizedFront?: boolean } }): boolean {
   return !!args?.select?.normalizedFront
 }
@@ -116,13 +136,22 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
   let errorSpy: ReturnType<typeof vi.spyOn>
 
   beforeEach(() => {
+    // Reset the in-memory invariant-snapshot cache so no test can observe a
+    // prior test's refill as a cache hit.
+    resetStudyCacheForTests()
     // Spy on console.error (suppress output during tests) and reset call
     // history + mock implementations before each test.
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockReset()
     ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockReset()
     ;(prisma.cardDependency.findMany as ReturnType<typeof vi.fn>).mockReset()
-    // The edge query always resolves to an empty array in these tests.
+    ;(prisma.lesson.findMany as ReturnType<typeof vi.fn>).mockReset()
+    ;(prisma.setting.findUnique as ReturnType<typeof vi.fn>).mockReset()
+    // The edge/lesson/sessionSize reads always resolve cleanly in these
+    // tests — only the known-lemmas read varies by test.
     ;(prisma.cardDependency.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(prisma.lesson.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
+    ;(prisma.setting.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -131,12 +160,10 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
 
   it('logs a [study-cards]-prefixed reason and still returns cards when the known-lemmas query rejects but the pool fulfills', async () => {
     const rejectionReason = new Error('known-lemmas boom')
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([makePoolRow()])
     ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockImplementation((args) => {
       if (isKnownLemmasArgs(args)) {
         return Promise.reject(rejectionReason)
-      }
-      if (isLightPoolArgs(args)) {
-        return Promise.resolve([makeLightPoolCard()])
       }
       // Phase B full re-fetch (args.include, id: { in: [...] })
       return Promise.resolve([makePoolCard()])
@@ -171,16 +198,9 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
   })
 
   it('still throws Error("Database error") when the pool query rejects (existing contract unchanged)', async () => {
-    ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockImplementation((args) => {
-      if (isKnownLemmasArgs(args)) {
-        return Promise.resolve([{ normalizedFront: '공부' }])
-      }
-      if (isLightPoolArgs(args)) {
-        return Promise.reject(new Error('pool boom'))
-      }
-      // Phase B should never be reached when the Phase A pool query rejects.
-      return Promise.resolve([makePoolCard()])
-    })
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('pool boom'))
+    // Phase B should never be reached when the Phase A pool query rejects.
+    ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([makePoolCard()])
 
     await expect(
       getStudyCards({ scope: 'due', lessonFrom: null, lessonTo: null, sessionSize: 20 })
@@ -188,12 +208,10 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
   })
 
   it('does not emit a [study-cards]-prefixed console.error on the happy path (both queries fulfill)', async () => {
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([makePoolRow()])
     ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockImplementation((args) => {
       if (isKnownLemmasArgs(args)) {
         return Promise.resolve([{ normalizedFront: '공부' }])
-      }
-      if (isLightPoolArgs(args)) {
-        return Promise.resolve([makeLightPoolCard()])
       }
       // Phase B full re-fetch (args.include, id: { in: [...] })
       return Promise.resolve([makePoolCard()])

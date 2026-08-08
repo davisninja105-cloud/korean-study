@@ -5,6 +5,10 @@
  * Usage:
  *   npx tsx scripts/measure-study-roundtrips.mts              (segment totals only)
  *   npx tsx scripts/measure-study-roundtrips.mts --probe-json  (+ JSON-aggregation probe)
+ *   npx tsx scripts/measure-study-roundtrips.mts --dump-order  (composition-equivalence differ:
+ *     calls getStudyCards() for the same params app/study/page.tsx uses and prints one card id
+ *     per line in session order, nothing else — no round-trip counting. Used by 32-03-PLAN.md
+ *     Task 3 to diff the ordering before/after the Phase A/B rewrite.)
  *
  * Prerequisite: the isolated e2e test DB must exist and be seeded — run
  * `npx tsx e2e/run-global-setup.ts` first if `e2e/.tmp/e2e-test.db` is
@@ -19,17 +23,17 @@
  * `e2e/helpers/test-db.ts` itself reads no env vars at import time (pure
  * path constant), so it is safe to import statically below.
  *
- * PER-SEGMENT MEASUREMENT DESIGN: this plan's files_modified list does NOT
- * include lib/study-cards.ts, so the pipeline itself is never instrumented
- * with internal reset()/read() checkpoints. Instead, Phase A's and Phase
- * B's exact query shapes are reproduced here verbatim (mirroring
- * lib/study-cards.ts:53-82 and :135-142 respectively, as of this writing)
- * so each segment's resetQueryCount()/getQueryCounts() window is genuinely
- * isolated — per 32-01-PLAN.md Task 2: "do not attempt to attribute
- * retroactively from a single total." Task 1 already proved the real,
- * unmodified getStudyCards() call costs 10 physical round trips in one
- * shot; this script's phase-A + phase-B totals are cross-checked against
- * that number in 32-BASELINE.md.
+ * PER-SEGMENT MEASUREMENT DESIGN: Phase A's and Phase B's exact query shapes
+ * are reproduced here verbatim (mirroring lib/study-cards.ts's Phase A raw
+ * SQL query and Phase B findMany respectively, as of this writing) so each
+ * segment's resetQueryCount()/getQueryCounts() window is genuinely isolated
+ * — per 32-01-PLAN.md Task 2: "do not attempt to attribute retroactively
+ * from a single total." This was originally true because Plan 01 excluded
+ * lib/study-cards.ts from its own files_modified list; Plan 03 now owns
+ * that file directly, but the same replicate-verbatim approach is kept
+ * because it lets Phase A be measured in a genuinely "warm cache" state
+ * (pre-warmed, untimed, THEN reset+measured) without adding dev-only
+ * reset()/read() checkpoints to production code.
  */
 
 import { TEST_DB_URL } from '../e2e/helpers/test-db.js'
@@ -40,55 +44,87 @@ process.env.STUDY_QUERY_COUNTER = '1'
 // Dynamic imports AFTER the env-first pin above — see header comment.
 const { resetQueryCount, getQueryCounts } = await import('../lib/query-counter.js')
 const { prisma } = await import('../lib/prisma.js')
+const { Prisma } = await import('../app/generated/prisma/client.js')
 const { selectSessionCards, sequenceCards } = await import('../lib/sequence.js')
-const { getSessionSize } = await import('../lib/settings.js')
-const { DEFAULT_SESSION_SIZE } = await import('../lib/habit.js')
+const { getStudyCache, refreshStudyCache } = await import('../lib/study-cache.js')
 
 const probeJson = process.argv.includes('--probe-json')
+const dumpOrder = process.argv.includes('--dump-order')
 
-// ── Phase A — mirrors lib/study-cards.ts:53-82's Promise.allSettled batch
-// (sessionSize + light pool + edges + known-lemmas), verbatim query shapes.
-const now = new Date()
-const poolWhere = { review: { nextReview: { lte: now } } }
-
-resetQueryCount()
-// Known-lemmas result is intentionally not bound to a name — this script
-// never computes unknownCount, only round-trip counts — but the query
-// still runs as part of the concurrent batch, matching Phase A's real cost.
-const [sessionSizeResult, poolResult, edgesResult] = await Promise.allSettled([
-  getSessionSize(),
-  prisma.card.findMany({
-    where: poolWhere,
-    select: {
-      id:     true,
-      review: { select: { nextReview: true } },
-      lesson: { select: { orderIndex: true } },
-    },
-    orderBy: { review: { nextReview: 'asc' } },
-    take: 1000,
-  }),
-  prisma.cardDependency.findMany({
-    select: { cardId: true, prerequisiteId: true },
-  }),
-  prisma.card.findMany({
-    where: { review: { state: { gte: 1 } } },
-    select: { normalizedFront: true },
-  }),
-])
-const phaseA = getQueryCounts()
-
-if (poolResult.status === 'rejected') {
-  console.error('FATAL: Phase A pool query rejected —', poolResult.reason)
-  process.exit(1)
+// ── --dump-order: composition-equivalence differ. Calls the real
+// getStudyCards() with the same params app/study/page.tsx uses and prints
+// one card id per line, in session order, nothing else. Exits early —
+// does not run the phase A/B round-trip measurement below, since ordering
+// and round-trip counting are independent concerns and dump-order must work
+// unmodified across the rewrite this script also measures.
+if (dumpOrder) {
+  const { getStudyCards } = await import('../lib/study-cards.js')
+  const result: unknown = await getStudyCards({ scope: 'due', lessonFrom: null, lessonTo: null })
+  // getStudyCards() returns a bare CardDTO[] before Task 3's rewrite and a
+  // { cards, lessons } StudyCardsResult after — support both shapes so this
+  // flag works unmodified on both sides of the rewrite it's used to diff.
+  const list = (Array.isArray(result) ? result : (result as { cards: { id: string }[] }).cards) as {
+    id: string
+  }[]
+  const ids = list.map((c) => c.id)
+  for (const id of ids) console.log(id)
+  process.exit(0)
 }
 
-const sessionSize =
-  sessionSizeResult.status === 'fulfilled' ? sessionSizeResult.value : DEFAULT_SESSION_SIZE
-const lightPool = poolResult.value
+// ── Phase A — mirrors lib/study-cards.ts's raw-SQL pool-plus-version query
+// verbatim, run in a pre-warmed cache state so the measured window reflects
+// the steady-state ("warm cache") cost the acceptance criterion asks for:
+// exactly one physical request for the live pool plus the version check.
+const now = new Date()
+const nowIso = now.toISOString()
+const scopeClause = Prisma.sql`julianday(r.nextReview) <= julianday(${nowIso})`
+const lessonRangeClause = Prisma.sql``
+
+interface PoolRow {
+  id: string
+  nextReview: Date | string
+  orderIndex: number | null
+  version: string | null
+}
+
+async function queryPool(): Promise<PoolRow[]> {
+  return prisma.$queryRaw<PoolRow[]>`
+    SELECT
+      c.id AS id,
+      r.nextReview AS nextReview,
+      l.orderIndex AS orderIndex,
+      (SELECT value FROM Setting WHERE key = 'studyCacheVersion') AS version
+    FROM Card c
+    INNER JOIN CardReview r ON r.cardId = c.id
+    LEFT JOIN Lesson l ON l.id = c.lessonId
+    WHERE ${scopeClause} ${lessonRangeClause}
+    ORDER BY r.nextReview ASC
+    LIMIT 1000
+  `
+}
+
+// Pre-warm pass (untimed) — simulates a server that already served one
+// /study request, so the timed pass below measures a genuine cache hit.
+const warmRows = await queryPool()
+const warmVersion = warmRows.length > 0 ? warmRows[0].version : null
+await refreshStudyCache(warmVersion)
+
+resetQueryCount()
+const rows = await queryPool()
+const phaseA = getQueryCounts()
+
+const version = rows.length > 0 ? rows[0].version : null
+const cached = getStudyCache()
+const invariants = cached && cached.version === version ? cached : await refreshStudyCache(version)
+
+const lightPool = rows.map((r) => ({
+  id: r.id,
+  review: { nextReview: r.nextReview },
+  lesson: r.orderIndex !== null ? { orderIndex: r.orderIndex } : null,
+}))
 const idSet = new Set(lightPool.map((c) => c.id))
-const allEdges = edgesResult.status === 'fulfilled' ? edgesResult.value : []
-const edges = allEdges.filter((e) => idSet.has(e.cardId) && idSet.has(e.prerequisiteId))
-const chosen = selectSessionCards(lightPool, edges, sessionSize, now)
+const edges = invariants.edges.filter((e) => idSet.has(e.cardId) && idSet.has(e.prerequisiteId))
+const chosen = selectSessionCards(lightPool, edges, invariants.sessionSize, now)
 const ordered = sequenceCards(chosen, edges, now)
 const orderedIds = ordered.map((c) => c.id)
 
