@@ -216,10 +216,20 @@ Plans:
   4. Session composition is byte-for-byte unchanged in behavior: prerequisite closure, foundation-first ordering, the bare-word-first gate, and least-unknown sentence selection all still hold, with the unit suites and the e2e grade-flow spec green.
 
 **Plans**: 4 plans
+**Wave 1**
 
 - [ ] 32-01-PLAN.md — instrument round trips and measure the real current `/study` baseline (wave 1)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 32-02-PLAN.md — invariant snapshot module + cross-process sync-triggered invalidation (wave 2)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 32-03-PLAN.md — collapse Phase A/B to raw SQL, fold in lessons, prove ordering unchanged (wave 3)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
 - [ ] 32-04-PLAN.md — committed ≤2 proof, tightened perf budgets, no-redeploy freshness e2e (wave 4)
 
 ### Phase 33: Version-Gated Freshness Backstop

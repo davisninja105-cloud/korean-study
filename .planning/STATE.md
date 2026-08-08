@@ -4,15 +4,15 @@ milestone: v1.8
 milestone_name: Perceived & Real Performance
 current_phase: 32
 current_phase_name: Study Load Round-Trip Collapse
-status: planning
+status: executing
 stopped_at: Phase 31 UI-SPEC approved
-last_updated: "2026-08-08T06:24:32.191Z"
+last_updated: "2026-08-08T16:52:04.529Z"
 last_activity: 2026-08-07
 last_activity_desc: Phase 31 complete, transitioned to Phase 32
 progress:
   total_phases: 6
   completed_phases: 2
-  total_plans: 11
+  total_plans: 15
   completed_plans: 11
   percent: 33
 ---
@@ -30,7 +30,7 @@ See: .planning/PROJECT.md (updated 2026-08-06)
 
 Phase: 32 — Study Load Round-Trip Collapse
 Plan: Not started
-Status: Ready to plan
+Status: Ready to execute
 Last activity: 2026-08-07 — Phase 31 complete, transitioned to Phase 32
 
 ## Performance Metrics
