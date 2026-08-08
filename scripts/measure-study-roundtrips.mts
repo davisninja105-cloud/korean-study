@@ -128,27 +128,70 @@ const chosen = selectSessionCards(lightPool, edges, invariants.sessionSize, now)
 const ordered = sequenceCards(chosen, edges, now)
 const orderedIds = ordered.map((c) => c.id)
 
-// ── Phase B — mirrors lib/study-cards.ts:135-142's full-row findMany,
-// verbatim query shape, fed with the real ids Phase A/selection produced.
+// ── Phase B — mirrors lib/study-cards.ts's raw-SQL full-row query verbatim
+// (32-BASELINE.md verdict: RAW SQL REQUIRED), fed with the real ids Phase
+// A/selection produced. CardReview/Lesson are LEFT JOINed (to-one, no
+// fan-out); Sentence is folded into one JSON column via a correlated
+// json_group_array/json_object subquery.
 resetQueryCount()
-await prisma.card.findMany({
-  where: { id: { in: orderedIds } },
-  include: {
-    review:    true,
-    lesson:    { select: { id: true, orderIndex: true, title: true, createdAt: true } },
-    sentences: { orderBy: { orderIndex: 'asc' } },
-  },
-})
+if (orderedIds.length > 0) {
+  await prisma.$queryRaw`
+    SELECT
+      c.id AS id,
+      c.createdAt AS createdAt,
+      c.updatedAt AS updatedAt,
+      c.type AS type,
+      c.front AS front,
+      c.back AS back,
+      c.notes AS notes,
+      c.normalizedFront AS normalizedFront,
+      c.components AS components,
+      c.distractors AS distractors,
+      c.lessonId AS lessonId,
+      r.id AS review_id,
+      r.state AS review_state,
+      r.stability AS review_stability,
+      r.difficulty AS review_difficulty,
+      r.elapsedDays AS review_elapsedDays,
+      r.scheduledDays AS review_scheduledDays,
+      r.learningSteps AS review_learningSteps,
+      r.reps AS review_reps,
+      r.lapses AS review_lapses,
+      r.nextReview AS review_nextReview,
+      r.lastReview AS review_lastReview,
+      l.id AS lesson_id,
+      l.orderIndex AS lesson_orderIndex,
+      l.title AS lesson_title,
+      l.createdAt AS lesson_createdAt,
+      (
+        SELECT json_group_array(json_object(
+          'id', s.id,
+          'cardId', s.cardId,
+          'korean', s.korean,
+          'targetForm', s.targetForm,
+          'translation', s.translation,
+          'orderIndex', s.orderIndex,
+          'createdAt', s.createdAt,
+          'updatedAt', s.updatedAt
+        ))
+        FROM (SELECT * FROM Sentence WHERE Sentence.cardId = c.id ORDER BY orderIndex ASC) s
+      ) AS sentencesJson
+    FROM Card c
+    LEFT JOIN CardReview r ON r.cardId = c.id
+    LEFT JOIN Lesson l ON l.id = c.lessonId
+    WHERE c.id IN (${Prisma.join(orderedIds)})
+  `
+}
 const phaseB = getQueryCounts()
 
-// ── page lessons — mirrors app/study/page.tsx's standalone lesson query,
-// which sits outside getStudyCards() entirely but is inside the whole
-// /study page's round-trip budget (per STUDY-01's "a /study load" wording).
+// ── page lessons — mirrors the POST-Task-3 app/study/page.tsx, which reads
+// `lessons` from getStudyCards()'s own return value (sourced from the same
+// warm invariants snapshot Phase A already populated) rather than issuing
+// its own separate prisma.lesson.findMany() call. On a warm cache this is
+// genuinely zero physical I/O — reading an already-fetched in-memory array
+// — not a stale pre-Task-3 measurement.
 resetQueryCount()
-await prisma.lesson.findMany({
-  select: { id: true, orderIndex: true, title: true },
-  orderBy: { orderIndex: 'asc' },
-})
+void invariants.lessons
 const pageLessons = getQueryCounts()
 
 const totalPhysical = phaseA.physical + phaseB.physical + pageLessons.physical

@@ -42,6 +42,58 @@ interface PoolRow {
   version: string | null
 }
 
+// Raw-SQL Phase B row shape — one row per chosen card, with CardReview and
+// Lesson columns aliased (both to-one relations, LEFT JOIN, no fan-out) and
+// the one-to-many Sentence relation folded into a single JSON text column.
+// Every *_id-suffixed column (review_id / lesson_id) doubles as the LEFT
+// JOIN presence marker: null means no matching row, non-null means every
+// sibling *_ column in that group is guaranteed non-null (the underlying
+// schema.prisma columns are NOT NULL).
+interface FullCardRow {
+  id: string
+  createdAt: Date | string
+  updatedAt: Date | string
+  type: string
+  front: string
+  back: string
+  notes: string | null
+  normalizedFront: string
+  components: string | null
+  distractors: string | null
+  lessonId: string | null
+  review_id: string | null
+  review_state: number | null
+  review_stability: number | null
+  review_difficulty: number | null
+  review_elapsedDays: number | null
+  review_scheduledDays: number | null
+  review_learningSteps: number | null
+  review_reps: number | null
+  review_lapses: number | null
+  review_nextReview: Date | string | null
+  review_lastReview: Date | string | null
+  lesson_id: string | null
+  lesson_orderIndex: number | null
+  lesson_title: string | null
+  lesson_createdAt: Date | string | null
+  sentencesJson: string
+}
+
+// Raw sentence shape as it survives SQLite's json_object() aggregation —
+// every DateTime comes back as TEXT (the "+00:00" offset form), never a JS
+// Date, because json_object() stringifies before Prisma's raw-query
+// deserializer ever sees the column.
+interface RawSentenceRow {
+  id: string
+  cardId: string
+  korean: string
+  targetForm: string
+  translation: string
+  orderIndex: number
+  createdAt: string
+  updatedAt: string
+}
+
 export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]> {
   const { scope, lessonFrom, lessonTo } = params
 
@@ -143,52 +195,149 @@ export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]
   const ordered = sequenceCards(chosen, edges, now)
   const orderedIds = ordered.map((c) => c.id)
 
+  // Prisma.join on an empty array produces invalid SQL — guard before Phase B.
+  if (orderedIds.length === 0) return []
+
   // Phase B — fetch full details (review, lesson, sentences) for ONLY the
-  // chosen/ordered cards (~sessionSize, not the full 1000-row pool).
-  // findMany with `id: { in: ... }` does NOT preserve the input order, so the
-  // result is re-mapped over orderedIds via a Map to restore session order.
-  const fullCards = await prisma.card.findMany({
-    where: { id: { in: orderedIds } },
-    include: {
-      review:    true,
-      lesson:    { select: { id: true, orderIndex: true, title: true, createdAt: true } },
-      sentences: { orderBy: { orderIndex: 'asc' } },
-    },
-  })
-  const fullById = new Map(fullCards.map((c) => [c.id, c]))
-  const cardsInOrder = orderedIds
+  // chosen/ordered cards (~sessionSize, not the full 1000-row pool), as ONE
+  // physical raw-SQL request. 32-BASELINE.md's measured Phase B verdict is
+  // RAW SQL REQUIRED: the previous include-based findMany cost 4 physical
+  // round trips on this stack (SQLite has no relationLoadStrategy: 'join'),
+  // not the 1 this raw query achieves. schema.prisma anchors: Card 20-54,
+  // CardReview 74-93, Lesson 10-18, Sentence 56-72. CardReview and Lesson
+  // are both to-one relations (LEFT JOIN, no row fan-out); Sentence is the
+  // one-to-many relation, folded into a single JSON column via a correlated
+  // json_group_array/json_object subquery ordered by orderIndex ASC —
+  // confirmed available and correctly ordered on both the local test DB and
+  // production Turso (32-BASELINE.md; re-verified empirically this session,
+  // including the zero-sentences case, which returns "[]" not null).
+  const fullRows = await prisma.$queryRaw<FullCardRow[]>`
+    SELECT
+      c.id AS id,
+      c.createdAt AS createdAt,
+      c.updatedAt AS updatedAt,
+      c.type AS type,
+      c.front AS front,
+      c.back AS back,
+      c.notes AS notes,
+      c.normalizedFront AS normalizedFront,
+      c.components AS components,
+      c.distractors AS distractors,
+      c.lessonId AS lessonId,
+      r.id AS review_id,
+      r.state AS review_state,
+      r.stability AS review_stability,
+      r.difficulty AS review_difficulty,
+      r.elapsedDays AS review_elapsedDays,
+      r.scheduledDays AS review_scheduledDays,
+      r.learningSteps AS review_learningSteps,
+      r.reps AS review_reps,
+      r.lapses AS review_lapses,
+      r.nextReview AS review_nextReview,
+      r.lastReview AS review_lastReview,
+      l.id AS lesson_id,
+      l.orderIndex AS lesson_orderIndex,
+      l.title AS lesson_title,
+      l.createdAt AS lesson_createdAt,
+      (
+        SELECT json_group_array(json_object(
+          'id', s.id,
+          'cardId', s.cardId,
+          'korean', s.korean,
+          'targetForm', s.targetForm,
+          'translation', s.translation,
+          'orderIndex', s.orderIndex,
+          'createdAt', s.createdAt,
+          'updatedAt', s.updatedAt
+        ))
+        FROM (SELECT * FROM Sentence WHERE Sentence.cardId = c.id ORDER BY orderIndex ASC) s
+      ) AS sentencesJson
+    FROM Card c
+    LEFT JOIN CardReview r ON r.cardId = c.id
+    LEFT JOIN Lesson l ON l.id = c.lessonId
+    WHERE c.id IN (${Prisma.join(orderedIds)})
+  `
+  const fullById = new Map(fullRows.map((r) => [r.id, r]))
+
+  // Serialize: raw SQL returns SQLite TEXT for every DateTime crossing the
+  // json_object() aggregation (the correlated sentences subquery), in
+  // "+00:00" offset form — .toISOString() on those would throw. Every
+  // timestamp is normalised through new Date(value).toISOString() so the
+  // emitted DTO keeps today's Z-suffixed format byte-for-byte, defensively
+  // (the top-level SELECT'd DateTime columns come back as JS Date objects
+  // on this stack per this session's own verification, but new Date(x) on
+  // an already-Date value is a safe no-op clone, so one code path handles
+  // both cases without assuming which one a given libSQL transport returns).
+  // No raw Date/TEXT may appear in the returned CardDTO[] (RSC-05 contract).
+  const cardsInOrder: CardDTO[] = orderedIds
     .map((id) => fullById.get(id))
-    .filter((c): c is NonNullable<typeof c> => c !== undefined)
+    .filter((r): r is NonNullable<typeof r> => r !== undefined)
+    .map((r) => {
+      let rawSentences: RawSentenceRow[]
+      try {
+        rawSentences = JSON.parse(r.sentencesJson) as RawSentenceRow[]
+      } catch (e) {
+        console.error(`[study-cards] failed to parse sentences JSON for card ${r.id}`, e)
+        rawSentences = []
+      }
+      const sentences = rawSentences.map((s) => ({
+        id: s.id,
+        cardId: s.cardId,
+        korean: s.korean,
+        targetForm: s.targetForm,
+        translation: s.translation,
+        orderIndex: s.orderIndex,
+        createdAt: new Date(s.createdAt).toISOString(),
+        updatedAt: new Date(s.updatedAt).toISOString(),
+        unknownCount: countUnknownWords(s.korean, s.targetForm, invariants.lemmas),
+      }))
 
-  // Annotate each sentence with unknownCount (pure ranking signal for the client).
-  // Cost: ≤ sessionSize × 3 sentence scans — well under the Vercel 60s limit.
-  for (const card of cardsInOrder) {
-    for (const s of card.sentences) {
-      (s as typeof s & { unknownCount: number }).unknownCount =
-        countUnknownWords(s.korean, s.targetForm, invariants.lemmas)
-    }
-  }
+      return {
+        id: r.id,
+        createdAt: new Date(r.createdAt).toISOString(),
+        updatedAt: new Date(r.updatedAt).toISOString(),
+        type: r.type,
+        front: r.front,
+        back: r.back,
+        notes: r.notes,
+        normalizedFront: r.normalizedFront,
+        components: r.components,
+        distractors: r.distractors,
+        lessonId: r.lessonId,
+        lesson:
+          r.lesson_id !== null
+            ? {
+                // schema.prisma NOT NULL columns — non-null once lesson_id
+                // (the LEFT JOIN presence marker) is confirmed non-null.
+                title: r.lesson_title!,
+                orderIndex: r.lesson_orderIndex!,
+                createdAt: new Date(r.lesson_createdAt!).toISOString(),
+              }
+            : null,
+        review:
+          r.review_id !== null
+            ? {
+                id: r.review_id,
+                cardId: r.id,
+                // schema.prisma NOT NULL columns — non-null once review_id
+                // (the LEFT JOIN presence marker) is confirmed non-null.
+                state: r.review_state!,
+                stability: r.review_stability!,
+                difficulty: r.review_difficulty!,
+                elapsedDays: r.review_elapsedDays!,
+                scheduledDays: r.review_scheduledDays!,
+                learningSteps: r.review_learningSteps!,
+                reps: r.review_reps!,
+                lapses: r.review_lapses!,
+                nextReview: new Date(r.review_nextReview!).toISOString(),
+                lastReview: r.review_lastReview !== null
+                  ? new Date(r.review_lastReview).toISOString()
+                  : null,
+              }
+            : null,
+        sentences,
+      }
+    })
 
-  // Serialize: convert all Prisma Date objects to ISO strings before returning.
-  // No raw Date may appear in the returned CardDTO[] (RSC-05 contract).
-  return cardsInOrder.map((c) => ({
-    ...c,
-    createdAt: c.createdAt.toISOString(),
-    updatedAt: c.updatedAt.toISOString(),
-    lesson: c.lesson
-      ? { ...c.lesson, createdAt: c.lesson.createdAt.toISOString() }
-      : null,
-    review: c.review
-      ? {
-          ...c.review,
-          nextReview: c.review.nextReview.toISOString(),
-          lastReview: c.review.lastReview?.toISOString() ?? null,
-        }
-      : null,
-    sentences: c.sentences.map((s) => ({
-      ...s,
-      createdAt: s.createdAt.toISOString(),
-      updatedAt: s.updatedAt.toISOString(),
-    })),
-  }))
+  return cardsInOrder
 }

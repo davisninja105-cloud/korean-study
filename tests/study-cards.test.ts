@@ -11,14 +11,13 @@
 // call returning the light pool (id/nextReview/orderIndex) plus the
 // studyCacheVersion token as a correlated scalar subquery column — followed
 // by a cache-gated invariant read (lib/study-cache.ts's getStudyCache() /
-// refreshStudyCache()) and a Phase B prisma.card.findMany re-fetch of only
-// the chosen/ordered card ids with the full include shape. So
-// `prisma.card.findMany` is called up to TWO times per getStudyCards() call
-// in these tests (knownLemmas — inside the cache refill — and the Phase B
-// full re-fetch) — the mock implementation below distinguishes them by args
-// shape:
-//   - knownLemmas:   args.select.normalizedFront === true
-//   - full re-fetch: args.include is present (no args.select)
+// refreshStudyCache()) and a raw-SQL Phase B prisma.$queryRaw re-fetch of
+// only the chosen/ordered card ids, with sentences folded into a JSON text
+// column. So `prisma.$queryRaw` is called up to TWO times per getStudyCards()
+// call in these tests — the mock implementation below distinguishes them by
+// the query text (Phase B's SELECT is the only one that mentions
+// "sentencesJson"). `prisma.card.findMany` is called exactly once now, for
+// knownLemmas (inside the cache refill; args.select.normalizedFront === true).
 //
 // The prisma singleton is mocked via vi.mock('@/lib/prisma', ...), which
 // also neutralizes the real module body — so no DATABASE_URL is needed and
@@ -125,9 +124,67 @@ function makePoolRow() {
   }
 }
 
-// Distinguishes the two remaining distinct prisma.card.findMany call shapes
-// used by getStudyCards()'s cache-gated pipeline (see file-header comment
-// above) — the pool query moved to prisma.$queryRaw in Phase 32-03.
+// The raw-SQL Phase B row shape: the flat, review_*/lesson_*-prefixed
+// columns plus a JSON-stringified sentencesJson column (see
+// lib/study-cards.ts's FullCardRow/RawSentenceRow interfaces). Derived from
+// makePoolCard() so the two fixtures never drift out of sync. lesson_* is
+// null here (makePoolCard()'s card has no lesson) — matches the LEFT JOIN
+// miss case.
+function makeFullCardRow() {
+  const full = makePoolCard()
+  return {
+    id: full.id,
+    createdAt: full.createdAt,
+    updatedAt: full.updatedAt,
+    type: full.type,
+    front: full.front,
+    back: full.back,
+    notes: full.notes,
+    normalizedFront: full.normalizedFront,
+    components: full.components,
+    distractors: full.distractors,
+    lessonId: full.lessonId,
+    review_id: full.review.id,
+    review_state: full.review.state,
+    review_stability: full.review.stability,
+    review_difficulty: full.review.difficulty,
+    review_elapsedDays: full.review.elapsedDays,
+    review_scheduledDays: full.review.scheduledDays,
+    review_learningSteps: full.review.learningSteps,
+    review_reps: full.review.reps,
+    review_lapses: full.review.lapses,
+    review_nextReview: full.review.nextReview,
+    review_lastReview: full.review.lastReview,
+    lesson_id: null,
+    lesson_orderIndex: null,
+    lesson_title: null,
+    lesson_createdAt: null,
+    sentencesJson: JSON.stringify(
+      full.sentences.map((s) => ({
+        id: s.id,
+        cardId: s.cardId,
+        korean: s.korean,
+        targetForm: s.targetForm,
+        translation: s.translation,
+        orderIndex: s.orderIndex,
+        createdAt: s.createdAt.toISOString(),
+        updatedAt: s.updatedAt.toISOString(),
+      }))
+    ),
+  }
+}
+
+// Distinguishes the two prisma.$queryRaw call shapes (Phase A pool query vs
+// Phase B full-row query) by the query text — Phase B's SELECT is the only
+// one that mentions "sentencesJson".
+function isPhaseBQuery(strings: TemplateStringsArray): boolean {
+  return strings.join('').includes('sentencesJson')
+}
+
+// Distinguishes the sole remaining prisma.card.findMany call shape used by
+// getStudyCards()'s cache-gated pipeline (see file-header comment above) —
+// both the pool query and the full re-fetch moved to prisma.$queryRaw in
+// Phase 32-03; only knownLemmas still goes through card.findMany.
 function isKnownLemmasArgs(args: { select?: { normalizedFront?: boolean } }): boolean {
   return !!args?.select?.normalizedFront
 }
@@ -160,13 +217,17 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
 
   it('logs a [study-cards]-prefixed reason and still returns cards when the known-lemmas query rejects but the pool fulfills', async () => {
     const rejectionReason = new Error('known-lemmas boom')
-    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([makePoolRow()])
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockImplementation(
+      (strings: TemplateStringsArray) =>
+        isPhaseBQuery(strings)
+          ? Promise.resolve([makeFullCardRow()])
+          : Promise.resolve([makePoolRow()])
+    )
     ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockImplementation((args) => {
       if (isKnownLemmasArgs(args)) {
         return Promise.reject(rejectionReason)
       }
-      // Phase B full re-fetch (args.include, id: { in: [...] })
-      return Promise.resolve([makePoolCard()])
+      return Promise.resolve([])
     })
 
     const cards = await getStudyCards({
@@ -200,7 +261,7 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
   it('still throws Error("Database error") when the pool query rejects (existing contract unchanged)', async () => {
     ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('pool boom'))
     // Phase B should never be reached when the Phase A pool query rejects.
-    ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([makePoolCard()])
+    ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([])
 
     await expect(
       getStudyCards({ scope: 'due', lessonFrom: null, lessonTo: null, sessionSize: 20 })
@@ -208,13 +269,17 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
   })
 
   it('does not emit a [study-cards]-prefixed console.error on the happy path (both queries fulfill)', async () => {
-    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue([makePoolRow()])
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockImplementation(
+      (strings: TemplateStringsArray) =>
+        isPhaseBQuery(strings)
+          ? Promise.resolve([makeFullCardRow()])
+          : Promise.resolve([makePoolRow()])
+    )
     ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockImplementation((args) => {
       if (isKnownLemmasArgs(args)) {
         return Promise.resolve([{ normalizedFront: '공부' }])
       }
-      // Phase B full re-fetch (args.include, id: { in: [...] })
-      return Promise.resolve([makePoolCard()])
+      return Promise.resolve([])
     })
 
     const cards = await getStudyCards({
