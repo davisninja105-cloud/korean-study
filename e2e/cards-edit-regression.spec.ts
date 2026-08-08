@@ -228,8 +228,12 @@ test('editing a card\'s type and sentences updates the Reading Practice row, the
   await expect(grammarHeader).toContainText('1 card')
 
   // ── Step 9: CR-03 assertion — sentence-count badge recomputed ─────────────
-  // Grammar starts collapsed (D-02); its `loaded` array is already populated
-  // by the CR-02 fix's optimistic insert, so expanding it fires no new fetch.
+  // Grammar starts collapsed (D-02). 31-REVIEW-FIX.md's CR-02 fix means
+  // expanding it now fires a REAL fetch (this fixture has zero pre-existing
+  // Grammar cards, so that fetch trivially returns just the one relocated
+  // card here — the scenario where a real fetch actually matters, a Grammar
+  // group with OTHER pre-existing cards this session never fetched, is
+  // covered separately below by the dedicated CR-02 phantom-population test).
   await grammarHeader.click()
 
   await ensureVisible(page, schoolRow)
@@ -238,4 +242,86 @@ test('editing a card\'s type and sentences updates the Reading Practice row, the
   }
   await expect(schoolRow().getByText('grammar', { exact: true })).toBeVisible()
   await expect(schoolRow()).toContainText('2 sentences')
+})
+
+// CR-02 phantom-population regression coverage (31-REVIEW-FIX.md, added
+// during the WR/CR fix pass). The main test above and its fixture
+// (e2e/seed.ts's D-13 baseline) can't reproduce the actual reported bug
+// scenario, because the fixture has ZERO pre-existing Grammar cards — the
+// destination bucket is "empty AND correct" either way, so it can't tell a
+// real fetch apart from the pre-fix phantom optimistic insert. This test
+// builds its OWN precondition purely through the real UI (no fixture/seed
+// changes, so every other spec sharing e2e/seed.ts's D-13 baseline counts is
+// unaffected): a Grammar card is added, the page is fully reloaded (resetting
+// every client-side `groups` bucket back to its initial collapsed,
+// never-fetched EMPTY_GROUP_STATE while the server now genuinely holds 1
+// real Grammar card), and only THEN is a second Grammar card added — the
+// exact CR-02 precondition (`groups.grammar.loaded.length === 0` at the
+// moment of insert, with a real server-side card already sitting behind
+// that empty bucket). Pre-fix, this second add would splice only itself
+// into `loaded` and set `hasMore: false`, permanently hiding the first card
+// this session; the fix instead triggers a real first-page fetch that
+// returns both.
+test('adding a Grammar card into a never-fetched-this-session bucket does not hide a real pre-existing Grammar card (CR-02)', async ({
+  page,
+}) => {
+  const firstFront = '첫번째문법'
+  const secondFront = '두번째문법'
+
+  async function addGrammarCard(front: string, back: string) {
+    await page.getByRole('button', { name: 'Add Card' }).click()
+    const dialog = page.getByRole('dialog')
+    if (!(await waitVisible(dialog))) {
+      await dumpUnrecognizedState(page, `cr02-phantom:add-dialog-${front}`)
+    }
+    await expect(dialog).toBeVisible()
+    await dialog.locator('select').selectOption('grammar')
+    await dialog.getByPlaceholder('Front (Korean)').fill(front)
+    await dialog.getByPlaceholder('Back (English)').fill(back)
+    await dialog.getByRole('button', { name: 'Add Card' }).click()
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+  }
+
+  await page.goto('/cards')
+  await page.waitForLoadState('networkidle')
+
+  const grammarHeader = page.getByRole('button', { name: /Grammar/ })
+
+  // ── Card #1: this creates the Grammar group for the first time this
+  //    session. `groups.grammar.loaded` starts at `[]` (EMPTY_GROUP_STATE),
+  //    so the already-fixed handleAdd path takes the real-fetch branch here
+  //    too — a correct, non-phantom single-card group. ──────────────────────
+  await addGrammarCard(firstFront, 'first grammar test card')
+  if (!(await waitVisible(grammarHeader))) {
+    await dumpUnrecognizedState(page, 'cr02-phantom:grammar-header-after-first-add')
+  }
+  await expect(grammarHeader).toContainText('1 card')
+
+  // ── Full reload: wipes ALL client-side React state, so `groups.grammar`
+  //    resets to its initial collapsed, never-fetched EMPTY_GROUP_STATE —
+  //    while the server now genuinely has 1 real Grammar card. groupCounts
+  //    (server-authoritative) arrives with the RSC page load regardless of
+  //    whether the Grammar bucket itself has ever been fetched. ─────────────
+  await page.reload()
+  await page.waitForLoadState('networkidle')
+
+  if (!(await waitVisible(grammarHeader))) {
+    await dumpUnrecognizedState(page, 'cr02-phantom:grammar-header-after-reload')
+  }
+  await expect(grammarHeader).toContainText('1 card')
+
+  // ── Card #2: added while Grammar's bucket has never been fetched THIS
+  //    session — the exact CR-02 phantom-population precondition. ──────────
+  await addGrammarCard(secondFront, 'second grammar test card')
+  await expect(grammarHeader).toContainText('2 card')
+
+  // Grammar auto-expands on add (E6 zero-one-many) — both real cards must be
+  // visible, not just the just-added one. Pre-fix, only `secondFront` would
+  // ever render here (the phantom optimistic insert with hasMore stuck
+  // false), permanently hiding `firstFront` until a hard reload.
+  if (!(await waitVisible(page.getByText(firstFront, { exact: true })))) {
+    await dumpUnrecognizedState(page, 'cr02-phantom:first-card-hidden')
+  }
+  await expect(page.getByText(firstFront, { exact: true })).toBeVisible()
+  await expect(page.getByText(secondFront, { exact: true })).toBeVisible()
 })
