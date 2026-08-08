@@ -137,7 +137,7 @@ See `.planning/milestones/v1.6-ROADMAP.md` for full phase details.
 
 - [x] **Phase 30: Instant Feedback & Cold-Start Unblocking** - Visible dark-mode skeletons, no white PWA launch flash, honest lesson-filter skeleton, synchronous root layout, Vercel region pinned to Turso (completed 2026-08-06)
 - [x] **Phase 31: Cards List Pagination & Virtualization** - `/cards` loads a capped page without sentences, windows its scroll, and searches/filters server-side across the full deck (completed 2026-08-07)
-- [ ] **Phase 32: Study Load Round-Trip Collapse** - `/study` drops from 4–5 sequential Turso round trips to at most two, with sync-invalidated caching of invariant reads
+- [x] **Phase 32: Study Load Round-Trip Collapse** - `/study` drops from 4–5 sequential Turso round trips to at most two, with sync-invalidated caching of invariant reads (completed 2026-08-08)
 - [ ] **Phase 33: Version-Gated Freshness Backstop** - `/api/version` monotonic counter lets the freshness backstop re-fetch payloads only when something actually changed
 - [ ] **Phase 34: Local-First Shell** - IndexedDB stale-while-revalidate cache makes every repeat visit paint instantly and the app usable with the network off
 - [ ] **Phase 35: Service Worker & Offline Review Queue** - Precached app shell plus a persisted review queue that flushes exactly once when the app comes back online
@@ -319,7 +319,7 @@ Re-measure the baseline table after Phase 30 before starting Phase 31 — the nu
 | 29. Distractor Write-Side Retirement | v1.7 | 0/0 | Deferred (archived unexecuted — CLEANUP-03 open, unscheduled) | - |
 | 30. Instant Feedback & Cold-Start Unblocking | v1.8 | 4/4 | Complete    | 2026-08-06 |
 | 31. Cards List Pagination & Virtualization | v1.8 | 7/7 | Complete    | 2026-08-07 |
-| 32. Study Load Round-Trip Collapse | v1.8 | 4/4 | In Progress|  |
+| 32. Study Load Round-Trip Collapse | v1.8 | 4/4 | Complete    | 2026-08-08 |
 | 33. Version-Gated Freshness Backstop | v1.8 | 0/TBD | Not started | - |
 | 34. Local-First Shell | v1.8 | 0/TBD | Not started | - |
 | 35. Service Worker & Offline Review Queue | v1.8 | 0/TBD | Not started | - |
