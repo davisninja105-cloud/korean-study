@@ -1,14 +1,22 @@
-// Regression tests for RELIABILITY-01: the known-lemmas query (now inside
-// lib/study-cache.ts's refreshStudyCache()) runs concurrently with the rest
-// of the invariant-snapshot refill via Promise.allSettled. When it rejects
-// it silently degrades to an empty Set — invisibly turning the unknownCount
-// ranking signal into "everything is unknown". These tests lock the
-// now-observable `[study-cards]`-prefixed log AND the pre-existing
-// degradation contract (pool failure still throws 'Database error'; happy
-// path stays silent).
+// Coverage for lib/study-cards.ts's cache-gated, two-phase raw-SQL pipeline
+// (Phase 32-03). Two concerns:
 //
-// getStudyCards() (Phase 32-03) does a raw-SQL Phase A — one prisma.$queryRaw
-// call returning the light pool (id/nextReview/orderIndex) plus the
+//   1. RELIABILITY-01: the known-lemmas query (now inside lib/study-cache.ts's
+//      refreshStudyCache()) runs concurrently with the rest of the
+//      invariant-snapshot refill via Promise.allSettled. When it rejects it
+//      silently degrades to an empty Set — invisibly turning the
+//      unknownCount ranking signal into "everything is unknown". These
+//      tests lock the now-observable `[study-cards]`-prefixed log AND the
+//      pre-existing degradation contract (pool failure still throws
+//      'Database error'; happy path stays silent).
+//   2. STUDY-03 cache-gating: a version match must skip the invariant
+//      refill entirely (zero extra round trips); a version mismatch must
+//      trigger exactly one refill. getStudyCards() now returns
+//      { cards, lessons } (StudyCardsResult) — `lessons` comes from the
+//      same cache-gated invariants snapshot, not a separate query.
+//
+// getStudyCards() does a raw-SQL Phase A — one prisma.$queryRaw call
+// returning the light pool (id/nextReview/orderIndex) plus the
 // studyCacheVersion token as a correlated scalar subquery column — followed
 // by a cache-gated invariant read (lib/study-cache.ts's getStudyCache() /
 // refreshStudyCache()) and a raw-SQL Phase B prisma.$queryRaw re-fetch of
@@ -16,8 +24,9 @@
 // column. So `prisma.$queryRaw` is called up to TWO times per getStudyCards()
 // call in these tests — the mock implementation below distinguishes them by
 // the query text (Phase B's SELECT is the only one that mentions
-// "sentencesJson"). `prisma.card.findMany` is called exactly once now, for
-// knownLemmas (inside the cache refill; args.select.normalizedFront === true).
+// "sentencesJson"). `prisma.card.findMany` is called at most once per
+// invariant refill, for knownLemmas (args.select.normalizedFront === true) —
+// the pool query and the full re-fetch both moved to prisma.$queryRaw.
 //
 // The prisma singleton is mocked via vi.mock('@/lib/prisma', ...), which
 // also neutralizes the real module body — so no DATABASE_URL is needed and
@@ -28,7 +37,19 @@
 // resetStudyCacheForTests() runs in beforeEach so lib/study-cache.ts's
 // globalThis-held snapshot (module state that otherwise persists across
 // tests within this one file) cannot leak a prior test's refill into a
-// later test's cache-hit/miss decision.
+// later test's cache-hit/miss decision — except in the cache-gating test
+// itself, which deliberately calls getStudyCards() multiple times within
+// one test body to observe the snapshot surviving across calls.
+//
+// tests/study-cards.order-fixture.txt (alongside this file): the
+// composition-equivalence proof for the 32-03 rewrite — one card id per
+// line, in session order, captured via `npx tsx
+// scripts/measure-study-roundtrips.mts --dump-order` against the seeded
+// e2e test DB AFTER the raw-SQL rewrite. It is byte-identical to
+// .planning/phases/32-study-load-round-trip-collapse/order-before.txt,
+// captured BEFORE the rewrite from the same seed — proving the ordered
+// session card sequence did not move. Re-run the same command and diff
+// against this fixture to catch any future change to sequencing.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
@@ -230,7 +251,7 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
       return Promise.resolve([])
     })
 
-    const cards = await getStudyCards({
+    const { cards } = await getStudyCards({
       scope: 'due',
       lessonFrom: null,
       lessonTo: null,
@@ -282,7 +303,7 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
       return Promise.resolve([])
     })
 
-    const cards = await getStudyCards({
+    const { cards } = await getStudyCards({
       scope: 'due',
       lessonFrom: null,
       lessonTo: null,
@@ -295,5 +316,70 @@ describe('getStudyCards — RELIABILITY-01 known-lemmas degradation logging', ()
       (c: unknown[]) => typeof c[0] === 'string' && c[0].startsWith('[study-cards]')
     )
     expect(studyCardCall).toBeUndefined()
+  })
+
+  it('a warm cache (matching version) skips the invariant refill; a version change forces exactly one refill', async () => {
+    ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockImplementation((args) =>
+      isKnownLemmasArgs(args) ? Promise.resolve([{ normalizedFront: '공부' }]) : Promise.resolve([])
+    )
+
+    // First call: cache miss (resetStudyCacheForTests() cleared it in
+    // beforeEach), pool reports version "v1".
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockImplementation(
+      (strings: TemplateStringsArray) =>
+        isPhaseBQuery(strings)
+          ? Promise.resolve([makeFullCardRow()])
+          : Promise.resolve([{ ...makePoolRow(), version: 'v1' }])
+    )
+    await getStudyCards({ scope: 'due', lessonFrom: null, lessonTo: null, sessionSize: 20 })
+    expect((prisma.cardDependency.findMany as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1)
+    expect((prisma.lesson.findMany as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1)
+
+    // Second call: SAME version "v1" — cache hit. No additional invariant
+    // reads (cardDependency/lesson/setting/knownLemmas call counts unchanged).
+    const knownLemmasCallsBeforeSecond = (
+      prisma.card.findMany as ReturnType<typeof vi.fn>
+    ).mock.calls.length
+    await getStudyCards({ scope: 'due', lessonFrom: null, lessonTo: null, sessionSize: 20 })
+    expect((prisma.cardDependency.findMany as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1)
+    expect((prisma.lesson.findMany as ReturnType<typeof vi.fn>).mock.calls.length).toBe(1)
+    expect((prisma.card.findMany as ReturnType<typeof vi.fn>).mock.calls.length).toBe(
+      knownLemmasCallsBeforeSecond
+    )
+
+    // Third call: DIFFERENT version "v2" — cache miss, exactly one more refill.
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockImplementation(
+      (strings: TemplateStringsArray) =>
+        isPhaseBQuery(strings)
+          ? Promise.resolve([makeFullCardRow()])
+          : Promise.resolve([{ ...makePoolRow(), version: 'v2' }])
+    )
+    await getStudyCards({ scope: 'due', lessonFrom: null, lessonTo: null, sessionSize: 20 })
+    expect((prisma.cardDependency.findMany as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2)
+    expect((prisma.lesson.findMany as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2)
+  })
+
+  it('returns lessons from the invariants snapshot, not a separate query', async () => {
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockImplementation(
+      (strings: TemplateStringsArray) =>
+        isPhaseBQuery(strings)
+          ? Promise.resolve([makeFullCardRow()])
+          : Promise.resolve([makePoolRow()])
+    )
+    ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockImplementation((args) =>
+      isKnownLemmasArgs(args) ? Promise.resolve([{ normalizedFront: '공부' }]) : Promise.resolve([])
+    )
+    ;(prisma.lesson.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
+      { id: 'lesson-1', orderIndex: 1, title: 'Lesson 1' },
+    ])
+
+    const result = await getStudyCards({
+      scope: 'due',
+      lessonFrom: null,
+      lessonTo: null,
+      sessionSize: 20,
+    })
+
+    expect(result.lessons).toEqual([{ id: 'lesson-1', orderIndex: 1, title: 'Lesson 1' }])
   })
 })

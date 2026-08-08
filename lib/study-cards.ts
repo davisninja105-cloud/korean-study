@@ -13,19 +13,37 @@
 // normalizedFront known-lemmas, sessionSize) now live in lib/study-cache.ts's
 // globalThis-held snapshot, refilled only on a cache miss (version mismatch
 // or absent snapshot) — see 32-RESEARCH.md Pattern 1 / Research Question 1.
+//
+// Phase B is a second raw-SQL query (32-BASELINE.md verdict: RAW SQL
+// REQUIRED) fetching only the chosen/ordered cards' full rows, with the
+// one-to-many Sentence relation folded into one JSON column.
+//
+// getStudyCards() returns { cards, lessons } (StudyCardsResult) — `lessons`
+// rides along on the same cache-gated invariants snapshot, so
+// app/study/page.tsx needs no separate prisma.lesson.findMany() call.
 
 import { prisma } from '@/lib/prisma'
 import { Prisma } from '@/app/generated/prisma/client'
 import { getStudyCache, refreshStudyCache } from '@/lib/study-cache'
 import { sequenceCards, selectSessionCards } from '@/lib/sequence'
 import { countUnknownWords } from '@/lib/known-words'
-import type { CardDTO } from '@/lib/dto'
+import type { CardDTO, LessonDTO } from '@/lib/dto'
 
 export interface StudyCardsParams {
   scope: 'due' | 'ahead'
   lessonFrom: number | null
   lessonTo: number | null
   sessionSize?: number // defaults to the cached sessionSize (see lib/study-cache.ts)
+}
+
+// getStudyCards()'s return shape (Phase 32-03, Task 3): `lessons` rides
+// along on the same cache-gated invariants snapshot Phase A already
+// populates, so app/study/page.tsx no longer needs its own separate
+// prisma.lesson.findMany() call — see the sequencing note at that call site
+// for why it must be awaited AFTER getStudyCards(), never Promise.all'd.
+export interface StudyCardsResult {
+  cards: CardDTO[]
+  lessons: LessonDTO[]
 }
 
 // Raw-SQL Phase A row shape — one row per pool card, carrying the
@@ -94,7 +112,7 @@ interface RawSentenceRow {
   updatedAt: string
 }
 
-export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]> {
+export async function getStudyCards(params: StudyCardsParams): Promise<StudyCardsResult> {
   const { scope, lessonFrom, lessonTo } = params
 
   const now = new Date()
@@ -165,7 +183,7 @@ export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]
   const invariants =
     cached && cached.version === version ? cached : await refreshStudyCache(version)
 
-  if (rows.length === 0) return []
+  if (rows.length === 0) return { cards: [], lessons: invariants.lessons }
 
   const sessionSize =
     params.sessionSize !== undefined ? params.sessionSize : invariants.sessionSize
@@ -196,7 +214,7 @@ export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]
   const orderedIds = ordered.map((c) => c.id)
 
   // Prisma.join on an empty array produces invalid SQL — guard before Phase B.
-  if (orderedIds.length === 0) return []
+  if (orderedIds.length === 0) return { cards: [], lessons: invariants.lessons }
 
   // Phase B — fetch full details (review, lesson, sentences) for ONLY the
   // chosen/ordered cards (~sessionSize, not the full 1000-row pool), as ONE
@@ -339,5 +357,5 @@ export async function getStudyCards(params: StudyCardsParams): Promise<CardDTO[]
       }
     })
 
-  return cardsInOrder
+  return { cards: cardsInOrder, lessons: invariants.lessons }
 }

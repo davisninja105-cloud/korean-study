@@ -35,7 +35,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'scope must be "due" or "ahead"' }, { status: 400 })
   }
 
-  const cards = await getStudyCards({ scope: scope as 'due' | 'ahead', lessonFrom, lessonTo })
+  // Respond with a bare CardDTO[] array — getStudyCards() now returns
+  // { cards, lessons }, but components/StudyClient.tsx's filter and
+  // study-ahead re-fetches both parse this response as Array.isArray;
+  // wrapping it would break them silently at runtime with no type error.
+  const { cards } = await getStudyCards({ scope: scope as 'due' | 'ahead', lessonFrom, lessonTo })
   return NextResponse.json(cards)
   } catch {
     return NextResponse.json({ error: 'Database error' }, { status: 500 })

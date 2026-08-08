@@ -1,5 +1,4 @@
 // Server component — no client directive
-import { prisma } from '@/lib/prisma'
 import { getStudyCards } from '@/lib/study-cards'
 import StudyClient from '@/components/StudyClient'
 
@@ -10,12 +9,18 @@ import StudyClient from '@/components/StudyClient'
 export const dynamic = 'force-dynamic'
 
 export default async function StudyPage() {
-  const [cardDTOs, lessons] = await Promise.all([
-    getStudyCards({ scope: 'due', lessonFrom: null, lessonTo: null }),
-    prisma.lesson.findMany({
-      select: { id: true, orderIndex: true, title: true },
-      orderBy: { orderIndex: 'asc' },
-    }),
-  ])
+  // Sequenced, never Promise.all'd: getStudyCards() is what populates (or
+  // reads) lib/study-cache.ts's invariants snapshot, and `lessons` below
+  // comes from that same snapshot. Running the lessons read concurrently
+  // would let it observe the snapshot before Phase A ever populates it
+  // (32-RESEARCH.md Pitfall 4) — a real race, not just a style preference.
+  // This is also a deliberate concurrency reduction that costs nothing: on
+  // a warm cache, `lessons` is an already-fetched in-memory array, not a
+  // separate database round trip.
+  const { cards: cardDTOs, lessons } = await getStudyCards({
+    scope: 'due',
+    lessonFrom: null,
+    lessonTo: null,
+  })
   return <StudyClient initialCards={cardDTOs} initialLessons={lessons} />
 }
