@@ -21,13 +21,16 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import type { NextRequest } from 'next/server'
 import type { PrismaClient } from '../app/generated/prisma/client'
-import type { GET as GetHandler } from '../app/api/cards/[id]/route'
+import type { GET as GetHandler, PUT as PutHandler } from '../app/api/cards/[id]/route'
 
 let tmpDir: string
 let dbUrl: string
 let prisma: PrismaClient
 let GET: typeof GetHandler
+let PUT: typeof PutHandler
 let cardId: string
+let otherCardId: string
+let otherSentenceId: string
 const previousDatabaseUrl = process.env.DATABASE_URL
 const previousAuthToken = process.env.DATABASE_AUTH_TOKEN
 
@@ -53,7 +56,7 @@ beforeAll(async () => {
   // Set up AFTER the schema exists, so the singleton's adapter connects to a
   // DB that already has the tables/indexes it needs.
   ;({ prisma } = await import('../lib/prisma'))
-  ;({ GET } = await import('../app/api/cards/[id]/route'))
+  ;({ GET, PUT } = await import('../app/api/cards/[id]/route'))
 
   const card = await prisma.card.create({
     data: {
@@ -74,6 +77,31 @@ beforeAll(async () => {
     },
   })
   cardId = card.id
+
+  // Second card, seeded with its own sentence, exclusively for the
+  // cross-card foreign-id PUT test (CARDS-01/IDOR-shaped threat_model check)
+  // — never reused by any other test in this file.
+  const otherCard = await prisma.card.create({
+    data: {
+      type: 'vocabulary',
+      front: '다른',
+      back: 'other (cards-id-route cross-card fixture)',
+      normalizedFront: `다른-cards-id-route-${Date.now()}`,
+      sentences: {
+        create: [
+          {
+            korean: '이것은 다른 카드예요',
+            targetForm: '다른',
+            translation: 'This is a different card',
+            orderIndex: 0,
+          },
+        ],
+      },
+    },
+    include: { sentences: true },
+  })
+  otherCardId = otherCard.id
+  otherSentenceId = otherCard.sentences[0].id
 })
 
 afterAll(async () => {
@@ -106,5 +134,230 @@ describe('GET /api/cards/[id]', () => {
     expect(res.status).toBe(404)
     const body = await res.json()
     expect(body.error).toBeTruthy()
+  })
+})
+
+// CR-01 fix regression coverage (31-07-PLAN.md Task 1 Step 4): direct PUT-
+// route proof that sentences are upserted by id — a client-echoed existing
+// id is updated in place (stable id), a missing id creates a fresh row, an
+// id genuinely absent from the incoming array is deleted, and an empty
+// array deletes everything. Each test creates its own isolated card (rather
+// than reusing the shared `cardId` fixture) so PUT mutations in one test
+// never leak into another regardless of run order — mirrors this file's
+// existing dynamic-import/temp-SQLite-fixture pattern, just scoped per test.
+function fakePutRequest(body: unknown): NextRequest {
+  return { json: async () => body } as unknown as NextRequest
+}
+
+describe('PUT /api/cards/[id]', () => {
+  it('preserves a Sentence id across a save when the client echoes it back unchanged', async () => {
+    const card = await prisma.card.create({
+      data: {
+        type: 'vocabulary',
+        front: '학교',
+        back: 'school',
+        normalizedFront: `학교-put-preserve-${Date.now()}`,
+        sentences: {
+          create: [
+            {
+              korean: '저는 매일 학교에 가요',
+              targetForm: '학교',
+              translation: 'I go to school every day',
+              orderIndex: 0,
+            },
+          ],
+        },
+      },
+      include: { sentences: true },
+    })
+    const originalSentenceId = card.sentences[0].id
+
+    // Only `sentences` in the payload — front/back are deliberately omitted
+    // so the route's `normalizedFront` update path is never exercised here
+    // (each test's card shares the literal front '학교' for readability;
+    // touching normalizedFront would collide across these isolated test
+    // cards' otherwise-unique `normalizedFront` seed values).
+    const res = await PUT(
+      fakePutRequest({
+        sentences: [
+          {
+            id: originalSentenceId,
+            korean: '저는 오늘도 학교에 가요',
+            targetForm: '학교',
+            translation: 'I go to school today too',
+          },
+        ],
+      }),
+      fakeParams(card.id)
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.sentences).toHaveLength(1)
+    expect(body.sentences[0].id).toBe(originalSentenceId)
+    expect(body.sentences[0].korean).toBe('저는 오늘도 학교에 가요')
+    expect(body.sentences[0].translation).toBe('I go to school today too')
+  })
+
+  it('creates a new Sentence row with a fresh id for an entry with no id', async () => {
+    const card = await prisma.card.create({
+      data: {
+        type: 'vocabulary',
+        front: '학교',
+        back: 'school',
+        normalizedFront: `학교-put-create-${Date.now()}`,
+        sentences: {
+          create: [
+            {
+              korean: '저는 매일 학교에 가요',
+              targetForm: '학교',
+              translation: 'I go to school every day',
+              orderIndex: 0,
+            },
+          ],
+        },
+      },
+      include: { sentences: true },
+    })
+    const existingSentenceId = card.sentences[0].id
+
+    const res = await PUT(
+      fakePutRequest({
+        sentences: [
+          {
+            id: existingSentenceId,
+            korean: '저는 매일 학교에 가요',
+            targetForm: '학교',
+            translation: 'I go to school every day',
+          },
+          {
+            korean: '학교가 정말 크네요',
+            targetForm: '학교',
+            translation: 'The school is really big',
+          },
+        ],
+      }),
+      fakeParams(card.id)
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.sentences).toHaveLength(2)
+    const ids: string[] = body.sentences.map((s: { id: string }) => s.id)
+    expect(ids).toContain(existingSentenceId)
+    const newSentence = body.sentences.find((s: { id: string }) => s.id !== existingSentenceId)
+    expect(newSentence).toBeTruthy()
+    expect(newSentence.id).not.toBe(existingSentenceId)
+    expect(newSentence.korean).toBe('학교가 정말 크네요')
+  })
+
+  it('deletes a Sentence row genuinely absent from the incoming array', async () => {
+    const card = await prisma.card.create({
+      data: {
+        type: 'vocabulary',
+        front: '학교',
+        back: 'school',
+        normalizedFront: `학교-put-delete-${Date.now()}`,
+        sentences: {
+          create: [
+            { korean: '문장 하나', targetForm: '문장', translation: 'sentence one', orderIndex: 0 },
+            { korean: '문장 둘', targetForm: '문장', translation: 'sentence two', orderIndex: 1 },
+          ],
+        },
+      },
+      include: { sentences: { orderBy: { orderIndex: 'asc' } } },
+    })
+    const [keepId, dropId] = card.sentences.map((s) => s.id)
+
+    const res = await PUT(
+      fakePutRequest({
+        sentences: [
+          { id: keepId, korean: '문장 하나', targetForm: '문장', translation: 'sentence one' },
+        ],
+      }),
+      fakeParams(card.id)
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.sentences).toHaveLength(1)
+    expect(body.sentences[0].id).toBe(keepId)
+
+    const dropped = await prisma.sentence.findUnique({ where: { id: dropId } })
+    expect(dropped).toBeNull()
+  })
+
+  it('accepts sentences: [] and deletes every existing sentence, returning 200 with an empty array', async () => {
+    const card = await prisma.card.create({
+      data: {
+        type: 'vocabulary',
+        front: '학교',
+        back: 'school',
+        normalizedFront: `학교-put-empty-${Date.now()}`,
+        sentences: {
+          create: [
+            { korean: '문장 하나', targetForm: '문장', translation: 'sentence one', orderIndex: 0 },
+          ],
+        },
+      },
+    })
+
+    const res = await PUT(
+      fakePutRequest({ sentences: [] }),
+      fakeParams(card.id)
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(Array.isArray(body.sentences)).toBe(true)
+    expect(body.sentences).toHaveLength(0)
+
+    const remaining = await prisma.sentence.findMany({ where: { cardId: card.id } })
+    expect(remaining).toHaveLength(0)
+  })
+
+  it('never updates or deletes a foreign sentence id belonging to a different card (IDOR-shaped, T-31-12)', async () => {
+    const card = await prisma.card.create({
+      data: {
+        type: 'vocabulary',
+        front: '학교',
+        back: 'school',
+        normalizedFront: `학교-put-foreign-${Date.now()}`,
+        sentences: {
+          create: [
+            { korean: '원래 문장', targetForm: '문장', translation: 'original sentence', orderIndex: 0 },
+          ],
+        },
+      },
+    })
+
+    const before = await prisma.sentence.findUnique({ where: { id: otherSentenceId } })
+    expect(before?.cardId).toBe(otherCardId)
+    expect(before?.korean).toBe('이것은 다른 카드예요')
+
+    const res = await PUT(
+      fakePutRequest({
+        sentences: [
+          {
+            id: otherSentenceId,
+            korean: 'hijack attempt',
+            targetForm: '학교',
+            translation: 'attempted cross-card overwrite',
+          },
+        ],
+      }),
+      fakeParams(card.id)
+    )
+    expect(res.status).toBe(200)
+    const body = await res.json()
+
+    // The foreign id falls through to the `create` branch — a harmless new
+    // row on the TARGET card, never a mutation of the foreign row.
+    expect(body.sentences).toHaveLength(1)
+    expect(body.sentences[0].id).not.toBe(otherSentenceId)
+    expect(body.sentences[0].cardId).toBe(card.id)
+
+    // The other card's original sentence is completely untouched — not
+    // updated, not deleted.
+    const after = await prisma.sentence.findUnique({ where: { id: otherSentenceId } })
+    expect(after).not.toBeNull()
+    expect(after?.cardId).toBe(otherCardId)
+    expect(after?.korean).toBe('이것은 다른 카드예요')
   })
 })

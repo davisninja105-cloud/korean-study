@@ -112,23 +112,64 @@ export async function PUT(
       },
     })
 
-    // If no sentences key in payload, leave existing sentences untouched.
-    const sentenceOps = Array.isArray(data.sentences)
-      ? (() => {
-          const sentenceData = (data.sentences as { korean: string; targetForm: string; translation: string }[])
-            .map((s, i) => ({
-              korean: s.korean ?? '',
-              targetForm: s.targetForm ?? '',
-              translation: s.translation ?? '',
-              cardId: id,
-              orderIndex: i,
-            }))
-          return [
-            prisma.sentence.deleteMany({ where: { cardId: id } }),
-            ...sentenceData.map((s) => prisma.sentence.create({ data: s })),
-          ]
-        })()
-      : []
+    // CR-01 fix: upsert sentences by id instead of blanket delete+recreate,
+    // so a Sentence's id stays stable across a save when the client echoes
+    // that id back unchanged — CardsClient's Reading Practice patch matches
+    // on sentence id, and previously always missed because every id was
+    // regenerated on every save. If no sentences key in payload, leave
+    // existing sentences untouched (no new query in that branch).
+    let sentenceOps: Prisma.PrismaPromise<unknown>[] = []
+    if (Array.isArray(data.sentences)) {
+      const incoming = data.sentences as {
+        id?: string
+        korean: string
+        targetForm: string
+        translation: string
+      }[]
+      // Scoped to THIS card's own sentences only — never a global id lookup
+      // (T-31-12 IDOR-shaped mitigation). A client-supplied id belonging to
+      // a different card is never in this set, so it falls through to the
+      // `create` branch below instead of mutating a foreign row.
+      const existing = await prisma.sentence.findMany({
+        where: { cardId: id },
+        select: { id: true },
+      })
+      const existingIds = new Set(existing.map((s) => s.id))
+      const keepIds = new Set(
+        incoming.filter((s) => s.id && existingIds.has(s.id)).map((s) => s.id as string)
+      )
+      sentenceOps = [
+        // T-31-13 data-loss mitigation: `notIn` is scoped from the same
+        // cardId-scoped existingIds set above, never a global id comparison
+        // — a sentence genuinely absent from `keepIds` is one the user
+        // removed in the editor, not a matching bug.
+        prisma.sentence.deleteMany({ where: { cardId: id, id: { notIn: [...keepIds] } } }),
+        ...incoming.map((s, i) =>
+          s.id && existingIds.has(s.id)
+            ? prisma.sentence.update({
+                // Compound where (id AND cardId) — defense in depth per the
+                // threat_model, even though existingIds is already
+                // cardId-scoped above.
+                where: { id: s.id, cardId: id },
+                data: {
+                  korean: s.korean ?? '',
+                  targetForm: s.targetForm ?? '',
+                  translation: s.translation ?? '',
+                  orderIndex: i,
+                },
+              })
+            : prisma.sentence.create({
+                data: {
+                  korean: s.korean ?? '',
+                  targetForm: s.targetForm ?? '',
+                  translation: s.translation ?? '',
+                  cardId: id,
+                  orderIndex: i,
+                },
+              })
+        ),
+      ]
+    }
 
     // Array-form transaction — safe with the libSQL adapter.
     await prisma.$transaction([cardUpdate, ...sentenceOps])

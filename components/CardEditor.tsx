@@ -83,7 +83,7 @@ export default function CardEditor({ card, onSave, onCancel }: Props) {
           notes: notes || null,
           sentences: sentences
             .filter((s) => s.korean.trim() && s.targetForm.trim())
-            .map(({ korean, targetForm, translation }) => ({ korean, targetForm, translation })),
+            .map(({ id, korean, targetForm, translation }) => ({ id, korean, targetForm, translation })),
         }),
       })
       if (!res.ok) throw new Error(`Save failed: ${res.status}`)
