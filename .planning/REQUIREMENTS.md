@@ -25,9 +25,9 @@
 
 ### Study Session Load Performance (P3.3)
 
-- [ ] **STUDY-01**: `/study` issues at most two round trips to Turso per load (down from 4–5)
+- [x] **STUDY-01**: `/study` issues at most two round trips to Turso per load (down from 4–5)
 - [ ] **STUDY-02**: The redundant second `card.findMany` re-fetch is eliminated or confirmed non-duplicative against the first query's columns
-- [ ] **STUDY-03**: Invariant reads (`CardDependency` edges, `normalizedFront` lemmas) are cached and invalidated only on sync
+- [x] **STUDY-03**: Invariant reads (`CardDependency` edges, `normalizedFront` lemmas) are cached and invalidated only on sync
 
 ### Freshness Backstop Narrowing (P3.4)
 
@@ -82,9 +82,9 @@ All 21 v1 requirements map to exactly one phase. No orphans, no duplicates.
 | CARDS-01 | Phase 31 | Complete |
 | CARDS-02 | Phase 31 | Complete |
 | CARDS-03 | Phase 31 | Complete |
-| STUDY-01 | Phase 32 | Pending |
+| STUDY-01 | Phase 32 | Complete |
 | STUDY-02 | Phase 32 | Pending |
-| STUDY-03 | Phase 32 | Pending |
+| STUDY-03 | Phase 32 | Complete |
 | VERS-01 | Phase 33 | Pending |
 | VERS-02 | Phase 33 | Pending |
 | REGION-01 | Phase 30 | Complete |
