@@ -1102,7 +1102,9 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
     'border border-border bg-surface-1 ' +
     'text-foreground rounded-lg px-3 py-2 text-sm'
 
-  const renderCardRow = (card: CardDTO) => (
+  const renderCardRow = (card: CardDTO) => {
+    const sentenceCount = card.sentenceCount ?? card.sentences.length
+    return (
     <div className="pb-2">
       <SwipeRow onDelete={() => handleDelete(card.id)} deleteLabel="Delete">
         <div className="bg-surface-1 rounded-xl shadow-sm p-4 flex flex-col gap-2">
@@ -1119,6 +1121,9 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
               )}
             </div>
             <div className="flex items-center gap-1">
+              <span className="text-xs text-muted mr-1">
+                {sentenceCount} sentence{sentenceCount !== 1 ? 's' : ''}
+              </span>
               {card.review && (
                 <span className="text-xs text-muted mr-1">
                   {card.review.reps} review{card.review.reps !== 1 ? 's' : ''}
@@ -1167,7 +1172,8 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
         </div>
       </SwipeRow>
     </div>
-  )
+    )
+  }
 
   const renderRow = (row: Row) => {
     if (row.kind === 'header') {

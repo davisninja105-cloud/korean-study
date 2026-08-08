@@ -66,6 +66,13 @@ export interface CardDTO {
   lesson: LessonRefDTO | null
   review: ReviewDTO | null
   sentences: SentenceDTO[]
+  // Populated only by list-query paths (getCardsPage/getSentencesPage's
+  // nested card) that intentionally return `sentences: []` — every other
+  // CardDTO producer (POST /api/cards, GET/PUT /api/cards/[id],
+  // lib/study-cards.ts) already returns the real sentences array and leaves
+  // this field undefined. Consumers must read
+  // `card.sentenceCount ?? card.sentences.length`, never assume presence.
+  sentenceCount?: number
 }
 
 // Returned by lib/cards-list.ts:getCardsPage() — a single type-group's

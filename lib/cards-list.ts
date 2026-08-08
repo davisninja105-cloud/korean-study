@@ -29,7 +29,10 @@ const cardSelect = {
   lessonId: true,
   lesson: { select: { title: true, createdAt: true, orderIndex: true } },
   review: true,
-  // sentences: DROPPED from the list select per CARDS-01.
+  _count: { select: { sentences: true } },
+  // sentences: DROPPED from the list select per CARDS-01. `_count` above is
+  // the replacement signal (WINDOWS.md entry #6) — a real, server-computed
+  // per-card sentence count without ever loading the Sentence rows.
 } as const
 
 // Canonical UI type-groups (mirrors components/CardsClient.tsx's TYPE_GROUPS).
@@ -150,6 +153,7 @@ export async function getCardsPage(params: CardsPageParams): Promise<CardsPageDT
         }
       : null,
     sentences: [],
+    sentenceCount: c._count.sentences,
   }))
 
   return { cards, nextCursor, hasMore }
@@ -249,6 +253,7 @@ export async function getSentencesPage(
           }
         : null,
       sentences: [],
+      sentenceCount: s.card._count.sentences,
     },
   }))
 
