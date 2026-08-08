@@ -196,7 +196,75 @@ export async function seededDueReviewsPersistedDirect(): Promise<string> {
   return `pending: ${details || `expected ${dueFronts.length} rows, found ${rows.length}`}`
 }
 
-// ── Subprocess-delegating public API (the 7 plan-mandated exports) ─────────
+/**
+ * 32-04-PLAN.md Task 3 (STUDY-03 success criterion #3 — the no-redeploy
+ * freshness proof). Creates a NEW card whose `components` JSON names an
+ * EXISTING seeded due card's front (`학교`, FIXTURE.cards.due[1]) as a
+ * forward-reference — exactly the gap `relinkAllDependencies()` exists to
+ * catch — gives the new card a due `CardReview` row so it enters the pool
+ * alongside its prerequisite, then calls `relinkAllDependencies()`, which
+ * both creates the `CardDependency` edge AND bumps `studyCacheVersion`
+ * (the cross-process invalidation signal `e2e/study-cache-invalidation.spec.ts`
+ * proves reaches the already-running server's next `/study` load).
+ *
+ * `relinkAllDependencies` is imported DYNAMICALLY, inside this function body,
+ * NEVER as a static top-of-file import — a static import would pull in
+ * `lib/prisma` (transitively, the ESM-only generated Prisma client) at
+ * MODULE-EVALUATION time for every importer of this file, including the
+ * Playwright worker that imports this module's public wrapper functions
+ * below — hitting the exact `SyntaxError: Cannot use 'import.meta' outside a
+ * module` this file's header comment documents. Deferring the import to
+ * inside the function body (only ever invoked from the `tsx`-run
+ * e2e/run-mutate.ts subprocess) avoids that entirely.
+ */
+export async function createForwardReferenceAndRelinkDirect(): Promise<void> {
+  const prisma = await getTestPrisma()
+
+  const prereqFront = '학교' // FIXTURE.cards.due[1] — already due, already in the pool
+  const dependentFront = '숙제하다' // "to do homework" — plausibly built from "school"
+
+  await prisma.card.create({
+    data: {
+      type: 'vocabulary',
+      front: dependentFront,
+      back: 'to do homework',
+      normalizedFront: normalizeFront(dependentFront),
+      components: JSON.stringify([prereqFront]),
+      sentences: {
+        create: [
+          {
+            korean: '저는 매일 숙제해요',
+            targetForm: '숙제해요',
+            translation: 'I do homework every day',
+            orderIndex: 0,
+          },
+        ],
+      },
+      review: {
+        create: { state: 1, stability: 1, difficulty: 5, nextReview: new Date(Date.now() - 60_000) },
+      },
+    },
+  })
+
+  const { relinkAllDependencies } = await import('../../lib/relink-dependencies')
+  await relinkAllDependencies()
+}
+
+/**
+ * Read-only: the current `studyCacheVersion` Setting row's value, or the
+ * literal string `'(unset)'` if the key has never been written. Used by the
+ * D-02 regression lock in e2e/study-cache-invalidation.spec.ts to prove a
+ * `POST /api/review` grade does NOT change this token.
+ */
+export async function readStudyCacheVersionDirect(): Promise<string> {
+  const prisma = await getTestPrisma()
+  const row = await prisma.setting.findUnique({ where: { key: 'studyCacheVersion' } })
+  return row?.value ?? '(unset)'
+}
+
+// ── Subprocess-delegating public API (the 7 plan-mandated exports, plus
+// createForwardReferenceAndRelink/readStudyCacheVersion added Phase 32-04
+// Task 3) ────────────────────────────────────────────────────────────────
 
 function runMutateOp(op: string): string {
   const tsxBin = path.resolve(process.cwd(), 'node_modules', '.bin', 'tsx')
@@ -253,4 +321,12 @@ export async function expectedMasteredCount(): Promise<string> {
 
 export async function seededDueReviewsPersisted(): Promise<string> {
   return parseMutateResult(runMutateOp('seededDueReviewsPersisted'))
+}
+
+export async function createForwardReferenceAndRelink(): Promise<void> {
+  runMutateOp('createForwardReferenceAndRelink')
+}
+
+export async function readStudyCacheVersion(): Promise<string> {
+  return parseMutateResult(runMutateOp('readStudyCacheVersion'))
 }
