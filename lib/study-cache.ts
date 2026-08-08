@@ -9,8 +9,11 @@
 //
 // Invalidation: the ONLY trigger is a change to the `studyCacheVersion`
 // Setting row, written exclusively by bumpStudyCacheVersion() in
-// lib/settings.ts, called unconditionally from lib/sync.ts:runSync() and
-// lib/relink-dependencies.ts:relinkAllDependencies(). This is deliberately
+// lib/settings.ts, called from lib/sync.ts:runSync(),
+// lib/relink-dependencies.ts:relinkAllDependencies(), and
+// lib/settings.ts:setSessionSize() (CR-01 fix, 32-REVIEW.md — sessionSize is
+// folded into this same snapshot, so a Settings change to it must invalidate
+// the snapshot the same way a sync/relink does). This is deliberately
 // narrower than a general freshness mechanism (D-02, locked): a card graded
 // via POST /api/review does NOT bump the token and does NOT invalidate this
 // cache — that trigger is explicitly out of scope for this phase and belongs

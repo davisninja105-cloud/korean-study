@@ -12,9 +12,11 @@ const READING_AID_KEY = 'readingAid'
 const LAST_AUTO_SYNCED_KEY = 'lastAutoSyncedAt'
 // Phase 32 (STUDY-03): opaque change token invalidating lib/study-cache.ts's
 // in-memory invariant snapshot. Written ONLY by bumpStudyCacheVersion() below,
-// called ONLY from lib/sync.ts:runSync() and lib/relink-dependencies.ts:
-// relinkAllDependencies() — never from PUT /api/settings, which handles a
-// fixed, explicit key set and gains no branch for this one.
+// called from lib/sync.ts:runSync(), lib/relink-dependencies.ts:
+// relinkAllDependencies(), and setSessionSize() in this file (CR-01 fix,
+// 32-REVIEW.md: a session-size change must invalidate the cached snapshot
+// the same way a sync/relink does, or a warm /study load keeps serving the
+// stale sessionSize indefinitely).
 const STUDY_CACHE_VERSION_KEY = 'studyCacheVersion'
 
 // Single source of truth for every Setting-table key name. NOTE: getAllSettings()
@@ -132,6 +134,13 @@ export async function setSessionSize(n: number): Promise<number> {
     create: { key: SESSION_SIZE_KEY, value: String(clamped) },
     update: { value: String(clamped) },
   })
+  // CR-01 fix (32-REVIEW.md): sessionSize is folded into lib/study-cache.ts's
+  // version-gated invariants snapshot, so without this bump a warm /study
+  // load keeps serving the stale cached sessionSize until an unrelated
+  // sync/relink happens to invalidate the snapshot (or the process cold-
+  // starts). Bumping here makes a session-size change take effect on the
+  // very next /study load, same as a sync does.
+  await bumpStudyCacheVersion()
   return clamped
 }
 
@@ -293,9 +302,10 @@ export async function getActivitySettings(): Promise<{
  * to it.
  *
  * Called unconditionally from lib/sync.ts:runSync() and
- * lib/relink-dependencies.ts:relinkAllDependencies() — the only two mutating
- * code paths that create/change CardDependency edges or the normalizedFront
- * lemma set. Never called from PUT /api/settings.
+ * lib/relink-dependencies.ts:relinkAllDependencies() — the two mutating code
+ * paths that create/change CardDependency edges or the normalizedFront lemma
+ * set — and from setSessionSize() above, since sessionSize is folded into
+ * the same version-gated snapshot (CR-01 fix, 32-REVIEW.md).
  */
 export async function bumpStudyCacheVersion(): Promise<string> {
   const token = `${Date.now()}-${globalThis.crypto.randomUUID().slice(0, 8)}`
