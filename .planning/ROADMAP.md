@@ -215,7 +215,7 @@ Plans:
   3. `CardDependency` edges and the `normalizedFront` lemma set are served from cache on repeat loads and are invalidated when a sync completes — cards from a freshly synced lesson sequence correctly with no redeploy and no stale-prerequisite behavior.
   4. Session composition is byte-for-byte unchanged in behavior: prerequisite closure, foundation-first ordering, the bare-word-first gate, and least-unknown sentence selection all still hold, with the unit suites and the e2e grade-flow spec green.
 
-**Plans**: 2/4 plans executed
+**Plans**: 3/4 plans executed
 **Wave 1**
 
 - [x] 32-01-PLAN.md — instrument round trips and measure the real current `/study` baseline (wave 1)
@@ -226,7 +226,7 @@ Plans:
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 32-03-PLAN.md — collapse Phase A/B to raw SQL, fold in lessons, prove ordering unchanged (wave 3)
+- [x] 32-03-PLAN.md — collapse Phase A/B to raw SQL, fold in lessons, prove ordering unchanged (wave 3)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
@@ -319,7 +319,7 @@ Re-measure the baseline table after Phase 30 before starting Phase 31 — the nu
 | 29. Distractor Write-Side Retirement | v1.7 | 0/0 | Deferred (archived unexecuted — CLEANUP-03 open, unscheduled) | - |
 | 30. Instant Feedback & Cold-Start Unblocking | v1.8 | 4/4 | Complete    | 2026-08-06 |
 | 31. Cards List Pagination & Virtualization | v1.8 | 7/7 | Complete    | 2026-08-07 |
-| 32. Study Load Round-Trip Collapse | v1.8 | 2/4 | In Progress|  |
+| 32. Study Load Round-Trip Collapse | v1.8 | 3/4 | In Progress|  |
 | 33. Version-Gated Freshness Backstop | v1.8 | 0/TBD | Not started | - |
 | 34. Local-First Shell | v1.8 | 0/TBD | Not started | - |
 | 35. Service Worker & Offline Review Queue | v1.8 | 0/TBD | Not started | - |
