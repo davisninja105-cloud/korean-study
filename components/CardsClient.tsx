@@ -1207,31 +1207,18 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
           {card.notes && (
             <p className="text-sm text-muted italic">{card.notes}</p>
           )}
-
-          {/* Example sentences — indented with left border */}
-          {(card.sentences ?? []).length > 0 && (
-            <div
-              className="flex flex-col gap-1.5 mt-1 pl-3 border-l-2"
-              style={{ borderColor: 'var(--highlight-bg)' }}
-            >
-              {(card.sentences ?? []).map((s) => (
-                <div key={s.id}>
-                  <HighlightedSentence
-                    korean={s.korean}
-                    targetForm={s.targetForm}
-                    cardType={card.type}
-                    className="text-sm text-muted-foreground"
-                    onWordTap={onWordTap}
-                  />
-                  {s.translation && (
-                    <p className="text-xs text-muted italic">
-                      {s.translation}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
+          {/* WR-05: the "Example sentences" preview that used to render here
+              was removed — getCardsPage/getCardsGroupCounts (CARDS-01)
+              deliberately drop `sentences` from the list query for every
+              normally-loaded row, so `card.sentences` was only ever
+              non-empty for the one card just edited in the current session
+              (via handleSave's merge()). That made the preview confusing/
+              inconsistent UI (a random card shows a sentence preview, every
+              other card in the same list doesn't) rather than functioning,
+              general-purpose UI. The "N sentences" count badge above (from
+              the always-present `sentenceCount`) remains the source of truth
+              for sentence presence in this list; full sentence text is
+              available via Edit or the Reading Practice tab. */}
         </div>
       </SwipeRow>
     </div>
