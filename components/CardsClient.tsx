@@ -905,16 +905,39 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
         createdAt: s.createdAt ?? new Date().toISOString(),
         updatedAt: s.updatedAt ?? new Date().toISOString(),
       })),
+      // CR-03: recompute from the freshly-saved sentences array on every
+      // save — renderCardRow's `card.sentenceCount ?? card.sentences.length`
+      // fallback only yields to sentences.length when sentenceCount is
+      // null/undefined, so without this the badge stays stuck at whatever
+      // count the original list fetch cached, even after a sentence
+      // add/remove.
+      sentenceCount: (updated.sentences ?? []).length,
     })
+    // CR-02: resolve which bucket the card is CURRENTLY loaded in (if any)
+    // before mutating state, so a type-changing save relocates it into
+    // groupKeyForType(updated.type)'s bucket instead of patching it in place
+    // inside its old bucket.
+    const oldKeyEntry = GROUP_KEYS.map((key) => ({
+      key,
+      card: groups[key].loaded.find((c) => c.id === updated.id),
+    })).find((e) => e.card)
+    const newKey = groupKeyForType(updated.type)
     setGroups((prev) => {
       const next = { ...prev }
       for (const key of GROUP_KEYS) {
-        if (next[key].loaded.some((c) => c.id === updated.id)) {
-          next[key] = { ...next[key], loaded: next[key].loaded.map((c) => (c.id === updated.id ? merge(c) : c)) }
-        }
+        next[key] = { ...next[key], loaded: next[key].loaded.filter((c) => c.id !== updated.id) }
+      }
+      if (oldKeyEntry?.card) {
+        next[newKey] = { ...next[newKey], loaded: [merge(oldKeyEntry.card), ...next[newKey].loaded] }
       }
       return next
     })
+    // A same-type resave (or a card whose current bucket lookup came up
+    // empty) must not touch counts at all.
+    if (oldKeyEntry && oldKeyEntry.key !== newKey) {
+      bumpGroupCount(oldKeyEntry.card!.type, -1)
+      bumpGroupCount(updated.type, 1)
+    }
     setSearchResults((prev) => ({
       ...prev,
       loaded: prev.loaded.map((c) => (c.id === updated.id ? merge(c) : c)),
