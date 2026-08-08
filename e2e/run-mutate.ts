@@ -26,6 +26,8 @@ import {
   expectedCardsCountDirect,
   expectedMasteredCountDirect,
   seededDueReviewsPersistedDirect,
+  createForwardReferenceAndRelinkDirect,
+  readStudyCacheVersionDirect,
 } from './helpers/mutate'
 
 const RESULT_PREFIX = 'MUTATE_RESULT:'
@@ -40,6 +42,8 @@ const OPS: Record<string, () => Promise<string | void>> = {
   expectedCardsCount: expectedCardsCountDirect,
   expectedMasteredCount: expectedMasteredCountDirect,
   seededDueReviewsPersisted: seededDueReviewsPersistedDirect,
+  createForwardReferenceAndRelink: createForwardReferenceAndRelinkDirect,
+  readStudyCacheVersion: readStudyCacheVersionDirect,
 }
 
 async function main(): Promise<void> {

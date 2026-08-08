@@ -26,10 +26,9 @@ test.beforeAll(async () => {
 // D-08 — generous guard rails, not targets. `/habits` is tightened (D-05):
 // this is the phase 30 re-measurement baseline for the rest of the v1.8
 // milestone — cleanest pure-round-trip signal for REGION-01's improvement.
-// `/`, `/study` stay at the original generous budget (D-06) since their real
-// bottlenecks aren't touched until Phase 32. `/cards` is now tightened
-// (Phase 31, plan 04, Task 3) from a real POST-MIGRATION measurement against
-// this repo's 8-card e2e fixture:
+// `/` stays at the original generous budget (D-06) — untouched by Phase 31
+// or Phase 32. `/cards` is tightened (Phase 31, plan 04, Task 3) from a real
+// POST-MIGRATION measurement against this repo's 8-card e2e fixture:
 //   PRE-MIGRATION (31-01-SUMMARY.md, before any Phase 31 code changed the
 //     query shape): samples 264, 45, 51, 40, 41ms — median 45ms.
 //   POST-MIGRATION (this task, full phase's pagination/virtualization/
@@ -50,13 +49,58 @@ test.beforeAll(async () => {
 // measured number, not a flattering guess:
 //   Math.ceil(46 * 1.5 / 100) * 100 = 100ms (50% headroom over the real
 //   measured median, rounded up to the nearest 100ms).
+//
+// `/study` is now tightened (Phase 32, plan 04, Task 2) — Phase 32's Plans
+// 01-04 already collapsed a warm-cache getStudyCards() call from 10 physical
+// libSQL round trips down to 2 (32-BASELINE.md's `## After` section), so
+// unlike `/cards` above this is a genuine round-trip-count win, not just a
+// query-shape change. Measured against this repo's 8-card e2e fixture, on
+// code with that collapse already landed:
+//   PRE-CHANGE (this task, budget still at the original generous 3000ms):
+//     samples 23, 38, 35, 32, 34ms — median 34ms.
+//   POST-CHANGE (after tightening the budget below to 100ms, re-run to
+//     confirm it still passes — the budget number itself does not change
+//     what is measured, this is the same code, a fresh run): samples 22,
+//     34, 30, 43, 33ms — median 33ms.
+// Both readings land in the same ~30-38ms band — consistent, not cherry-
+// picked. Budget:
+//   Math.ceil(34 * 1.5 / 100) * 100 = 100ms (50% headroom over the real
+//   measured median, rounded up to the nearest 100ms). Same caveat as
+//   `/cards`: this fixture (8 cards, far below the ~1056-card production
+//   deck) has near-zero per-request latency locally — the number here
+//   proves the budget change is traceable to a real measurement, not that
+//   100ms is achievable at production scale.
 const PAGE_BUDGETS_MS: Record<'/' | '/study' | '/cards' | '/habits', number> = {
   '/': 3000,
-  '/study': 3000,
+  '/study': 100,
   '/cards': 100,
   '/habits': 1500,
 }
-const API_BUDGET_MS = 1000 // D-09 — generous guard rail, not a target
+
+// D-09 — generous guard rails, not targets. Per-path record (Phase 32, plan
+// 04, Task 2) so `/api/cards/due` can be tightened without touching
+// `/api/stats`/`/api/activity` — this phase's round-trip collapse
+// (lib/study-cards.ts, lib/study-cache.ts) touched neither of those two
+// endpoints' query shape, so both stay at the original generous 1000ms.
+//
+// `/api/cards/due` tightened from a real measurement against this repo's
+// 8-card e2e fixture, taken on code with Phase 32's round-trip collapse
+// already landed (warm-cache getStudyCards() at 2 physical round trips,
+// 32-BASELINE.md's `## After` section):
+//   PRE-CHANGE (this task, budget still at the original generous 1000ms):
+//     samples 13, 8, 6, 3, 3ms — median 6ms.
+//   POST-CHANGE (after tightening the budget below to 100ms, re-run to
+//     confirm it still passes — same code, a fresh run): samples 8, 6, 8,
+//     3, 3ms — median 6ms.
+// Budget: Math.ceil(6 * 1.5 / 100) * 100 = 100ms (50% headroom over the real
+// measured median, rounded up to the nearest 100ms). Same fixture-scale
+// caveat as `/study`/`/cards` above — this is a local-loopback, 8-card
+// measurement, not a production-latency claim.
+const API_BUDGET_MS: Record<'/api/cards/due' | '/api/stats' | '/api/activity', number> = {
+  '/api/cards/due': 100,
+  '/api/stats': 1000,
+  '/api/activity': 1000,
+}
 const SAMPLES = 5
 
 interface NavSample {
@@ -109,7 +153,7 @@ for (const route of Object.keys(PAGE_BUDGETS_MS) as Array<keyof typeof PAGE_BUDG
 // D-09's endpoint set is locked: /api/cards/due (named by the ROADMAP
 // requirement) plus the two data-heavy GETs backing Home/Habits via
 // lib/dashboard.ts.
-for (const path of ['/api/cards/due', '/api/stats', '/api/activity']) {
+for (const path of ['/api/cards/due', '/api/stats', '/api/activity'] as const) {
   test(`API round-trip budget: ${path}`, async ({ page }) => {
     // One page.goto so the chromium project's storageState ks_auth cookie
     // context is live — subsequent same-origin fetches inside page.evaluate
@@ -134,6 +178,6 @@ for (const path of ['/api/cards/due', '/api/stats', '/api/activity']) {
       console.log(`[perf] ${path} sample ${i + 1}: ${ms.toFixed(0)}ms`)
     }
 
-    expect(median(samples)).toBeLessThan(API_BUDGET_MS)
+    expect(median(samples)).toBeLessThan(API_BUDGET_MS[path])
   })
 }

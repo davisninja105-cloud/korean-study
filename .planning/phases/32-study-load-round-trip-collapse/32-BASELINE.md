@@ -67,3 +67,28 @@ Justification (the measured number is the sole justification, per Task 2's instr
 ## Fixture scale caveat
 
 The isolated E2E test DB's seed fixture (`e2e/fixture.ts`) contains **8 total cards** (3 due, 3 mastered, 2 new — no `CardReview` row) across 2 lessons, with 3 due cards passing `getStudyCards({ scope: 'due' })`'s pool filter. Every number in this file is a round-trip **count** — the number of physical HTTP requests issued — which is **fixture-size-independent**: `card.findMany({ include: {...} })` issues the same fixed number of physical queries (one per included relation type, per the SQLite "query" load strategy) whether it returns 3 rows or 3,000. **No latency claim about the ~1056-card production deck can be drawn from this file** — this is the same caveat `e2e/perf.spec.ts` already carries for `/cards` (see its D-06/D-07 comment block: "the real win this phase targets is the ~1056-card production deck... which this e2e fixture is deliberately too small to exercise"). Whether ≤2 round trips at production scale translates to a materially faster `/study` load in wall-clock time is a separate, not-yet-measured question this plan does not answer — round-trip *count* is what STUDY-01 asks for, and count is what is measured here.
+
+## After
+
+**Measured:** 2026-08-08, by `tests/study-roundtrips.test.ts` (32-04-PLAN.md Task 1 — the committed, runnable proof; re-run via `npx vitest run tests/study-roundtrips.test.ts`) against a real temp SQLite DB seeded with the real `prisma/schema.prisma` DDL, and cross-checked via `npx tsx scripts/measure-study-roundtrips.mts --probe-json` against the isolated E2E test DB.
+
+Per D-01's deliberately-split reading (steady-state warm guarantee, not one unconditional number across every call shape) — **quoting both numbers together, never the warm number alone**:
+
+- **Warm-cache `getStudyCards()` call (steady-state, the common case): 2 physical round trips.** Phase A's pool-plus-version query (1) + Phase B's full-row re-fetch (1); the invariants refill is skipped entirely on a version match. Matches STUDY-01's success criterion #1 (≤2) exactly, not just under budget.
+- **Cache-miss call (cold instance with no snapshot yet, OR the first call after `bumpStudyCacheVersion()` runs — both D-01-named triggers, both independently measured): 3 physical round trips.** Phase A (1) + the invariants refill (1) + Phase B (1). The very next call, still on the same (now-warm) snapshot, returns to 2 — proven as a distinct assertion in the same test, not inferred from the miss number.
+- **Cross-check:** on a warm run, the physical count and Prisma's own `$on('query')` event count agreed exactly (2 and 2) — no discrepancy to resolve for research Assumption A4 on this exact stack.
+
+### Before → after delta
+
+| | Before (32-01 baseline) | After (this plan) | Delta |
+|---|---|---|---|
+| Warm-cache `getStudyCards()` | 10 physical | 2 physical | −8 (−80%) |
+| Cache-miss `getStudyCards()` | 10 physical (no cache existed yet — every call was effectively a "miss") | 3 physical | −7 (−70%) |
+
+### Implementation note (Task 1 finding, not a Task-1-scope file)
+
+Task 1's own instrumentation test is what surfaced this: the invariants refill inside `lib/study-cache.ts`, as originally implemented in Plan 02 (four independent Prisma calls — `cardDependency.findMany` + `card.findMany` + `getSessionSize()` + `lesson.findMany` — run concurrently via `Promise.allSettled`), measured at **4 physical round trips**, not the ≤1 the ≤3-cold-miss budget requires. A cold `getStudyCards()` call under that shape cost **6** total (Phase A 1 + refill 4 + Phase B 1) — double the "at most 3" target. 32-CONTEXT.md's own "Claude's Discretion" note had explicitly anticipated this exact fork ("whether the cache-miss refill is one combined `json_group_array`-based query or several... the planner/executor should follow whichever shape passes the round-trip-count instrumentation") — it didn't pass at four, so `lib/study-cache.ts`'s `refreshStudyCache()` was revised (Phase 32-04 Task 1) to fold all four reads into ONE `prisma.$queryRaw` via correlated `json_group_array`/`json_object` subqueries, the same technique `lib/study-cards.ts`'s Phase B already uses for the `Sentence` relation. This brought the refill down to 1 physical round trip and the cold-miss total down to 3, matching D-01's projected architecture number exactly. The tradeoff taken: the four-separate-call shape could degrade PER FIELD independently on a read failure; the combined query is atomic (succeeds or throws as a whole), so a failure now degrades all four fields together. Recorded here, not smoothed over, per this file's own "no flattering numbers" convention — see `lib/study-cache.ts`'s REFILL SHAPE / DEGRADATION TRADEOFF header comments for the full reasoning, and `tests/study-cache.test.ts` / `tests/study-cards.test.ts` for the updated regression coverage.
+
+### Fixture-scale caveat (restated)
+
+Both the warm (2) and cache-miss (3) numbers above are round-trip **counts** — fixture-size-independent, exactly like every other number in this file (see "Fixture scale caveat" above). They say nothing about wall-clock latency at the ~1056-card production deck; that remains a separate, not-yet-measured question. What round-trip count answers — the only thing STUDY-01 asks for — is answered here, honestly, with both the warm and the miss number quoted side by side.

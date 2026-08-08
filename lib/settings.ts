@@ -51,7 +51,11 @@ function parseDayStartHour(raw: string | undefined): number {
   return Number.isFinite(n) ? n : DEFAULT_DAY_START_HOUR
 }
 
-function parseSessionSize(raw: string | undefined): number {
+// Exported (Phase 32-04): lib/study-cache.ts's refreshStudyCache() reads
+// sessionSize off the SAME combined invariants query as edges/lemmas/lessons
+// (a raw TEXT-or-null column, never a separate getSessionSize() round trip)
+// and reuses this exact parse/default logic rather than duplicating it.
+export function parseSessionSize(raw: string | undefined): number {
   const n = raw ? parseInt(raw, 10) : NaN
   return Number.isFinite(n) ? n : DEFAULT_SESSION_SIZE
 }

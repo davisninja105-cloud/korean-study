@@ -33,9 +33,36 @@
 // scripts share) rather than also being globalThis-only — the next /study
 // request made against the already-running server reads the DB-persisted
 // version, sees it changed, and refills for itself.
+//
+// REFILL SHAPE (Phase 32-04, Task 1 revision): originally implemented as four
+// independent Prisma calls (cardDependency.findMany + card.findMany +
+// getSessionSize() + lesson.findMany) run concurrently via Promise.allSettled.
+// 32-04-PLAN.md Task 1's round-trip instrumentation test measured that shape
+// against a real DB at 4 physical libSQL round trips on a cache miss — pushing
+// a cold `getStudyCards()` call to 6 total (Phase A 1 + refill 4 + Phase B 1),
+// double STUDY-01's "at most 3" cold-miss budget. 32-CONTEXT.md's own "Claude's
+// Discretion" note anticipated exactly this: "whether the cache-miss refill is
+// one combined json_group_array-based query or several... the planner/executor
+// should follow whichever shape passes the round-trip-count instrumentation."
+// It doesn't pass at four; it does at one. All four reads are now folded into
+// ONE prisma.$queryRaw via correlated json_group_array/json_object subqueries
+// — the same technique lib/study-cards.ts's Phase B already uses for the
+// one-to-many Sentence relation — bringing the refill down to 1 physical round
+// trip (cold-miss total: 3; warm total: 2, refill skipped entirely).
+//
+// DEGRADATION TRADEOFF (deliberate, not an oversight): the four-separate-call
+// shape could degrade PER FIELD independently (e.g. only the lessons read
+// failing while edges/lemmas/sessionSize still succeed), because each was a
+// separate physical request. One combined query is atomic — it succeeds as a
+// whole or throws as a whole, so a failure now degrades ALL FOUR fields
+// together rather than only the one that actually failed. This is the
+// unavoidable cost of collapsing 4 round trips into 1: per-field fault
+// isolation and physical-round-trip count are in direct tension, and
+// STUDY-01's round-trip budget is this phase's headline, named requirement —
+// the tradeoff is taken deliberately in its favor, not by accident.
 
 import { prisma } from '@/lib/prisma'
-import { getSessionSize } from '@/lib/settings'
+import { parseSessionSize } from '@/lib/settings'
 import { DEFAULT_SESSION_SIZE } from '@/lib/habit'
 import type { LessonDTO } from '@/lib/dto'
 
@@ -59,88 +86,98 @@ export function getStudyCache(): StudyInvariants | undefined {
   return globalForStudyCache.studyCache
 }
 
+// One row, four correlated-subquery columns — edges/lessons are JSON arrays
+// (json_group_array over an empty result genuinely returns the TEXT "[]", not
+// NULL or a zero-row result set; verified empirically against this project's
+// local SQLite build during Task 1, same behavior lib/study-cards.ts's Phase B
+// already relies on for its sentencesJson column). sessionSizeValue is the raw
+// Setting.value TEXT, or SQL NULL (surfaced as JS null) when the key has never
+// been written — parseSessionSize() below applies the exact same default this
+// module used to get from getSessionSize().
+interface InvariantsRow {
+  edgesJson: string
+  lemmasJson: string
+  sessionSizeValue: string | null
+  lessonsJson: string
+}
+
+interface RawEdge {
+  cardId: string
+  prerequisiteId: string
+}
+
 /**
- * Refill the snapshot. Runs all four reads concurrently via Promise.allSettled
- * (never prisma.$transaction([...]) — 32-RESEARCH.md verified from the
- * installed @prisma/adapter-libsql/@libsql/client source that $transaction
- * increases physical round trips and serializes them on this stack, the
- * opposite of what a concurrent refill wants).
- *
- * Degrades per field exactly as lib/study-cards.ts does today: edges → [],
- * lemmas → empty Set, sessionSize → DEFAULT_SESSION_SIZE, lessons → []. The
- * lemmas-failure log message is byte-identical to lib/study-cards.ts's
- * existing RELIABILITY-01 log so that regression test keeps matching once
- * Plan 03 relocates the read here.
+ * Refill the snapshot. ONE prisma.$queryRaw call (never
+ * prisma.$transaction([...]) — 32-RESEARCH.md verified from the installed
+ * @prisma/adapter-libsql/@libsql/client source that $transaction increases
+ * physical round trips and serializes them on this stack; never four separate
+ * concurrent calls either — see this file's REFILL SHAPE header comment for
+ * why that shape was measured out by Task 1's round-trip instrumentation)
+ * folding all four invariant reads into correlated json_group_array/
+ * json_object subqueries, the same technique lib/study-cards.ts's Phase B
+ * uses for the Sentence relation.
  *
  * Stamps `version` with the argument passed in — NEVER with a fresh read of
  * Setting — so a version bump that lands after the caller already read it is
  * reflected on the caller's NEXT request, not silently folded into this one.
  *
- * If EVERY read fulfilled, the object is assigned to the holder in exactly
- * one statement (atomic replacement — never field-by-field mutation) and
- * returned. If ANY read rejected, the degraded object is returned WITHOUT
- * being stored, so the next request retries instead of pinning the
- * degradation behind a version stamp that would otherwise look "current".
+ * On success, the object is assigned to the holder in exactly one statement
+ * (atomic replacement — never field-by-field mutation) and returned. On
+ * failure, ALL FOUR fields degrade together (edges → [], lemmas → empty Set,
+ * sessionSize → DEFAULT_SESSION_SIZE, lessons → []) — the query is one
+ * physical round trip, so a rejection is necessarily whole-query, not
+ * per-field (see this file's DEGRADATION TRADEOFF header comment). The
+ * degraded object is returned to this one caller WITHOUT being stored, so the
+ * next request retries instead of pinning the degradation behind a version
+ * stamp that would otherwise look "current". The log keeps the legacy
+ * `[study-cards]`-prefixed RELIABILITY-01 message (rather than this file's
+ * own `[study-cache]` prefix) because tests/study-cards.test.ts's and
+ * tests/study-cache.test.ts's regression guards for that reliability contract
+ * key off that exact prefix.
  */
 export async function refreshStudyCache(version: string | null): Promise<StudyInvariants> {
-  const [edgesResult, lemmasResult, sessionSizeResult, lessonsResult] = await Promise.allSettled([
-    prisma.cardDependency.findMany({
-      select: { cardId: true, prerequisiteId: true },
-    }),
-    prisma.card.findMany({
-      where: { review: { state: { gte: 1 } } },
-      select: { normalizedFront: true },
-    }),
-    getSessionSize(),
-    prisma.lesson.findMany({
-      select: { id: true, orderIndex: true, title: true },
-      orderBy: { orderIndex: 'asc' },
-    }),
-  ])
-
-  if (lemmasResult.status === 'rejected') {
+  let rows: InvariantsRow[]
+  try {
+    rows = await prisma.$queryRaw<InvariantsRow[]>`
+      SELECT
+        (
+          SELECT json_group_array(json_object('cardId', cd.cardId, 'prerequisiteId', cd.prerequisiteId))
+          FROM CardDependency cd
+        ) AS edgesJson,
+        (
+          SELECT json_group_array(c.normalizedFront)
+          FROM Card c
+          INNER JOIN CardReview r ON r.cardId = c.id
+          WHERE r.state >= 1
+        ) AS lemmasJson,
+        (SELECT value FROM Setting WHERE key = 'sessionSize') AS sessionSizeValue,
+        (
+          SELECT json_group_array(json_object('id', l.id, 'orderIndex', l.orderIndex, 'title', l.title))
+          FROM (SELECT * FROM Lesson ORDER BY orderIndex ASC) l
+        ) AS lessonsJson
+    `
+  } catch (err) {
     console.error(
-      '[study-cards] known-lemmas query failed; unknownCount ranking degrading to an empty known-lemma set',
-      lemmasResult.reason
+      '[study-cards] invariants refill query failed; degrading to zero prerequisite edges, an empty known-lemma set (unknownCount ranking treats every word as unknown), DEFAULT_SESSION_SIZE, and an empty lessons list',
+      err
     )
-  }
-  if (edgesResult.status === 'rejected') {
-    console.error('[study-cache] edges query failed; degrading to zero prerequisite edges', edgesResult.reason)
-  }
-  if (sessionSizeResult.status === 'rejected') {
-    console.error(
-      '[study-cache] sessionSize read failed; degrading to DEFAULT_SESSION_SIZE',
-      sessionSizeResult.reason
-    )
-  }
-  if (lessonsResult.status === 'rejected') {
-    console.error('[study-cache] lessons query failed; degrading to an empty lessons list', lessonsResult.reason)
+    return {
+      version,
+      edges: [],
+      lemmas: new Set(),
+      sessionSize: DEFAULT_SESSION_SIZE,
+      lessons: [],
+    }
   }
 
-  const snapshot: StudyInvariants = {
-    version,
-    edges: edgesResult.status === 'fulfilled' ? edgesResult.value : [],
-    lemmas: new Set(
-      lemmasResult.status === 'fulfilled' ? lemmasResult.value.map((r) => r.normalizedFront) : []
-    ),
-    sessionSize: sessionSizeResult.status === 'fulfilled' ? sessionSizeResult.value : DEFAULT_SESSION_SIZE,
-    lessons: lessonsResult.status === 'fulfilled' ? lessonsResult.value : [],
-  }
+  const row = rows[0]
+  const edges: RawEdge[] = JSON.parse(row.edgesJson)
+  const lemmas = new Set<string>(JSON.parse(row.lemmasJson))
+  const sessionSize = parseSessionSize(row.sessionSizeValue ?? undefined)
+  const lessons: LessonDTO[] = JSON.parse(row.lessonsJson)
 
-  const allFulfilled =
-    edgesResult.status === 'fulfilled' &&
-    lemmasResult.status === 'fulfilled' &&
-    sessionSizeResult.status === 'fulfilled' &&
-    lessonsResult.status === 'fulfilled'
-
-  // Only a fully-fulfilled refill is ever stored. A partially-degraded result
-  // is returned to this one caller but the holder is left untouched, so the
-  // NEXT request retries the refill from scratch rather than getting pinned
-  // behind a version stamp that would otherwise look fresh.
-  if (allFulfilled) {
-    globalForStudyCache.studyCache = snapshot
-  }
-
+  const snapshot: StudyInvariants = { version, edges, lemmas, sessionSize, lessons }
+  globalForStudyCache.studyCache = snapshot
   return snapshot
 }
 
