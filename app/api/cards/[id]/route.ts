@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { normalizeFront } from '@/lib/card-key'
+import { isUniqueConstraintError } from '@/lib/db-errors'
 import { Prisma } from '@/app/generated/prisma/client'
 
 const sentencesInclude = { orderBy: { orderIndex: 'asc' } } as const
@@ -121,85 +122,103 @@ export async function PUT(
     // WR-03: update scalar card fields (when front changes, keep normalizedFront
     // in sync) and replace-all sentences in a SINGLE transaction, so a mid-flow
     // failure never leaves the card with a new front but stale sentences.
-    const cardUpdate = prisma.card.update({
-      where: { id },
-      data: {
-        ...(data.type  !== undefined && { type:  data.type }),
-        ...(data.front !== undefined && {
-          front:           data.front,
-          normalizedFront: normalizeFront(data.front),
-        }),
-        ...(data.back  !== undefined && { back:  data.back }),
-        ...(data.notes !== undefined && { notes: data.notes }),
-      },
-    })
-
-    // CR-01 fix: upsert sentences by id instead of blanket delete+recreate,
-    // so a Sentence's id stays stable across a save when the client echoes
-    // that id back unchanged — CardsClient's Reading Practice patch matches
-    // on sentence id, and previously always missed because every id was
-    // regenerated on every save. If no sentences key in payload, leave
-    // existing sentences untouched (no new query in that branch).
-    let sentenceOps: Prisma.PrismaPromise<unknown>[] = []
-    if (Array.isArray(data.sentences)) {
-      const incoming = data.sentences as {
-        id?: string
-        korean: string
-        targetForm: string
-        translation: string
-      }[]
-      // Scoped to THIS card's own sentences only — never a global id lookup
-      // (T-31-12 IDOR-shaped mitigation). A client-supplied id belonging to
-      // a different card is never in this set, so it falls through to the
-      // `create` branch below instead of mutating a foreign row.
-      const existing = await prisma.sentence.findMany({
-        where: { cardId: id },
-        select: { id: true },
+    //
+    // Interactive transaction (not array-form): the sentence-ownership read
+    // below (`tx.sentence.findMany`) must execute atomically with the writes
+    // that follow it, closing a TOCTOU window where a concurrent request
+    // mutating this card's sentences between a standalone read and a
+    // separate transaction's commit could cause `deleteMany` to delete a
+    // sentence a concurrent write just created. Array-form transactions
+    // cannot express this "read, then conditionally write" flow (all
+    // operations must be pre-built before any of them run), so this reverts
+    // to the interactive/callback form.
+    //
+    // NOTE: with Prisma 7 + `@prisma/adapter-libsql`, a UNIQUE-constraint
+    // violation thrown INSIDE an interactive transaction's callback surfaces
+    // as a raw, unclassified `DriverAdapterError` rather than a classified
+    // `PrismaClientKnownRequestError`/P2002 (see
+    // .planning/debug/reviewlog-p2002-catch-never-fires.md and
+    // lib/db-errors.ts) — so the normalizedFront-collision P2002 catch below
+    // is OR-ed with `isUniqueConstraintError(e, 'normalizedFront')`,
+    // mirroring the same mitigation already shipped in
+    // app/api/review/route.ts for the identical adapter quirk.
+    const card = await prisma.$transaction(async (tx) => {
+      await tx.card.update({
+        where: { id },
+        data: {
+          ...(data.type  !== undefined && { type:  data.type }),
+          ...(data.front !== undefined && {
+            front:           data.front,
+            normalizedFront: normalizeFront(data.front),
+          }),
+          ...(data.back  !== undefined && { back:  data.back }),
+          ...(data.notes !== undefined && { notes: data.notes }),
+        },
       })
-      const existingIds = new Set(existing.map((s) => s.id))
-      const keepIds = new Set(
-        incoming.filter((s) => s.id && existingIds.has(s.id)).map((s) => s.id as string)
-      )
-      sentenceOps = [
+
+      // CR-01 fix: upsert sentences by id instead of blanket delete+recreate,
+      // so a Sentence's id stays stable across a save when the client echoes
+      // that id back unchanged — CardsClient's Reading Practice patch matches
+      // on sentence id, and previously always missed because every id was
+      // regenerated on every save. If no sentences key in payload, leave
+      // existing sentences untouched (no new query in that branch).
+      if (Array.isArray(data.sentences)) {
+        const incoming = data.sentences as {
+          id?: string
+          korean: string
+          targetForm: string
+          translation: string
+        }[]
+        // Scoped to THIS card's own sentences only — never a global id lookup
+        // (T-31-12 IDOR-shaped mitigation). A client-supplied id belonging to
+        // a different card is never in this set, so it falls through to the
+        // `create` branch below instead of mutating a foreign row.
+        const existing = await tx.sentence.findMany({
+          where: { cardId: id },
+          select: { id: true },
+        })
+        const existingIds = new Set(existing.map((s) => s.id))
+        const keepIds = new Set(
+          incoming.filter((s) => s.id && existingIds.has(s.id)).map((s) => s.id as string)
+        )
         // T-31-13 data-loss mitigation: `notIn` is scoped from the same
         // cardId-scoped existingIds set above, never a global id comparison
         // — a sentence genuinely absent from `keepIds` is one the user
         // removed in the editor, not a matching bug.
-        prisma.sentence.deleteMany({ where: { cardId: id, id: { notIn: [...keepIds] } } }),
-        ...incoming.map((s, i) =>
-          s.id && existingIds.has(s.id)
-            ? prisma.sentence.update({
-                // Compound where (id AND cardId) — defense in depth per the
-                // threat_model, even though existingIds is already
-                // cardId-scoped above.
-                where: { id: s.id, cardId: id },
-                data: {
-                  korean: s.korean ?? '',
-                  targetForm: s.targetForm ?? '',
-                  translation: s.translation ?? '',
-                  orderIndex: i,
-                },
-              })
-            : prisma.sentence.create({
-                data: {
-                  korean: s.korean ?? '',
-                  targetForm: s.targetForm ?? '',
-                  translation: s.translation ?? '',
-                  cardId: id,
-                  orderIndex: i,
-                },
-              })
-        ),
-      ]
-    }
+        await tx.sentence.deleteMany({ where: { cardId: id, id: { notIn: [...keepIds] } } })
+        for (const [i, s] of incoming.entries()) {
+          if (s.id && existingIds.has(s.id)) {
+            await tx.sentence.update({
+              // Compound where (id AND cardId) — defense in depth per the
+              // threat_model, even though existingIds is already
+              // cardId-scoped above.
+              where: { id: s.id, cardId: id },
+              data: {
+                korean: s.korean ?? '',
+                targetForm: s.targetForm ?? '',
+                translation: s.translation ?? '',
+                orderIndex: i,
+              },
+            })
+          } else {
+            await tx.sentence.create({
+              data: {
+                korean: s.korean ?? '',
+                targetForm: s.targetForm ?? '',
+                translation: s.translation ?? '',
+                cardId: id,
+                orderIndex: i,
+              },
+            })
+          }
+        }
+      }
 
-    // Array-form transaction — safe with the libSQL adapter.
-    await prisma.$transaction([cardUpdate, ...sentenceOps])
-
-    // Return the full updated card (sentences included) so the client can merge state.
-    const card = await prisma.card.findUniqueOrThrow({
-      where: { id },
-      include: { review: true, sentences: sentencesInclude },
+      // Return the full updated card (sentences included) so the client can merge state.
+      return tx.card.findUniqueOrThrow({
+        where: { id },
+        include: { review: true, sentences: sentencesInclude },
+      })
     })
 
     return NextResponse.json(card)
@@ -208,7 +227,17 @@ export async function PUT(
     // value that normalizes to card B's existing normalizedFront) raises
     // Prisma P2002. Surface a friendly 400 instead of the generic 500 so
     // the user knows the front already exists rather than seeing a crash.
-    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+    //
+    // WR-03: now that this handler uses an interactive transaction (see
+    // above), the same violation can ALSO surface as a raw, unclassified
+    // `DriverAdapterError` that never matches `instanceof
+    // Prisma.PrismaClientKnownRequestError` — `isUniqueConstraintError`
+    // recognizes that shape too, mirroring app/api/review/route.ts's
+    // existing mitigation for the identical adapter quirk.
+    if (
+      (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') ||
+      isUniqueConstraintError(e, 'normalizedFront')
+    ) {
       return NextResponse.json(
         { error: 'This front already exists (as a different variant of another card)' },
         { status: 400 },

@@ -40,8 +40,11 @@
  * swallowed as false idempotent-success — they still return false here and
  * fall through to the caller's generic error handling.
  *
- * Single call site: app/api/review/route.ts (the idempotent-200 catch
- * branch, OR-ed with the existing P2002 check for forward-compatibility).
+ * Call sites: app/api/review/route.ts (the idempotent-200 catch branch,
+ * OR-ed with the existing P2002 check for forward-compatibility) and
+ * app/api/cards/[id]/route.ts's PUT handler (WR-03, 31-REVIEW.md — same
+ * mitigation for its normalizedFront-collision P2002 catch after that
+ * handler moved to an interactive transaction).
  *
  * No imports, no Prisma, no Node builtins — pure and unit-testable in
  * isolation, matching the purity convention of lib/card-key.ts / lib/known-words.ts.

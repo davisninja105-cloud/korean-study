@@ -22,6 +22,7 @@ import { join } from 'path'
 import type { NextRequest } from 'next/server'
 import type { PrismaClient } from '../app/generated/prisma/client'
 import type { GET as GetHandler, PUT as PutHandler } from '../app/api/cards/[id]/route'
+import { normalizeFront } from '../lib/card-key'
 
 let tmpDir: string
 let dbUrl: string
@@ -359,5 +360,68 @@ describe('PUT /api/cards/[id]', () => {
     expect(after).not.toBeNull()
     expect(after?.cardId).toBe(otherCardId)
     expect(after?.korean).toBe('이것은 다른 카드예요')
+  })
+
+  // WR-01 regression coverage (31-REVIEW-FIX.md): PUT previously fell
+  // through to the generic 500 for a nonexistent card id (P2025 was only
+  // mapped to 404 for GET/DELETE, not PUT).
+  it('returns a clean 404 with a JSON error body for a nonexistent card id', async () => {
+    const res = await PUT(
+      fakePutRequest({ front: 'anything' }),
+      fakeParams('nonexistent-card-id')
+    )
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error).toBeTruthy()
+  })
+
+  // WR-03 regression coverage (31-REVIEW-FIX.md): the PUT handler now uses
+  // an INTERACTIVE `prisma.$transaction(async (tx) => {...})` (to close the
+  // sentence-ownership TOCTOU race), which is exactly the shape the
+  // documented Prisma 7 + @prisma/adapter-libsql quirk affects (a
+  // UNIQUE-constraint violation inside an interactive transaction can
+  // surface as a raw, unclassified DriverAdapterError instead of a
+  // classified P2002 — see .planning/debug/reviewlog-p2002-catch-never-fires.md).
+  // This test runs against the REAL local-SQLite libsql adapter (same
+  // driver shape as production Turso), so it genuinely proves the
+  // `isUniqueConstraintError` fallback keeps the friendly 400 working after
+  // the transaction-form change, rather than asserting it by inspection only.
+  it('returns a friendly 400 (not a 500) when a PUT front collides with another card\'s normalizedFront', async () => {
+    // Two fresh, isolated cards (per this file's established PUT-test
+    // pattern) — a collision TARGET whose normalizedFront is the real
+    // normalizeFront() output for a distinctive front, and the card under
+    // edit, which will be PUT to that exact same front.
+    const collidingFront = `충돌-put-collision-${Date.now()}`
+    await prisma.card.create({
+      data: {
+        type: 'vocabulary',
+        front: collidingFront,
+        back: 'collision target (cards-id-route regression fixture)',
+        normalizedFront: normalizeFront(collidingFront),
+      },
+    })
+    const editCard = await prisma.card.create({
+      data: {
+        type: 'vocabulary',
+        front: '학교',
+        back: 'school',
+        normalizedFront: `학교-put-collision-${Date.now()}`,
+      },
+    })
+
+    const res = await PUT(
+      fakePutRequest({ front: collidingFront }),
+      fakeParams(editCard.id)
+    )
+    expect(res.status).toBe(400)
+    const body = await res.json()
+    expect(body.error).toBeTruthy()
+    expect(body.error).toMatch(/already exists/i)
+
+    // The edited card's front must be unchanged — the whole interactive
+    // transaction (including the sentence ops that would have run first)
+    // rolled back.
+    const unchanged = await prisma.card.findUniqueOrThrow({ where: { id: editCard.id } })
+    expect(unchanged.front).toBe('학교')
   })
 })
