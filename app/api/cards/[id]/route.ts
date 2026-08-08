@@ -192,6 +192,12 @@ export async function PUT(
         { status: 400 },
       )
     }
+    // WR-01: mirror GET/DELETE's "not found" handling — a concurrent
+    // deletion between the Edit sheet opening and Save (or any other race
+    // that removes the row) previously fell through to the generic 500.
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+      return NextResponse.json({ error: 'Card not found' }, { status: 404 })
+    }
     // WR-02: don't leak the raw error message to the client (may include
     // internal schema/Turso endpoint details). Log server-side only, mirroring
     // the disclosure posture of /api/review (T-13-02).
