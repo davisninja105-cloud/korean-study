@@ -1,32 +1,34 @@
-// Regression + behavior coverage for lib/study-cache.ts (Phase 32, STUDY-03).
+// Regression + behavior coverage for lib/study-cache.ts (Phase 32, STUDY-03;
+// mock shape revised Phase 32-04 Task 1 — see below).
 //
 // Two describe blocks:
-//   1. Pure hit/miss/stamp/partial-failure cases against a MOCKED prisma
-//      singleton (vi.mock('@/lib/prisma', ...), following the args-shape
-//      disambiguation convention already established in tests/study-cards.test.ts).
+//   1. Pure hit/miss/stamp/failure cases against a MOCKED prisma singleton
+//      (vi.mock('@/lib/prisma', ...)).
 //   2. A cross-process invalidation proof against a REAL temp SQLite database
 //      (mirroring tests/relink-dependencies.test.ts's harness) — a mocked
 //      Prisma cannot prove that a change written by a separate `tsx` process
 //      (scripts/local-resync.mts / scripts/relink-dependencies.mts) is visible
 //      to the next /study load in an already-running server process.
 //
-// Mock disambiguation (block 1): the mock factory below stubs
-// cardDependency.findMany, card.findMany, lesson.findMany, and
-// setting.findUnique/setting.upsert as vi.fn()s. refreshStudyCache() calls
-// exactly one of each of the first three per invocation (no args-shape
-// disambiguation needed within this file, unlike tests/study-cards.test.ts's
-// three-call-shape card.findMany situation) plus getSessionSize() (which
-// itself calls setting.findUnique — mocked directly here rather than via
-// lib/settings.ts, since getSessionSize() is a thin wrapper).
+// Mock shape (block 1): refreshStudyCache() now issues ONE prisma.$queryRaw
+// call folding edges/lemmas/sessionSize/lessons into correlated
+// json_group_array/json_object subqueries (Phase 32-04 Task 1 — see
+// lib/study-cache.ts's REFILL SHAPE header comment for why the original
+// four-separate-Prisma-call shape was replaced: it measured 4 physical round
+// trips against a real DB, pushing a cold getStudyCards() call to 6 total,
+// double STUDY-01's "at most 3" budget). The mock factory below stubs only
+// $queryRaw; there is no longer a separate cardDependency/card/lesson/setting
+// call to mock. One consequence of one physical round trip replacing four:
+// a read failure is now necessarily WHOLE-QUERY (all four fields degrade
+// together), not per-field — see the single combined failure test below,
+// which replaces the four separate per-field-failure tests this block used
+// to carry.
 
 import { describe, it, expect, beforeEach, afterEach, vi, beforeAll, afterAll } from 'vitest'
 
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    cardDependency: { findMany: vi.fn() },
-    card: { findMany: vi.fn() },
-    lesson: { findMany: vi.fn() },
-    setting: { findUnique: vi.fn(), upsert: vi.fn() },
+    $queryRaw: vi.fn(),
   },
 }))
 
@@ -37,30 +39,30 @@ import {
   resetStudyCacheForTests,
 } from '@/lib/study-cache'
 
-function mockAllFulfilled() {
-  ;(prisma.cardDependency.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-    { cardId: 'c1', prerequisiteId: 'c0' },
-  ])
-  ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-    { normalizedFront: '공부' },
-  ])
-  ;(prisma.setting.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
-    key: 'sessionSize',
-    value: '25',
-  })
-  ;(prisma.lesson.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-    { id: 'lesson-1', orderIndex: 1, title: 'Lesson 1' },
-  ])
+// Builds the single combined-invariants row refreshStudyCache()'s raw query
+// returns — see lib/study-cache.ts's InvariantsRow interface.
+function invariantsRow(overrides: {
+  edges?: { cardId: string; prerequisiteId: string }[]
+  lemmas?: string[]
+  sessionSizeValue?: string | null
+  lessons?: { id: string; orderIndex: number; title: string }[]
+} = {}) {
+  return [
+    {
+      edgesJson: JSON.stringify(overrides.edges ?? [{ cardId: 'c1', prerequisiteId: 'c0' }]),
+      lemmasJson: JSON.stringify(overrides.lemmas ?? ['공부']),
+      sessionSizeValue: overrides.sessionSizeValue !== undefined ? overrides.sessionSizeValue : '25',
+      lessonsJson: JSON.stringify(
+        overrides.lessons ?? [{ id: 'lesson-1', orderIndex: 1, title: 'Lesson 1' }]
+      ),
+    },
+  ]
 }
 
-describe('study-cache — pure hit/miss/stamp/partial-failure (mocked prisma)', () => {
+describe('study-cache — pure hit/miss/stamp/failure (mocked prisma)', () => {
   beforeEach(() => {
     resetStudyCacheForTests()
-    ;(prisma.cardDependency.findMany as ReturnType<typeof vi.fn>).mockReset()
-    ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockReset()
-    ;(prisma.setting.findUnique as ReturnType<typeof vi.fn>).mockReset()
-    ;(prisma.setting.upsert as ReturnType<typeof vi.fn>).mockReset()
-    ;(prisma.lesson.findMany as ReturnType<typeof vi.fn>).mockReset()
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockReset()
     vi.spyOn(console, 'error').mockImplementation(() => {})
   })
 
@@ -72,8 +74,8 @@ describe('study-cache — pure hit/miss/stamp/partial-failure (mocked prisma)', 
     expect(getStudyCache()).toBeUndefined()
   })
 
-  it('refreshStudyCache("v1") with all four reads resolving stores a snapshot stamped "v1", and getStudyCache() returns it by reference', async () => {
-    mockAllFulfilled()
+  it('refreshStudyCache("v1") with the combined query resolving stores a snapshot stamped "v1", and getStudyCache() returns it by reference', async () => {
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue(invariantsRow())
 
     const snapshot = await refreshStudyCache('v1')
 
@@ -87,24 +89,19 @@ describe('study-cache — pure hit/miss/stamp/partial-failure (mocked prisma)', 
   })
 
   it('refreshStudyCache("v2") called while a "v1" snapshot is stored replaces the whole object; the previously returned "v1" object is not mutated', async () => {
-    mockAllFulfilled()
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue(invariantsRow())
     const v1 = await refreshStudyCache('v1')
     const v1EdgesRef = v1.edges
     const v1LemmasRef = v1.lemmas
 
-    ;(prisma.cardDependency.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { cardId: 'c2', prerequisiteId: 'c1' },
-    ])
-    ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { normalizedFront: '학교' },
-    ])
-    ;(prisma.setting.findUnique as ReturnType<typeof vi.fn>).mockResolvedValue({
-      key: 'sessionSize',
-      value: '30',
-    })
-    ;(prisma.lesson.findMany as ReturnType<typeof vi.fn>).mockResolvedValue([
-      { id: 'lesson-2', orderIndex: 2, title: 'Lesson 2' },
-    ])
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue(
+      invariantsRow({
+        edges: [{ cardId: 'c2', prerequisiteId: 'c1' }],
+        lemmas: ['학교'],
+        sessionSizeValue: '30',
+        lessons: [{ id: 'lesson-2', orderIndex: 2, title: 'Lesson 2' }],
+      })
+    )
 
     const v2 = await refreshStudyCache('v2')
 
@@ -120,32 +117,35 @@ describe('study-cache — pure hit/miss/stamp/partial-failure (mocked prisma)', 
     expect(v1.lemmas).toEqual(new Set(['공부']))
   })
 
-  it('refreshStudyCache("v3") where the edges read rejects returns edges: [] AND leaves getStudyCache() returning the previously stored snapshot', async () => {
-    mockAllFulfilled()
-    const v1 = await refreshStudyCache('v1')
-
-    ;(prisma.cardDependency.findMany as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error('edges boom')
+  it('refreshStudyCache("v-empty") with an empty deck (json_group_array over zero rows) returns edges: [] / lemmas: empty Set / lessons: [] — never null/throw', async () => {
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue(
+      invariantsRow({ edges: [], lemmas: [], sessionSizeValue: null, lessons: [] })
     )
 
-    const degraded = await refreshStudyCache('v3')
+    const snapshot = await refreshStudyCache('v-empty')
+
+    expect(snapshot.edges).toEqual([])
+    expect(snapshot.lemmas).toEqual(new Set())
+    expect(snapshot.sessionSize).toBe(20) // DEFAULT_SESSION_SIZE — no Setting row yet
+    expect(snapshot.lessons).toEqual([])
+  })
+
+  it('refreshStudyCache where the combined query rejects degrades ALL FOUR fields together, leaves the previously stored snapshot untouched, and preserves the RELIABILITY-01 [study-cards] log', async () => {
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockResolvedValue(invariantsRow())
+    const v1 = await refreshStudyCache('v1')
+
+    const rejectionReason = new Error('invariants query boom')
+    ;(prisma.$queryRaw as ReturnType<typeof vi.fn>).mockRejectedValue(rejectionReason)
+
+    const degraded = await refreshStudyCache('v-fail')
 
     expect(degraded.edges).toEqual([])
+    expect(degraded.lemmas).toEqual(new Set())
+    expect(degraded.sessionSize).toBe(20) // DEFAULT_SESSION_SIZE
+    expect(degraded.lessons).toEqual([])
     // The degraded result is never stored — the previous v1 snapshot survives.
     expect(getStudyCache()).toBe(v1)
     expect(getStudyCache()?.version).toBe('v1')
-  })
-
-  it('refreshStudyCache where the lemmas read rejects returns lemmas: an empty Set and leaves the previously stored snapshot untouched, with the RELIABILITY-01 log preserved', async () => {
-    resetStudyCacheForTests()
-    mockAllFulfilled()
-    const rejectionReason = new Error('lemmas boom')
-    ;(prisma.card.findMany as ReturnType<typeof vi.fn>).mockRejectedValue(rejectionReason)
-
-    const degraded = await refreshStudyCache('v-lemmas-fail')
-
-    expect(degraded.lemmas).toEqual(new Set())
-    expect(getStudyCache()).toBeUndefined()
 
     const errorSpy = console.error as unknown as ReturnType<typeof vi.fn>
     const call = errorSpy.mock.calls.find(
@@ -153,32 +153,6 @@ describe('study-cache — pure hit/miss/stamp/partial-failure (mocked prisma)', 
     )
     expect(call).toBeDefined()
     expect(call![1]).toBe(rejectionReason)
-  })
-
-  it('refreshStudyCache where the sessionSize read rejects falls back to DEFAULT_SESSION_SIZE and leaves the previously stored snapshot untouched', async () => {
-    resetStudyCacheForTests()
-    mockAllFulfilled()
-    ;(prisma.setting.findUnique as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error('sessionSize boom')
-    )
-
-    const degraded = await refreshStudyCache('v-size-fail')
-
-    expect(degraded.sessionSize).toBe(20) // DEFAULT_SESSION_SIZE
-    expect(getStudyCache()).toBeUndefined()
-  })
-
-  it('refreshStudyCache where the lessons read rejects returns lessons: [] and leaves the previously stored snapshot untouched', async () => {
-    resetStudyCacheForTests()
-    mockAllFulfilled()
-    ;(prisma.lesson.findMany as ReturnType<typeof vi.fn>).mockRejectedValue(
-      new Error('lessons boom')
-    )
-
-    const degraded = await refreshStudyCache('v-lessons-fail')
-
-    expect(degraded.lessons).toEqual([])
-    expect(getStudyCache()).toBeUndefined()
   })
 })
 
