@@ -3,14 +3,14 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import ModeSelector, { StudyMode } from '@/components/ModeSelector'
-import StudySession from '@/components/StudySession'
+import StudySession, { type Card as StudySessionCard } from '@/components/StudySession'
 import LessonRangeFilter, { isFullSpan } from '@/components/LessonRangeFilter'
 import ProgressRing from '@/components/ProgressRing'
 import Sheet from '@/components/Sheet'
 import { SlidersHorizontal } from 'lucide-react'
 import { haptic } from '@/lib/haptics'
 import { computeStreaks, habitDateStr, DEFAULT_DAY_START_HOUR, DEFAULT_GOAL_SECONDS, type DayRecord } from '@/lib/habit'
-import { fetchCacheContext, readCache, writeCache, type StudyCachePayload } from '@/lib/local-cache'
+import { fetchCacheContext, readCache, writeCache, patchStudyCard, type StudyCachePayload } from '@/lib/local-cache'
 import type { CardDTO, LessonDTO } from '@/lib/dto'
 
 interface PracticeCard {
@@ -305,6 +305,19 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
     setPhase('complete')
   }
 
+  // Cache write-through (LOCAL-03) — StudySession calls this synchronously
+  // from the same code path as its optimistic queue advance (submitReview)
+  // and a successful undo. Fire-and-forget, never awaited: patchStudyCard
+  // owns its own error swallowing (lib/local-cache.ts). No-ops before a
+  // buildId is known (offline cold path — nothing was ever cached to patch).
+  // updatedCardOrNull is typed as StudySession's own (narrower) Card shape;
+  // the runtime value always originates from a real CardDTO passed in as
+  // `cards` prop, only ever spread with additive `review` field updates.
+  const handleReviewCommitted = useCallback((cardId: string, updatedCardOrNull: StudySessionCard | null) => {
+    if (!buildIdRef.current) return
+    void patchStudyCard(buildIdRef.current, cardId, updatedCardOrNull as CardDTO | null)
+  }, [])
+
   // Fetch the next batch of ahead cards and start a new session.
   // startAhead still uses setPhase('loading') — brief skeleton is acceptable for the
   // ahead fetch per the UI-SPEC; 'loading' is only eliminated from the INITIAL paint path.
@@ -490,6 +503,7 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
         extraPractice={practice}
         mode={mode}
         onComplete={handleComplete}
+        onReviewCommitted={handleReviewCommitted}
       />
     )
   }
