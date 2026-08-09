@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { SlidersHorizontal } from 'lucide-react'
 import { Virtuoso, type VirtuosoHandle, type StateSnapshot } from 'react-virtuoso'
 import CardEditor from '@/components/CardEditor'
@@ -9,9 +9,19 @@ import HighlightedSentence from '@/components/HighlightedSentence'
 import Sheet from '@/components/Sheet'
 import SwipeRow from '@/components/SwipeRow'
 import { useWordTap } from '@/components/GlossProvider'
-import { useFreshPayload } from '@/components/FreshnessWatcher'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { typeBadgeClass } from '@/lib/card-style'
+import {
+  fetchCacheContext,
+  readCache,
+  writeCache,
+  patchCachedCard,
+  removeCachedCard,
+  insertCachedCard,
+  type CardsCachePayload,
+} from '@/lib/local-cache'
+import { usePullToRefresh, PULL_THRESHOLD } from '@/lib/usePullToRefresh'
+import { haptic } from '@/lib/haptics'
 import type {
   CardDTO,
   CardsPageDTO,
@@ -307,6 +317,12 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   const readingVirtuosoRef = useRef<VirtuosoHandle>(null)
   const [readingSnapshot, setReadingSnapshot] = useState<StateSnapshot | undefined>(undefined)
 
+  // Route-local pull-to-refresh failure (LOCAL-04, Task 3) — distinct state,
+  // distinct copy from queryError/COPY.batchLoadError below; a gesture
+  // failure is a different user action from a search or scroll-continuation
+  // failure.
+  const [refreshError, setRefreshError] = useState(false)
+
   // Shared error for a failed SEARCH request or a failed FILTER-COMMIT
   // request (Done-triggered first-page refresh) — both surface the same
   // "Couldn't search right now. Try again." copy per the must_haves backstop
@@ -455,63 +471,153 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
     }
   }
 
-  // JSON backstop delivery (26-05-PLAN.md) — Suspense-independent second
-  // delivery path for the card list. FreshnessWatcher's `/cards` backstop
-  // fetches a single, PARTIAL `CardsPageDTO` page (never the full deck) —
-  // so adopting it must be an upsert-by-id merge into each card's own
-  // per-type group, never a wholesale replace (31-RESEARCH.md Pitfall 1,
-  // T-31-08, must_haves.prohibitions CARDS-01). A card present in the
-  // payload updates its matching already-loaded row in place; a card NOT
-  // already loaded in its group is deliberately left out (a partial
-  // backstop page is never authoritative for "what else exists" — only
-  // `groupCounts` is authoritative for totals); a card absent from the
-  // payload is NEVER removed — deletions remain sourced exclusively from
-  // the existing optimistic `handleDelete` path. Also guarded against an
-  // active client-side query for the same reason as the block above.
-  const { cards: freshCards } = useFreshPayload()
-  const [prevFreshCards, setPrevFreshCards] = useState(freshCards)
-  if (freshCards !== prevFreshCards) {
-    setPrevFreshCards(freshCards)
-    if (
-      freshCards !== null &&
-      editingId === null &&
-      !showAdd &&
-      !adding &&
-      deletingIds.size === 0 &&
-      !hasActiveClientQuery
-    ) {
-      setGroups((prev) => {
-        const next = { ...prev }
-        for (const card of freshCards.cards) {
-          const key = groupKeyForType(card.type)
-          // WR-04: the card's type may have changed externally (e.g. edited
-          // from another tab/device) since it was loaded here — search every
-          // OTHER group for a stale, wrong-type row and drop it. Per the same
-          // "never authoritative for what else exists" rule this backstop
-          // already follows, the row is only ever REMOVED from its old
-          // bucket here, never inserted into the new one unless already
-          // loaded there (handled by the idx check below).
-          for (const otherKey of GROUP_KEYS) {
-            if (otherKey === key) continue
-            const otherGroup = next[otherKey]
-            if (otherGroup.loaded.some((c) => c.id === card.id)) {
-              next[otherKey] = {
-                ...otherGroup,
-                loaded: otherGroup.loaded.filter((c) => c.id !== card.id),
-              }
-            }
+  // ── Local-first cache (Phase 34, LOCAL-01/02/03/04/05) ───────────────────
+  // Replaces the retired JSON-backstop hook this file used to consume from
+  // FreshnessWatcher.tsx (D-00 rule 3) — the cache-read + version-checked
+  // revalidation below is the same "second, Suspense-independent delivery
+  // path" purpose, now owned by this file instead. The /api/version value +
+  // buildId this mount observed are held in refs (not state) so the
+  // write-through call sites in handleSave/handleDelete/handleAdd and the
+  // persistence effect below never need a second fetch.
+  const versionRef = useRef<string | null>(null)
+  const buildIdRef = useRef<string | null>(null)
+  const [isRevalidating, setIsRevalidating] = useState(false)
+  // Flips true once the mount effect has resolved fetchCacheContext() and
+  // populated versionRef/buildIdRef. A plain ref write does NOT re-trigger
+  // the persistence effect below (refs aren't reactive) — without this state
+  // flag, a true cold start (no prior cache entry, so the mount effect never
+  // calls setGroups/setGroupCounts) would never write ANYTHING to the cache
+  // until some unrelated later interaction happened to change groups/
+  // groupCounts. Included in the persistence effect's dep array precisely so
+  // its very first successful write can fire off of THIS flag alone.
+  const [cacheReady, setCacheReady] = useState(false)
+
+  // Kept in sync on every render (a plain assignment, not a setState call —
+  // safe outside an effect) so an async continuation resolving mid-flight
+  // (the mount effect below awaits the cache context/entry reads and N group
+  // fetches) reads the INTERACTION STATE AT THE MOMENT OF ADOPTION, not a
+  // stale closure captured at mount. Same four-part guard this file already
+  // uses for RSC-prop adoption (prevInitialCardsPage/prevInitialGroupCounts
+  // above), extended with !hasActiveClientQuery so a filtered/searched view
+  // is never overwritten by the unfiltered cached entry.
+  const canAdoptCacheRef = useRef(false)
+  canAdoptCacheRef.current =
+    editingId === null && !showAdd && !adding && deletingIds.size === 0 && !hasActiveClientQuery
+
+  // Cache-first mount read + version-checked revalidation (LOCAL-01/02/05).
+  // Paints the session-accumulated groups from IndexedDB before GET
+  // /api/cards resolves; revalidates only when GET /api/version reports a
+  // different value than the one the cache entry was written with (D-00
+  // rule 2 — never on elapsed time), and only for groups that already have
+  // loaded rows (D-05 — never a full-deck fetch).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const ctx = await fetchCacheContext()
+      if (cancelled || !ctx) return // offline cold path — RSC props already rendered
+      const { version, buildId } = ctx
+      versionRef.current = version
+      buildIdRef.current = buildId
+      setCacheReady(true)
+
+      const cached = await readCache<CardsCachePayload>(buildId, 'cards')
+      if (cancelled) return
+
+      if (cached && canAdoptCacheRef.current) {
+        setGroups((prev) => {
+          const next = { ...prev }
+          for (const key of GROUP_KEYS) {
+            const g = cached.data.groups[key]
+            next[key] = g ? { ...g, loading: false, error: null } : { ...EMPTY_GROUP_STATE }
           }
-          const currentGroup = next[key]
-          const idx = currentGroup.loaded.findIndex((c) => c.id === card.id)
-          if (idx === -1) continue // not already loaded — never adopted from a partial payload
-          const loaded = [...currentGroup.loaded]
-          loaded[idx] = card
-          next[key] = { ...currentGroup, loaded }
+          return next
+        })
+        setGroupCounts(cached.data.groupCounts)
+        setCollapsed((prev) => {
+          const next = { ...prev }
+          for (const key of GROUP_KEYS) {
+            const g = cached.data.groups[key]
+            if (g && g.loaded.length > 0) next[key] = false
+          }
+          return next
+        })
+      }
+
+      // Revalidate only when there's an EXISTING stale entry to correct.
+      // A true cold start (no entry at all) deliberately skips this fetch —
+      // the just-rendered initialCardsPage RSC props are already the
+      // freshest possible data for a first-ever visit, so an immediate
+      // client-side re-fetch of the exact same page would be pure waste (and
+      // would regress Phase 31's cards-tab-switch-scroll.spec.ts, which
+      // asserts zero /api/cards requests across a tab-switch flow with no
+      // prior cache — see this plan's SUMMARY Deviations).
+      if (cached && cached.dataVersion !== version) {
+        setIsRevalidating(true)
+        try {
+          const sourceGroups = cached.data.groups
+          const loadedLenFor = (key: GroupKey) => sourceGroups[key]?.loaded.length ?? 0
+          const keysToRevalidate = GROUP_KEYS.filter((key) => loadedLenFor(key) > 0)
+          const fetchResults = await Promise.all(
+            keysToRevalidate.map(async (key) => {
+              const page = await fetchCardsPage({
+                type: key,
+                cursor: null,
+                search: null,
+                lessonFrom: null,
+                lessonTo: null,
+                take: loadedLenFor(key),
+              })
+              return { key, page }
+            })
+          )
+          if (cancelled) return
+          if (canAdoptCacheRef.current) {
+            let latestCounts: GroupCountsDTO | undefined
+            for (const { key, page } of fetchResults) {
+              applyGroupPage(key, page, 'replace')
+              if (page.groupCounts) latestCounts = page.groupCounts
+            }
+            if (latestCounts) setGroupCounts(latestCounts)
+          }
+        } catch {
+          // Silent — the already-painted cached (or RSC) rows stand
+          // (UI-SPEC E3 error). No error copy for a background revalidation
+          // failure.
+        } finally {
+          if (!cancelled) setIsRevalidating(false)
         }
-        return next
-      })
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  // Group-snapshot persistence effect (D-05 accumulation): whenever the
+  // session-accumulated groups/groupCounts change AND no client-side query
+  // is active AND no group is mid-fetch, write the current snapshot through
+  // to the cache. Writes only — never a setState call — so this can never
+  // itself trigger the loop it depends on. A filtered/searched view is never
+  // persisted as the default browse view (T-34-11).
+  useEffect(() => {
+    if (hasActiveClientQuery) return
+    const buildId = buildIdRef.current
+    const version = versionRef.current
+    if (!buildId || !version) return
+    if (GROUP_KEYS.some((key) => groups[key].loading)) return
+    const strippedGroups: CardsCachePayload['groups'] = {}
+    for (const key of GROUP_KEYS) {
+      strippedGroups[key] = {
+        loaded: groups[key].loaded,
+        nextCursor: groups[key].nextCursor,
+        hasMore: groups[key].hasMore,
+      }
     }
-  }
+    void writeCache(buildId, 'cards', { groups: strippedGroups, groupCounts }, version)
+    // cacheReady is intentionally a dependency (not just a guard read via
+    // ref) — see its declaration comment above: it's what lets a true cold
+    // start's first write fire off of the mount effect resolving alone,
+    // without requiring groups/groupCounts to ALSO change from some
+    // unrelated later interaction.
+  }, [groups, groupCounts, hasActiveClientQuery, cacheReady])
 
   // ── Stale-response / out-of-order-response guards (CARDS-03) ────────────
   // A strictly later request advances these refs past whatever an earlier,
@@ -633,6 +739,67 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       }
     }
   }
+
+  // ── Route-local pull-to-refresh (LOCAL-04, D-04, D-05, Task 3) ──────────
+  // NOT parameterised with, and never sharing code with, Home's handleSync —
+  // this bypasses BOTH the IndexedDB read and the /api/version comparison
+  // (unconditional fetch) and never calls POST /api/sync. Bounded strictly to
+  // what the session already loaded: one fetchCardsPage per group with
+  // loaded.length > 0, at that group's exact current loaded.length — never a
+  // single unbounded query (RESEARCH Pitfall 5, T-34-13).
+  const handleRefresh = useCallback(async () => {
+    haptic('impact-light')
+    setRefreshError(false)
+    try {
+      const ctx = await fetchCacheContext() // stamps the write only — not a gate
+      filterGenerationRef.current += 1
+      const generation = filterGenerationRef.current
+      const keys = GROUP_KEYS.filter((key) => groups[key].loaded.length > 0)
+      const fetchResults = await Promise.all(
+        keys.map(async (key) => {
+          const page = await fetchCardsPage({
+            type: key,
+            cursor: null,
+            search: null,
+            lessonFrom: fullSpan ? null : lessonFrom,
+            lessonTo: fullSpan ? null : lessonTo,
+            take: groups[key].loaded.length,
+          })
+          return { key, page }
+        })
+      )
+      if (filterGenerationRef.current !== generation) return // superseded by a newer filter/lesson-range commit
+      let latestCounts: GroupCountsDTO | undefined
+      for (const { key, page } of fetchResults) {
+        applyGroupPage(key, page, 'replace')
+        if (page.groupCounts) latestCounts = page.groupCounts
+      }
+      if (latestCounts) setGroupCounts(latestCounts)
+
+      if (ctx) {
+        versionRef.current = ctx.version
+        buildIdRef.current = ctx.buildId
+        const freshByKey = new Map(fetchResults.map(({ key, page }) => [key, page]))
+        const strippedGroups: CardsCachePayload['groups'] = {}
+        for (const key of GROUP_KEYS) {
+          const fresh = freshByKey.get(key)
+          strippedGroups[key] = fresh
+            ? { loaded: fresh.cards, nextCursor: fresh.nextCursor, hasMore: fresh.hasMore }
+            : { loaded: groups[key].loaded, nextCursor: groups[key].nextCursor, hasMore: groups[key].hasMore }
+        }
+        await writeCache(
+          ctx.buildId,
+          'cards',
+          { groups: strippedGroups, groupCounts: latestCounts ?? groupCounts },
+          ctx.version
+        )
+      }
+    } catch {
+      setRefreshError(true)
+    }
+  }, [groups, groupCounts, fullSpan, lessonFrom, lessonTo, filter])
+
+  const { pullDistance, refreshing } = usePullToRefresh(handleRefresh)
 
   const fetchSearchNextPage = () => {
     if (searchResults.loadingMore || searchResults.querying || !searchResults.hasMore) return
@@ -902,6 +1069,10 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
           : prev
       )
       if (deletedType) bumpGroupCount(deletedType, -1)
+      // Write-through (LOCAL-03/T-34-10): keeps the cached `cards` entry
+      // consistent with this optimistic delete. Never called on the failure
+      // branch above — the row stays on screen there, so the cache must too.
+      if (buildIdRef.current) void removeCachedCard(buildIdRef.current, id)
       if (editingId === id) closeEdit()
     } catch (err) {
       console.error('Delete failed (network):', err)
@@ -1008,6 +1179,15 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
         }),
       }
     })
+    // Write-through (LOCAL-03) — mandatory, not an optimisation: PUT
+    // /api/cards/[id] does NOT call bumpDataVersion(), so background
+    // version-check revalidation can never correct this entry on its own
+    // (RESEARCH Pitfall 3, T-34-10). Passing `merge` — the exact function the
+    // state updates above already used — is what makes this literally the
+    // same transformation, not a re-derived one, and what keeps a
+    // type-changing save's relocate-not-duplicate behavior consistent
+    // between the cache and component state.
+    if (buildIdRef.current) void patchCachedCard(buildIdRef.current, updated.id, merge)
     closeEdit()
   }
 
@@ -1043,6 +1223,10 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       // confirmation their card was saved, even if it was collapsed.
       setCollapsed((prev) => ({ ...prev, [groupKey]: false }))
       bumpGroupCount(created.type, 1)
+      // Write-through (LOCAL-03): insertCachedCard owns the "only insert
+      // into a group that already has loaded rows" decision itself, so this
+      // call site stays uniform regardless of which branch above ran.
+      if (buildIdRef.current) void insertCachedCard(buildIdRef.current, created)
       setNewCard({ type: 'vocabulary', front: '', back: '', notes: '' })
       setShowAdd(false)
     } catch (err) {
@@ -1356,6 +1540,40 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
 
   return (
     <div className="flex flex-col gap-4">
+
+      {/* ── Route-local pull-to-refresh indicator (D-03/D-04) — ABOVE the
+          sticky header so it pushes content rather than overlaying the
+          search bar. Deliberately distinct copy from Home's "Pull to
+          sync"/"Syncing…" (D-04's locked wording distinction). ──────────── */}
+      {(pullDistance > 0 || refreshing) && (
+        <div
+          className="flex items-center justify-center overflow-hidden text-xs text-muted"
+          style={{ height: refreshing ? 28 : pullDistance }}
+        >
+          {refreshing ? 'Refreshing…' : pullDistance >= PULL_THRESHOLD ? 'Release to refresh' : 'Pull to refresh'}
+        </div>
+      )}
+      {refreshError && !refreshing && pullDistance === 0 && (
+        <p className="text-center text-sm text-muted">
+          Couldn&apos;t refresh. Check your connection and try again.{' '}
+          <button type="button" onClick={handleRefresh} className="text-button font-semibold">
+            Try again
+          </button>
+        </p>
+      )}
+
+      {/* ── Background-revalidation pill (D-01) ── */}
+      {isRevalidating && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed left-1/2 -translate-x-1/2 z-[5] flex items-center gap-1.5 bg-surface-1 border border-border text-muted text-xs px-2 py-1 rounded-full shadow-sm"
+          style={{ top: 'calc(var(--nav-height, 68px) + 8px)' }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-muted animate-pulse" aria-hidden="true" />
+          Updating…
+        </div>
+      )}
 
       {/* ── Sticky search + action bar + view toggle (merged into one pinned
           unit, G-31-2/31-05-PLAN.md Task 3) — docks beneath Nav's actual
