@@ -267,7 +267,14 @@ Plans:
   4. After the daily cron sync runs, reopening the app shows the new lessons and cards on the next launch with no hard reload; entries are discarded when `/api/version` moves or the build ID changes, and never merely because time has passed.
   5. Pull-to-refresh bypasses both the cache and the version check entirely and repopulates from the server, so any cache problem is recoverable from the phone.
 
-**Plans**: TBD
+**Plans**: 5 plans
+
+- [ ] 34-01-PLAN.md — Cache foundation (`lib/local-cache.ts`, `/api/version` buildId) plus the `/habits` tracer slice
+- [ ] 34-02-PLAN.md — `/study` cache-first, review write-through via `onReviewCommitted`, route-local pull-to-refresh
+- [ ] 34-03-PLAN.md — `/cards` cache-first (D-05 session-accumulated), edit/delete/add write-through, bounded pull-to-refresh
+- [ ] 34-04-PLAN.md — `/` cache-first, `handleSync` write-through, settings write-through, `Offline` pill in `Nav.tsx`
+- [ ] 34-05-PLAN.md — `FreshnessWatcher` backstop narrowing (blocking decision checkpoint) plus phase-gate e2e
+
 **UI hint**: yes
 
 ### Phase 35: Service Worker & Offline Review Queue
