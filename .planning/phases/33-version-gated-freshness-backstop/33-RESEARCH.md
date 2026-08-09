@@ -258,17 +258,22 @@ No `middleware.ts` change needed — its matcher (`'/((?!login|api/login|_next/s
 | A2 | Version bump for `POST /api/review` should sit inside the existing `$transaction` block (atomic with the review write) rather than after it | Pattern 2 | Low-medium — if done after the transaction instead, a version bump could land for a request that later fails to commit for an unrelated reason between the transaction resolving and the bump call, though in practice the transaction's `return` already implies success by that point; inside-transaction is strictly safer and no harder to implement |
 | A3 | The e2e `*Direct` mutation functions can safely call `lib/settings.ts`'s exported bump function directly (vs. needing their own inline raw Prisma write) without hitting the ESM/`import.meta` hazard documented for `lib/relink-dependencies.ts` | Pitfall 1 | Medium — if `lib/settings.ts` turns out to also transitively import the generated Prisma client in a way that breaks under a Playwright worker's dynamic import (unconfirmed this session — only `lib/prisma.ts` and `lib/relink-dependencies.ts` were confirmed to have this hazard), the same dynamic-import-inside-function-body workaround already used for `relinkAllDependencies()` applies identically; this is a mechanical detail to verify at implementation time, not a design risk |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
-1. **Should `GET /api/version`'s response shape anticipate Phase 34's LOCAL-02 consumer, or should Phase 34 adapt to whatever this phase ships?**
+Both questions below were resolved at planning time; each recommendation is carried into
+`33-01-PLAN.md` as a concrete task instruction and an enforceable acceptance criterion.
+
+1. **Should `GET /api/version`'s response shape anticipate Phase 34's LOCAL-02 consumer, or should Phase 34 adapt to whatever this phase ships?** ✓ RESOLVED
    - What we know: `REQUIREMENTS.md` LOCAL-02 (Phase 34, not in scope here) explicitly says "Cache entries are version-checked against `/api/version` (never TTL-based)" — meaning this phase's endpoint gets a second consumer one phase later.
    - What's unclear: Whether Phase 34's IndexedDB cache-key comparison needs anything beyond a bare `{ version: string }` (e.g. per-route versions, or a single global version). Nothing in Phase 33's scope requires per-route granularity — a single global `dataVersion` is sufficient for VERS-01/02 as written.
    - Recommendation: Ship the simplest global-counter shape now (`{ version: string }`, one Setting key). If Phase 34's research later determines it needs finer granularity, that is a Phase 34 concern to solve without a Phase 33 schema change (the Setting-table pattern used here composes fine with adding more keys later).
+   - ✓ **RESOLVED — recommendation adopted.** `33-01-PLAN.md` Task 1 ships the bare global `{ version: string }` shape from `app/api/version/route.ts`, with a single `dataVersion` Setting key and a plain `String(Date.now())` token (no random suffix), so a Phase 34 numeric comparison needs no parsing. The plan records this as a `<reversibility rating="costly">` contract precisely because Phase 34's LOCAL-02 will consume it. Per-route version granularity is explicitly out of scope for Phase 33.
 
-2. **Does the coalesce window (`COALESCE_MS = 300`) in `FreshnessWatcher.tsx` need adjustment now that a version check is interposed before the backstop fetch?**
+2. **Does the coalesce window (`COALESCE_MS = 300`) in `FreshnessWatcher.tsx` need adjustment now that a version check is interposed before the backstop fetch?** ✓ RESOLVED
    - What we know: The 300ms coalesce is applied to the whole `refresh()` function (both `router.refresh()` and `fetchBackstop()`), not per-fetch-type.
    - What's unclear: Whether adding a `GET /api/version` round trip before the conditional backstop fetch meaningfully changes the total latency profile enough to warrant retuning the coalesce window.
    - Recommendation: Leave `COALESCE_MS` unchanged initially — the coalesce exists to collapse *event bursts* (e.g. popstate immediately followed by visibilitychange), not to bound total fetch latency, and a version check is materially cheaper than the payload fetch it may or may not gate. Revisit only if the human-verification pass in execution surfaces a perceptible added delay.
+   - ✓ **RESOLVED — recommendation adopted and enforced.** `33-01-PLAN.md` Task 1 states "`COALESCE_MS` stays 300" and locks it with the acceptance criterion `grep -c 'COALESCE_MS = 300' components/FreshnessWatcher.tsx` returns 1, so an unintended retune fails the task rather than landing silently. Retuning remains available as a follow-up if execution-time verification surfaces perceptible added delay.
 
 ## Environment Availability
 
