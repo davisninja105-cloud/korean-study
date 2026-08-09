@@ -11,6 +11,7 @@ import { SlidersHorizontal } from 'lucide-react'
 import { haptic } from '@/lib/haptics'
 import { computeStreaks, habitDateStr, DEFAULT_DAY_START_HOUR, DEFAULT_GOAL_SECONDS, type DayRecord } from '@/lib/habit'
 import { fetchCacheContext, readCache, writeCache, patchStudyCard, type StudyCachePayload } from '@/lib/local-cache'
+import { usePullToRefresh, PULL_THRESHOLD } from '@/lib/usePullToRefresh'
 import type { CardDTO, LessonDTO } from '@/lib/dto'
 
 interface PracticeCard {
@@ -345,6 +346,45 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
       })
   }, [buildParams, lessonFrom, lessonTo, maxOrder])
 
+  // Mount-guard for handleRefresh (mirrors HabitsClient.tsx's isMountedRef):
+  // a pull-to-refresh can still be in flight when the user navigates away
+  // mid-gesture; this prevents its continuation from calling setState after
+  // unmount.
+  const isMountedRef = useRef(true)
+  useEffect(() => { return () => { isMountedRef.current = false } }, [])
+
+  // Route-local pull-to-refresh (D-04, LOCAL-04) — a separate function from
+  // Home's sync handler (HomeClient.tsx), never parameterised together.
+  // Bypasses BOTH the cache read AND the version check entirely: fetches
+  // the CURRENT lesson range unconditionally and triggers NO Google Doc sync.
+  const [refreshError, setRefreshError] = useState(false)
+  const handleRefresh = useCallback(async () => {
+    haptic('impact-light')
+    if (isMountedRef.current) setRefreshError(false)
+    try {
+      // NOT a gate — the result is used only to stamp the subsequent write.
+      const ctx = await fetchCacheContext()
+      const res = await fetch(`/api/cards/due${buildParams(lessonFrom, lessonTo, 'due', maxOrder)}`)
+      if (!isMountedRef.current) return
+      if (!res.ok) throw new Error('refresh failed')
+      const fresh = (await res.json()) as CardDTO[]
+      if (!isMountedRef.current) return
+      if (phaseRef.current === 'select-mode') {
+        setStudyCards(fresh)
+        setScope('due')
+      }
+      if (ctx) {
+        versionRef.current = ctx.version
+        buildIdRef.current = ctx.buildId
+        await writeCache(ctx.buildId, 'study', fresh, ctx.version)
+      }
+    } catch {
+      if (isMountedRef.current) setRefreshError(true)
+    }
+  }, [buildParams, lessonFrom, lessonTo, maxOrder])
+
+  const { pullDistance, refreshing } = usePullToRefresh(handleRefresh)
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (phase === 'loading') {
@@ -368,6 +408,24 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
 
     return (
       <div className="flex flex-col gap-6 pt-4">
+        {/* ── Route-local pull-to-refresh indicator (D-03/D-04, UI-SPEC Component Note 3) ── */}
+        {(pullDistance > 0 || refreshing) && (
+          <div
+            className="flex items-center justify-center overflow-hidden text-xs text-muted"
+            style={{ height: refreshing ? 28 : pullDistance }}
+          >
+            {refreshing ? 'Refreshing…' : pullDistance >= PULL_THRESHOLD ? 'Release to refresh' : 'Pull to refresh'}
+          </div>
+        )}
+        {refreshError && !refreshing && pullDistance === 0 && (
+          <p className="text-center text-sm text-muted">
+            Couldn&apos;t refresh. Check your connection and try again.{' '}
+            <button type="button" onClick={handleRefresh} className="text-button font-semibold">
+              Try again
+            </button>
+          </p>
+        )}
+
         {/* ── Background-revalidation pill (D-01, UI-SPEC Component Note 1) ── */}
         {isRevalidating && (
           <div
