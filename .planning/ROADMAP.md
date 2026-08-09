@@ -267,10 +267,10 @@ Plans:
   4. After the daily cron sync runs, reopening the app shows the new lessons and cards on the next launch with no hard reload; entries are discarded when `/api/version` moves or the build ID changes, and never merely because time has passed.
   5. Pull-to-refresh bypasses both the cache and the version check entirely and repopulates from the server, so any cache problem is recoverable from the phone.
 
-**Plans**: 5 plans
+**Plans**: 1/5 plans executed
 **Wave 1**
 
-- [ ] 34-01-PLAN.md — Cache foundation (`lib/local-cache.ts`, `/api/version` buildId) plus the `/habits` tracer slice
+- [x] 34-01-PLAN.md — Cache foundation (`lib/local-cache.ts`, `/api/version` buildId) plus the `/habits` tracer slice
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -343,7 +343,7 @@ Re-measure the baseline table after Phase 30 before starting Phase 31 — the nu
 | 31. Cards List Pagination & Virtualization | v1.8 | 7/7 | Complete    | 2026-08-07 |
 | 32. Study Load Round-Trip Collapse | v1.8 | 4/4 | Complete    | 2026-08-08 |
 | 33. Version-Gated Freshness Backstop | v1.8 | 2/2 | Complete    | 2026-08-08 |
-| 34. Local-First Shell | v1.8 | 0/TBD | Not started | - |
+| 34. Local-First Shell | v1.8 | 1/5 | In Progress|  |
 | 35. Service Worker & Offline Review Queue | v1.8 | 0/TBD | Not started | - |
 
 ---
