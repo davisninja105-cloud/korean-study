@@ -20,6 +20,7 @@ import {
   expectedDueState,
   expectedCardsCount,
   expectedMasteredCount,
+  bumpDataVersionOnly,
 } from './helpers/mutate'
 import { readHomeState, readStudySelectModeState, readCardsCount, readHabitsMasteredCount } from './helpers/readers'
 
@@ -274,6 +275,17 @@ test('/cards post-mutation-return stays fresh - regression net for Phase 26 (D-0
       })
     }
   )
+
+  // Phase 33-02 (VERS-01/02): the client's last render already reflects the
+  // createMutationCard() call from earlier in this test, so by this point in
+  // the flow nothing has changed since — without an intervening version
+  // advance the gate is correctly closed here, and the mocked no-cursor
+  // /api/cards interception above would never be reached, making the final
+  // equality assertion below pass trivially instead of proving the
+  // upsert-by-id merge. bumpDataVersionOnly() reopens the gate without
+  // touching any DOM-observable value, so the interception is genuinely
+  // exercised.
+  await bumpDataVersionOnly()
 
   await simulateResume(page, true)
   await page.waitForTimeout(150)

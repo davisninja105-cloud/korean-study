@@ -28,6 +28,8 @@ import {
   seededDueReviewsPersistedDirect,
   createForwardReferenceAndRelinkDirect,
   readStudyCacheVersionDirect,
+  bumpDataVersionOnlyDirect,
+  readDataVersionDirect,
 } from './helpers/mutate'
 
 const RESULT_PREFIX = 'MUTATE_RESULT:'
@@ -44,6 +46,8 @@ const OPS: Record<string, () => Promise<string | void>> = {
   seededDueReviewsPersisted: seededDueReviewsPersistedDirect,
   createForwardReferenceAndRelink: createForwardReferenceAndRelinkDirect,
   readStudyCacheVersion: readStudyCacheVersionDirect,
+  bumpDataVersionOnly: bumpDataVersionOnlyDirect,
+  readDataVersion: readDataVersionDirect,
 }
 
 async function main(): Promise<void> {
