@@ -11,7 +11,7 @@ import { resolveDependencyEdges } from '@/lib/link-dependencies'
 import { relinkAllDependencies } from '@/lib/relink-dependencies'
 import { lessonExcerpt } from '@/lib/lesson-excerpt'
 import { prisma } from '@/lib/prisma'
-import { bumpStudyCacheVersion } from '@/lib/settings'
+import { bumpStudyCacheVersion, bumpDataVersion } from '@/lib/settings'
 
 // Cap how many new lessons we process in a single request so a large backlog
 // can't blow past the function timeout. Remaining lessons are drained on the
@@ -389,6 +389,25 @@ export async function runSync(documentId: string): Promise<SyncResult> {
     const bumpMsg = bumpErr instanceof Error ? bumpErr.message : 'Unknown error'
     console.warn(
       '[sync] studyCacheVersion bump failed (non-fatal — one stale-cache request until the next bump):',
+      bumpMsg
+    )
+  }
+
+  // Phase 33 (VERS-01): a second, independent unconditional bump of the
+  // freshness backstop's dataVersion counter. Same unconditional/non-fatal/
+  // logged-not-thrown shape as the studyCacheVersion bump directly above —
+  // it must fire regardless of failures.length/newLessons for the identical
+  // reason: the per-lesson inline card/edge creation earlier in this
+  // function can persist new rows on a run where other end-of-function gates
+  // are skipped. A failed bump here costs at most one extra JSON payload
+  // re-fetch on the next resume (FreshnessWatcher's version gate just stays
+  // open), never a lost sync.
+  try {
+    await bumpDataVersion()
+  } catch (bumpErr: unknown) {
+    const bumpMsg = bumpErr instanceof Error ? bumpErr.message : 'Unknown error'
+    console.warn(
+      '[sync] dataVersion bump failed (non-fatal — one extra payload re-fetch on the next resume):',
       bumpMsg
     )
   }
