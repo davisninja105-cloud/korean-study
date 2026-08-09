@@ -6,6 +6,7 @@ import { readableForeground } from '@/lib/color'
 import { getStoredTheme, applyTheme, type Theme } from '@/lib/theme'
 import { PALETTES, DEFAULT_ACTION_COLOR, DEFAULT_REWARD_COLOR, findActivePaletteId } from '@/lib/palettes'
 import SyncPanel from '@/components/SyncPanel'
+import { fetchCacheContext, patchActivitySlice } from '@/lib/local-cache'
 
 const GOAL_OPTIONS_MIN = [1, 3, 5, 10, 15, 20, 30]
 const SESSION_SIZE_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50]
@@ -109,6 +110,24 @@ export default function SettingsClient({
       if (typeof d.rewardColor === 'string') setRewardColor(d.rewardColor)
       if (typeof d.readingTextScale === 'number') setReadingTextScale(d.readingTextScale)
       if (typeof d.readingAid === 'boolean') setReadingAid(d.readingAid)
+
+      // PUT /api/settings does not call bumpDataVersion(), so version-check
+      // revalidation can never detect a settings change (RESEARCH Pitfall
+      // 3) — this write-through is the ONLY mechanism that keeps the
+      // Home/Habits cache honest after a save. Only the two ActivityDTO
+      // fields are ever patched; colour/session-size/reading-aid settings
+      // have no cached-DTO home. Fire-and-forget (not awaited): the helper
+      // itself never rejects, but this must never be able to delay or
+      // short-circuit setSaved(true) below.
+      if (typeof d.dailyGoalSeconds === 'number' || typeof d.dayStartHour === 'number') {
+        const activityPatch: { dailyGoalSeconds?: number; dayStartHour?: number } = {}
+        if (typeof d.dailyGoalSeconds === 'number') activityPatch.dailyGoalSeconds = d.dailyGoalSeconds
+        if (typeof d.dayStartHour === 'number') activityPatch.dayStartHour = d.dayStartHour
+        fetchCacheContext().then((ctx) => {
+          if (ctx) patchActivitySlice(ctx.buildId, activityPatch)
+        }).catch(() => {})
+      }
+
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (err) {

@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useLayoutEffect, useRef } from 'react'
-import { Home, BookOpen, Layers, Flame, Settings } from 'lucide-react'
+import { useLayoutEffect, useEffect, useRef, useState } from 'react'
+import { Home, BookOpen, Layers, Flame, Settings, WifiOff } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { haptic } from '@/lib/haptics'
 
@@ -18,6 +18,24 @@ export default function Nav() {
   const pathname = usePathname()
   const settingsActive = pathname === '/settings'
   const headerRef = useRef<HTMLElement>(null)
+
+  // Persistent offline indicator (D-02, LOCAL-05) — navigator.onLine + the
+  // online/offline window events, no polling. Initial state is false (not
+  // !navigator.onLine) so the server-rendered markup and the first client
+  // render agree; reading `navigator` during render or in a useState
+  // initialiser would be both a hydration mismatch and a react-hooks/purity
+  // violation. The effect's update() call immediately corrects it.
+  const [isOffline, setIsOffline] = useState(false)
+  useEffect(() => {
+    const update = () => setIsOffline(!navigator.onLine)
+    update()
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+    }
+  }, [])
 
   // Publishes the header's real rendered height as a `--nav-height` CSS
   // custom property on `document.documentElement`, mirroring the `--sab`
@@ -53,6 +71,16 @@ export default function Nav() {
           <Link href="/" className="text-xl font-bold text-foreground">
             Korean Study
           </Link>
+          {isOffline && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="flex items-center gap-1 bg-surface-3 text-muted-foreground text-xs px-2 py-1 rounded-full shrink-0"
+            >
+              <WifiOff className="w-3 h-3" aria-hidden="true" />
+              Offline
+            </div>
+          )}
           <div className="flex items-center gap-1">
             {/* Desktop-only inline links */}
             <nav className="hidden sm:flex gap-1">
