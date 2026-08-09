@@ -53,6 +53,23 @@ const RESULT_PREFIX = 'MUTATE_RESULT:'
 
 // ── *Direct implementations (only safe under tsx — see e2e/run-mutate.ts) ──
 
+/**
+ * Phase 33 (VERS-01/02, plan 33-02 Task 1): bumps the `dataVersion` Setting
+ * row the same way a real `POST /api/review` or `POST /api/sync` write
+ * would, so the three freshness mutators below correctly open the freshness
+ * backstop's version gate even though they bypass those routes entirely.
+ * The import is dynamic and INSIDE the function body, never a static
+ * top-of-file import — a static import would pull the ESM-only generated
+ * Prisma client into module evaluation for every Playwright worker that
+ * imports this file's public wrappers (the exact hazard this file's header
+ * comment documents), mirroring `createForwardReferenceAndRelinkDirect`'s
+ * precedent for `relinkAllDependencies()` above.
+ */
+async function bumpDataVersionDirect(): Promise<void> {
+  const { bumpDataVersion } = await import('../../lib/settings')
+  await bumpDataVersion()
+}
+
 export async function expectedDueStateDirect(): Promise<string> {
   const prisma = await getTestPrisma()
   const n = await prisma.cardReview.count({ where: { nextReview: { lte: new Date() } } })
@@ -71,6 +88,14 @@ export async function expectedMasteredCountDirect(): Promise<string> {
   return String(n)
 }
 
+// These three mutators bypass `POST /api/sync` and `POST /api/review` on
+// purpose (they write directly through Prisma to simulate "the server
+// changed" without exercising the real write routes), so each must
+// reproduce the production dataVersion bump side-effect those routes have —
+// the same reasoning createForwardReferenceAndRelinkDirect above already
+// records for relinkAllDependencies(). Every branch (including each
+// function's `else` fallback) bumps, so a fixture state that takes the
+// fallback still opens the gate.
 export async function flipOneReviewDueStateDirect(): Promise<void> {
   const prisma = await getTestPrisma()
   const now = new Date()
@@ -83,11 +108,13 @@ export async function flipOneReviewDueStateDirect(): Promise<void> {
       where: { id: anyDue.id },
       data: { nextReview: new Date(Date.now() + 365 * 86_400_000) },
     })
+    await bumpDataVersionDirect()
   } else {
     const any = await prisma.cardReview.findFirst({ orderBy: { nextReview: 'asc' } })
     if (any) {
       await prisma.cardReview.update({ where: { id: any.id }, data: { nextReview: new Date(Date.now() - 60_000) } })
     }
+    await bumpDataVersionDirect()
   }
 }
 
@@ -117,6 +144,7 @@ export async function createMutationCardDirect(): Promise<void> {
       },
     },
   })
+  await bumpDataVersionDirect()
 }
 
 export async function promoteOneReviewToMasteredDirect(): Promise<void> {
@@ -126,11 +154,13 @@ export async function promoteOneReviewToMasteredDirect(): Promise<void> {
   })
   if (candidate) {
     await prisma.cardReview.update({ where: { id: candidate.id }, data: { state: 2, scheduledDays: 30 } })
+    await bumpDataVersionDirect()
   } else {
     const any = await prisma.cardReview.findFirst()
     if (any) {
       await prisma.cardReview.update({ where: { id: any.id }, data: { scheduledDays: 5 } })
     }
+    await bumpDataVersionDirect()
   }
 }
 
@@ -146,6 +176,11 @@ export async function promoteOneReviewToMasteredDirect(): Promise<void> {
  * and freshness specs derive their expectations from those counts, and this
  * mutation changes neither the due-count nor the mastered-count query
  * results (mastered requires `scheduledDays >= 21`, which this never sets).
+ *
+ * Phase 33-02 scoping decision: deliberately NOT bumped by
+ * bumpDataVersionDirect(). This is an active-flow fixture shaper, never used
+ * as a freshness spec's "the server changed since the client rendered"
+ * step, so it has no reason to open the version gate.
  */
 export async function promoteOneDueCardToProductionDirect(): Promise<void> {
   const prisma = await getTestPrisma()
@@ -162,6 +197,12 @@ export async function promoteOneDueCardToProductionDirect(): Promise<void> {
 // safe here because resetToBaseline() (called in every spec's beforeEach)
 // guarantees only the fixture's own rows exist in the isolated DB at this
 // point, so "all rows" and "all seeded rows" are equivalent in this harness.
+//
+// Phase 33-02 scoping decision: deliberately NOT bumped by
+// bumpDataVersionDirect(). ensureAllSeededReviewsDue() runs BEFORE the page
+// is even loaded in gradeAllDueCardsToCompletion() (freshness-fresh-paths.spec.ts),
+// so it is never a freshness spec's "the server changed since the client
+// rendered" step.
 export async function ensureAllSeededReviewsDueDirect(): Promise<void> {
   const prisma = await getTestPrisma()
   await prisma.cardReview.updateMany({
@@ -262,9 +303,34 @@ export async function readStudyCacheVersionDirect(): Promise<string> {
   return row?.value ?? '(unset)'
 }
 
+/**
+ * Phase 33 (VERS-01/02, plan 33-02 Task 1): the "a write landed somewhere
+ * the client cannot see" primitive — bumps `dataVersion` without changing
+ * any observable DOM value. Used by freshness-fresh-paths.spec.ts's
+ * Upsert-not-replace extension, which needs the gate open at a point where
+ * no other mutator call is appropriate.
+ */
+export async function bumpDataVersionOnlyDirect(): Promise<void> {
+  await bumpDataVersionDirect()
+}
+
+/**
+ * Read-only: the current `dataVersion` Setting row's value, or the literal
+ * string `'(unset)'` if the key has never been written. Mirrors
+ * `readStudyCacheVersionDirect` above exactly. Used by the Task 2
+ * non-vacuity lock in e2e/freshness-version-gate.spec.ts to prove each
+ * freshness mutator actually moves this counter.
+ */
+export async function readDataVersionDirect(): Promise<string> {
+  const prisma = await getTestPrisma()
+  const row = await prisma.setting.findUnique({ where: { key: 'dataVersion' } })
+  return row?.value ?? '(unset)'
+}
+
 // ── Subprocess-delegating public API (the 7 plan-mandated exports, plus
 // createForwardReferenceAndRelink/readStudyCacheVersion added Phase 32-04
-// Task 3) ────────────────────────────────────────────────────────────────
+// Task 3, bumpDataVersionOnly/readDataVersion added Phase 33-02 Task 1)
+// ────────────────────────────────────────────────────────────────────────
 
 function runMutateOp(op: string): string {
   const tsxBin = path.resolve(process.cwd(), 'node_modules', '.bin', 'tsx')
@@ -329,4 +395,12 @@ export async function createForwardReferenceAndRelink(): Promise<void> {
 
 export async function readStudyCacheVersion(): Promise<string> {
   return parseMutateResult(runMutateOp('readStudyCacheVersion'))
+}
+
+export async function bumpDataVersionOnly(): Promise<void> {
+  runMutateOp('bumpDataVersionOnly')
+}
+
+export async function readDataVersion(): Promise<string> {
+  return parseMutateResult(runMutateOp('readDataVersion'))
 }
