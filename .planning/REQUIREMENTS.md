@@ -40,11 +40,11 @@
 
 ### Local-First Shell (P3.6)
 
-- [ ] **LOCAL-01**: Home/Study/Cards/Habits render last-known cached data immediately on mount from IndexedDB, before the network request resolves
-- [ ] **LOCAL-02**: Cache entries are version-checked against `/api/version` (never TTL-based) and keyed by build ID
-- [ ] **LOCAL-03**: Device-originated writes (reviews, card edits, settings) update the cache in the same code path as the optimistic UI update — never trailing behind a stale read
-- [ ] **LOCAL-04**: A pull-to-refresh (or equivalent) escape hatch bypasses the cache and version check entirely
-- [ ] **LOCAL-05**: With the network fully disabled, opening the app shows last-known home stats, card list, and habit data instead of an error or a blank screen
+- [x] **LOCAL-01**: Home/Study/Cards/Habits render last-known cached data immediately on mount from IndexedDB, before the network request resolves
+- [x] **LOCAL-02**: Cache entries are version-checked against `/api/version` (never TTL-based) and keyed by build ID
+- [x] **LOCAL-03**: Device-originated writes (reviews, card edits, settings) update the cache in the same code path as the optimistic UI update — never trailing behind a stale read
+- [x] **LOCAL-04**: A pull-to-refresh (or equivalent) escape hatch bypasses the cache and version check entirely
+- [x] **LOCAL-05**: With the network fully disabled, opening the app shows last-known home stats, card list, and habit data instead of an error or a blank screen
 
 ### Offline Support (P3.7)
 
@@ -88,11 +88,11 @@ All 21 v1 requirements map to exactly one phase. No orphans, no duplicates.
 | VERS-01 | Phase 33 | Complete |
 | VERS-02 | Phase 33 | Complete |
 | REGION-01 | Phase 30 | Complete |
-| LOCAL-01 | Phase 34 | Pending |
-| LOCAL-02 | Phase 34 | Pending |
-| LOCAL-03 | Phase 34 | Pending |
-| LOCAL-04 | Phase 34 | Pending |
-| LOCAL-05 | Phase 34 | Pending |
+| LOCAL-01 | Phase 34 | Complete |
+| LOCAL-02 | Phase 34 | Complete |
+| LOCAL-03 | Phase 34 | Complete |
+| LOCAL-04 | Phase 34 | Complete |
+| LOCAL-05 | Phase 34 | Complete |
 | OFFLINE-01 | Phase 35 | Pending |
 | OFFLINE-02 | Phase 35 | Pending |
 | OFFLINE-03 | Phase 35 | Pending |

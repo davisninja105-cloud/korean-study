@@ -12,6 +12,7 @@ import { usePullToRefresh, PULL_THRESHOLD } from '@/lib/usePullToRefresh'
 import { habitDateStr } from '@/lib/habit'
 import { CheckCircle2 } from 'lucide-react'
 import type { StatsDTO, ActivityDTO } from '@/lib/dto'
+import { fetchCacheContext, readCache, writeCache, type HomeCachePayload } from '@/lib/local-cache'
 
 type HeroState = 'loading' | 'A' | 'B' | 'C'
 
@@ -29,6 +30,24 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
 
   const [stats, setStats] = useState<StatsDTO>(initialStats)
   const [activityData, setActivityData] = useState<ActivityDTO>(initialActivity)
+  // Ref mirrors of the two state values above, kept in sync via a plain
+  // (non-setState) ref mutation in an effect — lets handleSync (Task 2) read
+  // "whatever is currently on screen" as a partial-failure fallback for the
+  // cache write without adding stats/activityData to handleSync's own
+  // dependency array (which would re-register usePullToRefresh's touch
+  // listeners on every stats/activity change).
+  const statsRef = useRef(stats)
+  useEffect(() => { statsRef.current = stats }, [stats])
+  const activityDataRef = useRef(activityData)
+  useEffect(() => { activityDataRef.current = activityData }, [activityData])
+
+  // The /api/version value + buildId this mount observed — held in refs
+  // (not state) so the render-phase prop-adoption blocks below (which
+  // cannot await) can fire a write-through without a second fetch. Same
+  // pattern as HabitsClient.tsx's versionRef/buildIdRef (Phase 34-01).
+  const versionRef = useRef<string | null>(null)
+  const buildIdRef = useRef<string | null>(null)
+  const [isRevalidating, setIsRevalidating] = useState(false)
 
   // Ungated render-phase adoption of fresh props (React's official "adjusting
   // state when props change" pattern — https://react.dev/reference/react/useState#storing-information-from-previous-renders).
@@ -42,11 +61,19 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
   if (initialStats !== prevInitialStats) {
     setPrevInitialStats(initialStats)
     setStats(initialStats)
+    // Keep the cache from falling behind an RSC-delivered update (Task 1, 34-04-PLAN.md).
+    if (versionRef.current && buildIdRef.current) {
+      writeCache(buildIdRef.current, 'home', { stats: initialStats, activity: activityData }, versionRef.current).catch(() => {})
+    }
   }
   const [prevInitialActivity, setPrevInitialActivity] = useState(initialActivity)
   if (initialActivity !== prevInitialActivity) {
     setPrevInitialActivity(initialActivity)
     setActivityData(initialActivity)
+    // Keep the cache from falling behind an RSC-delivered update (Task 1, 34-04-PLAN.md).
+    if (versionRef.current && buildIdRef.current) {
+      writeCache(buildIdRef.current, 'home', { stats, activity: initialActivity }, versionRef.current).catch(() => {})
+    }
   }
 
   const [heroState, setHeroState] = useState<HeroState>('loading')
@@ -83,32 +110,40 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
   }, [])
 
   // Post-sync refetch: called only from handleSync — NOT on mount (D-08, Pitfall 1).
-  const loadStats = useCallback(() => {
-    fetch('/api/stats')
-      .then((r) => { if (!r.ok) throw new Error('stats failed'); return r.json() })
-      .then((data: StatsDTO) => {
-        if (!isMountedRef.current) return
-        setStats(data)
-        checkBandUp(data.masteredCount)
-      })
-      .catch(() => {
-        // Post-sync refetch failed (transient network/5xx) — surface it so the
-        // user knows the displayed stats may be stale despite sync succeeding.
-        if (isMountedRef.current) setSyncMsg('Synced — refresh failed, reload to update')
-      })
+  // Rewritten async/await (Task 2, 34-04-PLAN.md) to return the parsed DTO so
+  // handleSync can await it and write the fresh value through to the cache —
+  // the existing setState call, checkBandUp call, and failure copy are
+  // preserved exactly, just no longer inside a .then() chain.
+  const loadStats = useCallback(async (): Promise<StatsDTO | undefined> => {
+    try {
+      const r = await fetch('/api/stats')
+      if (!r.ok) throw new Error('stats failed')
+      const data = (await r.json()) as StatsDTO
+      if (!isMountedRef.current) return undefined
+      setStats(data)
+      checkBandUp(data.masteredCount)
+      return data
+    } catch {
+      // Post-sync refetch failed (transient network/5xx) — surface it so the
+      // user knows the displayed stats may be stale despite sync succeeding.
+      if (isMountedRef.current) setSyncMsg('Synced — refresh failed, reload to update')
+      return undefined
+    }
   }, [checkBandUp])
 
-  const loadActivity = useCallback(() => {
-    fetch('/api/activity')
-      .then((r) => { if (!r.ok) throw new Error('activity failed'); return r.json() })
-      .then((data: ActivityDTO) => {
-        if (!isMountedRef.current) return
-        setActivityData(data)
-      })
-      .catch(() => {
-        // Same partial-failure feedback as loadStats above.
-        if (isMountedRef.current) setSyncMsg('Synced — refresh failed, reload to update')
-      })
+  const loadActivity = useCallback(async (): Promise<ActivityDTO | undefined> => {
+    try {
+      const r = await fetch('/api/activity')
+      if (!r.ok) throw new Error('activity failed')
+      const data = (await r.json()) as ActivityDTO
+      if (!isMountedRef.current) return undefined
+      setActivityData(data)
+      return data
+    } catch {
+      // Same partial-failure feedback as loadStats above.
+      if (isMountedRef.current) setSyncMsg('Synced — refresh failed, reload to update')
+      return undefined
+    }
   }, [])
 
   // Mount effect: greeting + first-load band-up check.
@@ -125,6 +160,68 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
     // masteredCount (Pitfall 5 — must fire even on first load, not just after sync).
     checkBandUp(initialStats.masteredCount)
   }, [initialStats.masteredCount, checkBandUp])
+
+  // Cache-first mount read + version-checked revalidation (LOCAL-01, LOCAL-02,
+  // Task 1, 34-04-PLAN.md). Paints the cached { stats, activity } entry
+  // instantly if one exists — the existing heroState/today derivation effect
+  // above already depends on [stats, activityData], so it recomputes
+  // automatically once these setters fire. Revalidates only when there is no
+  // entry, or the entry's dataVersion no longer matches /api/version — never
+  // on elapsed time (cachedAt is display/debug metadata only). A revalidation
+  // failure sets NO syncMsg — that string is reserved for the explicit
+  // pull-to-sync path (UI-SPEC E1 error: background revalidation is silent).
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      const ctx = await fetchCacheContext()
+      if (cancelled || !ctx) return // offline cold path — RSC props already rendered
+      const { version, buildId } = ctx
+      versionRef.current = version
+      buildIdRef.current = buildId
+
+      const cached = await readCache<HomeCachePayload>(buildId, 'home')
+      if (cancelled) return
+      if (cached) {
+        setStats(cached.data.stats)
+        setActivityData(cached.data.activity)
+      }
+
+      if (!cached || cached.dataVersion !== version) {
+        setIsRevalidating(true)
+        try {
+          const [statsRes, activityRes] = await Promise.allSettled([fetch('/api/stats'), fetch('/api/activity')])
+          if (cancelled) return
+
+          // Fall back to whichever slice already exists (cache hit, or the
+          // props-seeded initial value if this is a first-ever visit) so a
+          // partial failure never writes a blank or stale-blank field
+          // (UI-SPEC E1 partial backstop).
+          let freshStats: StatsDTO = cached?.data.stats ?? initialStats
+          let freshActivity: ActivityDTO = cached?.data.activity ?? initialActivity
+
+          if (statsRes.status === 'fulfilled' && statsRes.value.ok) {
+            freshStats = (await statsRes.value.json()) as StatsDTO
+            if (!cancelled) {
+              setStats(freshStats)
+              // Band-up detected against freshly-revalidated data — the mount
+              // effect above already ran checkBandUp against initialStats, so
+              // this is not a duplicate check against the same value.
+              checkBandUp(freshStats.masteredCount)
+            }
+          }
+          if (activityRes.status === 'fulfilled' && activityRes.value.ok) {
+            freshActivity = (await activityRes.value.json()) as ActivityDTO
+            if (!cancelled) setActivityData(freshActivity)
+          }
+          if (cancelled) return
+          await writeCache(buildId, 'home', { stats: freshStats, activity: freshActivity }, version)
+        } finally {
+          if (!cancelled) setIsRevalidating(false)
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [checkBandUp, initialStats, initialActivity])
 
   // Derive heroState + today from stats + activityData.
   // habitDateStr must be called here (inside useEffect) — it calls new Date()
@@ -170,8 +267,30 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
           ? `Synced — ${data.newCards} new card${data.newCards !== 1 ? 's' : ''}`
           : 'Up to date'
       )
-      loadStats()
-      loadActivity()   // keep activity in sync so heroState uses the correct habit day
+      // Awaited (not fire-and-forget) so the fresh DTOs are available to
+      // write through to the cache below (Task 2, 34-04-PLAN.md).
+      const [freshStats, freshActivity] = await Promise.all([
+        loadStats(),
+        loadActivity(), // keep activity in sync so heroState uses the correct habit day
+      ])
+
+      // Unconditional escape-hatch write-through (D-00 rule 5, D-04): no
+      // cache lookup and no dataVersion comparison here — pull-to-sync
+      // always writes, it never gates on whether a revalidation would have
+      // fired anyway. A failed refetch falls back to the ref-mirrored
+      // currently-held state value so it never writes a blank slice
+      // (same partial-failure discipline as Task 1's mount revalidation).
+      const ctx = await fetchCacheContext()
+      if (ctx) {
+        versionRef.current = ctx.version
+        buildIdRef.current = ctx.buildId
+        await writeCache(
+          ctx.buildId,
+          'home',
+          { stats: freshStats ?? statsRef.current, activity: freshActivity ?? activityDataRef.current },
+          ctx.version,
+        )
+      }
     } catch {
       setSyncMsg('Sync failed — try again from Settings')
     }
@@ -183,6 +302,20 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* ── Background-revalidation pill (D-01) — position: fixed, contributes
+          no layout when hidden, so it is safe as a direct child here. ── */}
+      {isRevalidating && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed left-1/2 -translate-x-1/2 z-[5] flex items-center gap-1.5 bg-surface-1 border border-border text-muted text-xs px-2 py-1 rounded-full shadow-sm"
+          style={{ top: 'calc(var(--nav-height, 68px) + 8px)' }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-muted animate-pulse" aria-hidden="true" />
+          Updating…
+        </div>
+      )}
+
       {/* ── Pull-to-refresh indicator ── */}
       {(pullDistance > 0 || refreshing) && (
         <div
