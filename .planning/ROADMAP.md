@@ -244,7 +244,15 @@ Plans:
   3. When the counter has moved (for example after the daily cron sync), the same resume path re-fetches and the route shows the new data; the existing `e2e/freshness-*` resume and back-forward specs stay green.
   4. `FreshnessWatcher` still exists and still applies its JSON re-fetch backstop when the version has changed, carrying a `TODO` that records the Next.js version last tested for the underlying Suspense/Segment-Cache flake.
 
-**Plans**: TBD
+**Plans**: 2 plans
+
+**Wave 1**
+
+- [ ] 33-01-PLAN.md — tracer: review write → `dataVersion` Setting row → `GET /api/version` → version-gated `FreshnessWatcher` backstop (`router.refresh()` stays unconditional); plus the `runSync()` bump and the real-DB bump/non-bump regression locks
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 33-02-PLAN.md — make the e2e freshness harness truthful under the gate: bump `dataVersion` in the 3 `*Direct` mutators, reopen the gate for the Upsert-not-replace section, and lock non-vacuity so a missing bump turns a spec red rather than hollow
 
 ### Phase 34: Local-First Shell
 
