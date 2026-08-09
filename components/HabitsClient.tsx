@@ -85,6 +85,53 @@ export default function HabitsClient({
   const buildIdRef = useRef<string | null>(null)
   const [isRevalidating, setIsRevalidating] = useState(false)
   const [refreshError, setRefreshError] = useState(false)
+  // Mount-guard for handleRefresh (Task 3, 34-01-PLAN.md): handleRefresh is a
+  // user-triggered callback, not an effect, so it has no natural per-call
+  // `cancelled` closure the way the mount effect below does. A pull-to-
+  // refresh can still be in flight when the user navigates away mid-gesture;
+  // this ref (same idiom as HomeClient.tsx's isMountedRef) prevents its
+  // continuation from calling setState after unmount.
+  const isMountedRef = useRef(true)
+  useEffect(() => { return () => { isMountedRef.current = false } }, [])
+
+  // Shared revalidation body (Task 3, 34-01-PLAN.md finding): `/habits` has
+  // its own app/habits/loading.tsx, making it one of the exact routes
+  // FreshnessWatcher.tsx's own header comment names as affected by a real,
+  // unfixed Next.js 16.2.1 bug — a boundary-triggered router.refresh() can
+  // fetch a fresh RSC payload on the server but silently fail to apply it to
+  // the already-mounted client tree. The retired JSON backstop
+  // (useFreshPayload) used to paper over exactly this by re-fetching
+  // /api/activity+/api/stats on every visibilitychange/popstate/pageshow,
+  // independent of whether the RSC application succeeded. D-00 rule 3 says
+  // this cache is supposed to REPLACE that layer, not just delete it — which
+  // means the replacement must independently re-trigger on the SAME
+  // boundary events, not only once at mount. Verified empirically: without
+  // this, e2e/freshness-router-cache.spec.ts's "/habits resume" case
+  // regressed (confirmed by bisecting against the pre-Phase-34 HabitsClient,
+  // which passed only because the now-removed backstop was covering for
+  // this exact flake).
+  const revalidate = useCallback(async (buildId: string, version: string, cancelledRef: { current: boolean }) => {
+    setIsRevalidating(true)
+    try {
+      const [activityRes, statsRes] = await Promise.all([fetch('/api/activity'), fetch('/api/stats')])
+      if (cancelledRef.current) return
+      if (!activityRes.ok || !statsRes.ok) return
+      const activity = (await activityRes.json()) as ActivityDTO
+      const stats = (await statsRes.json()) as StatsDTO
+      if (cancelledRef.current) return
+      const fresh: HabitsCachePayload = {
+        days: activity.days,
+        dailyGoalSeconds: activity.dailyGoalSeconds,
+        dayStartHour: activity.dayStartHour,
+        masteredCount: stats.masteredCount,
+        cardsByState: stats.cardsByState,
+      }
+      setCacheOverride(fresh)
+      await writeCache(buildId, 'habits', fresh, version)
+    } finally {
+      if (!cancelledRef.current) setIsRevalidating(false)
+    }
+  }, [])
 
   // Cache-first mount read (LOCAL-01, LOCAL-05): paints the cached entry
   // instantly if one exists, then revalidates in the background against
@@ -93,43 +140,65 @@ export default function HabitsClient({
   // isRevalidating and shows no error copy — the already-painted content
   // (cache or RSC props) stands (UI-SPEC E4 error).
   useEffect(() => {
-    let cancelled = false
+    const cancelledRef = { current: false }
     ;(async () => {
       const ctx = await fetchCacheContext()
-      if (cancelled || !ctx) return // offline cold path — RSC props already rendered
+      if (cancelledRef.current || !ctx) return // offline cold path — RSC props already rendered
       const { version, buildId } = ctx
       versionRef.current = version
       buildIdRef.current = buildId
 
       const cached = await readCache<HabitsCachePayload>(buildId, 'habits')
-      if (cancelled) return
+      if (cancelledRef.current) return
       if (cached) setCacheOverride(cached.data)
 
       if (!cached || cached.dataVersion !== version) {
-        setIsRevalidating(true)
-        try {
-          const [activityRes, statsRes] = await Promise.all([fetch('/api/activity'), fetch('/api/stats')])
-          if (cancelled) return
-          if (!activityRes.ok || !statsRes.ok) return
-          const activity = (await activityRes.json()) as ActivityDTO
-          const stats = (await statsRes.json()) as StatsDTO
-          if (cancelled) return
-          const fresh: HabitsCachePayload = {
-            days: activity.days,
-            dailyGoalSeconds: activity.dailyGoalSeconds,
-            dayStartHour: activity.dayStartHour,
-            masteredCount: stats.masteredCount,
-            cardsByState: stats.cardsByState,
-          }
-          setCacheOverride(fresh)
-          await writeCache(buildId, 'habits', fresh, version)
-        } finally {
-          if (!cancelled) setIsRevalidating(false)
-        }
+        await revalidate(buildId, version, cancelledRef)
+        if (!cancelledRef.current) versionRef.current = version
       }
     })()
-    return () => { cancelled = true }
-  }, [])
+    return () => { cancelledRef.current = true }
+  }, [revalidate])
+
+  // Boundary-event revalidation: re-checks /api/version on the same events
+  // FreshnessWatcher.tsx's now-removed JSON backstop used to (visibility
+  // hidden→visible, popstate, a genuine bfcache pageshow) — this is what
+  // lets /habits catch up after a resume/back-forward even when
+  // router.refresh()'s RSC application silently fails (see revalidate's doc
+  // comment above). A 300ms coalesce guard mirrors FreshnessWatcher's own
+  // COALESCE_MS constant, collapsing an event burst into one check.
+  useEffect(() => {
+    const cancelledRef = { current: false }
+    const lastCheckRef = { current: 0 }
+    const check = () => {
+      const now = Date.now()
+      if (now - lastCheckRef.current < 300) return
+      lastCheckRef.current = now
+      ;(async () => {
+        const ctx = await fetchCacheContext()
+        if (cancelledRef.current || !ctx) return
+        if (ctx.version !== versionRef.current) {
+          buildIdRef.current = ctx.buildId
+          await revalidate(ctx.buildId, ctx.version, cancelledRef)
+          if (!cancelledRef.current) versionRef.current = ctx.version
+        }
+      })()
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') check()
+    }
+    const onPopState = () => { setTimeout(check, 0) }
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) check() }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('popstate', onPopState)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      cancelledRef.current = true
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [revalidate])
 
   // Props-win: a genuinely fresher RSC delivery (a new initialDays
   // reference) is strictly newer than any cache override, so it clears the
@@ -167,13 +236,16 @@ export default function HabitsClient({
   // triggers NO Google Doc sync.
   const handleRefresh = useCallback(async () => {
     haptic('impact-light')
-    setRefreshError(false)
+    if (isMountedRef.current) setRefreshError(false)
     try {
       const ctx = await fetchCacheContext()
+      if (!isMountedRef.current) return
       const [activityRes, statsRes] = await Promise.all([fetch('/api/activity'), fetch('/api/stats')])
+      if (!isMountedRef.current) return
       if (!activityRes.ok || !statsRes.ok) throw new Error('refresh failed')
       const activity = (await activityRes.json()) as ActivityDTO
       const stats = (await statsRes.json()) as StatsDTO
+      if (!isMountedRef.current) return
       const fresh: HabitsCachePayload = {
         days: activity.days,
         dailyGoalSeconds: activity.dailyGoalSeconds,
@@ -188,7 +260,7 @@ export default function HabitsClient({
         await writeCache(ctx.buildId, 'habits', fresh, ctx.version)
       }
     } catch {
-      setRefreshError(true)
+      if (isMountedRef.current) setRefreshError(true)
     }
   }, [])
 

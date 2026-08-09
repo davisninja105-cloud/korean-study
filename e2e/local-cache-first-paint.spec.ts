@@ -14,7 +14,8 @@
 import { test, expect, type Page, type Request as PwRequest } from '@playwright/test'
 import { resetToBaseline } from './seed'
 import { isRscRequest } from './helpers/rsc'
-import { bumpDataVersionOnly } from './helpers/mutate'
+import { bumpDataVersionOnly, promoteOneReviewToMastered, expectedMasteredCount } from './helpers/mutate'
+import { readHabitsMasteredCount } from './helpers/readers'
 
 test.beforeEach(async () => {
   await resetToBaseline()
@@ -180,4 +181,42 @@ test('/habits keeps rendering last-known data when the network drops mid-session
   } finally {
     await context.setOffline(false)
   }
+})
+
+// UI-SPEC E4 "partial" backstop (Task 3, 34-01-PLAN.md): Habits and Home
+// both derive from ActivityDTO/StatsDTO but hold SEPARATE cache entries.
+// This proves a change originating elsewhere (a direct DB mutation, never a
+// Home-side write-through — Home is never visited in this test, and no
+// patchActivitySlice-style write-through into the habits cache entry exists
+// for this mutation) is visible on the next /habits visit — Habits'
+// correctness does not depend on ever having visited Home first. Note: on a
+// real full navigation the RSC layer (app/habits/page.tsx's live Prisma
+// read) ALSO already delivers the fresh count independently of the
+// IndexedDB cache — this test cannot cleanly isolate "which layer did it"
+// in a production e2e build, but it proves the END-TO-END guarantee UI-SPEC
+// E4 partial actually cares about: the displayed value converges to truth
+// with zero cross-route write-through required. Cache-layer isolation
+// (readCache returns the STALE value first, then the version-check
+// revalidation corrects it) is separately covered by inspection + the unit
+// suite's version-mismatch behavior.
+test("/habits shows a change that originated elsewhere on the next visit, with no Home-side write-through required (UI-SPEC E4 partial)", async ({
+  page,
+}) => {
+  // Warm visit populates the cache with the baseline mastered count.
+  await page.goto('/habits')
+  await page.waitForLoadState('networkidle')
+  const baselineCount = await readHabitsMasteredCount(page)
+
+  // A change originating elsewhere — direct DB mutation via a separate tsx
+  // subprocess (mirrors freshness-router-cache.spec.ts's mutator pattern),
+  // never through Home's UI or any Home-side cache write-through.
+  await promoteOneReviewToMastered()
+  const expected = await expectedMasteredCount()
+  expect(expected).not.toBe(baselineCount) // sanity: the mutation actually changed the count
+
+  // A fresh mount of /habits (new navigation, not a resume of the same
+  // mount) must show the change.
+  await page.goto('/habits')
+  await page.waitForLoadState('networkidle')
+  await expect.poll(() => readHabitsMasteredCount(page)).toBe(expected)
 })
