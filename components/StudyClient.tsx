@@ -3,14 +3,15 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import ModeSelector, { StudyMode } from '@/components/ModeSelector'
-import StudySession from '@/components/StudySession'
+import StudySession, { type Card as StudySessionCard } from '@/components/StudySession'
 import LessonRangeFilter, { isFullSpan } from '@/components/LessonRangeFilter'
 import ProgressRing from '@/components/ProgressRing'
 import Sheet from '@/components/Sheet'
 import { SlidersHorizontal } from 'lucide-react'
 import { haptic } from '@/lib/haptics'
 import { computeStreaks, habitDateStr, DEFAULT_DAY_START_HOUR, DEFAULT_GOAL_SECONDS, type DayRecord } from '@/lib/habit'
-import { useFreshPayload } from '@/components/FreshnessWatcher'
+import { fetchCacheContext, readCache, writeCache, patchStudyCard, type StudyCachePayload } from '@/lib/local-cache'
+import { usePullToRefresh, PULL_THRESHOLD } from '@/lib/usePullToRefresh'
 import type { CardDTO, LessonDTO } from '@/lib/dto'
 
 interface PracticeCard {
@@ -53,6 +54,14 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
   // pattern.
   const phaseRef = useRef(phase)
   useEffect(() => { phaseRef.current = phase }, [phase])
+
+  // The /api/version value + buildId this mount observed — read once on
+  // mount (and refreshed by revalidation), held in refs so the render-phase
+  // prevInitialCards-win block below (which cannot await) can fire a
+  // write-through without needing a second fetch (mirrors HabitsClient.tsx).
+  const versionRef = useRef<string | null>(null)
+  const buildIdRef = useRef<string | null>(null)
+  const [isRevalidating, setIsRevalidating] = useState(false)
 
   // Lesson range filter — initialized from server-provided props (no initial fetch needed)
   const [lessons] = useState<LessonDTO[]>(initialLessons)
@@ -152,33 +161,113 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
       setStudyCards(initialCards)
       setScope('due')
     }
-  }
-
-  // JSON backstop delivery (26-05-PLAN.md) — Suspense-independent second
-  // delivery path for the SAME payload getStudyCards() (and the RSC page's
-  // props above) both derive from: FreshnessWatcher's boundary handler also
-  // fetches /api/cards/due directly and exposes it via context, so this
-  // shell adopts fresh due-cards even when Next.js drops the RSC payload
-  // application (deferred-items.md). Same 3-part gate as prevInitialCards
-  // verbatim, plus the null check (freshStudy starts null until a backstop
-  // delivery actually arrives). The prev-holder is mount-seeded to the
-  // CURRENT slice value, so only deliveries arriving AFTER mount are ever
-  // adopted — a plain-Link-navigated shell with fresh RSC props sees no
-  // post-mount slice change at all and adopts nothing.
-  const { study: freshStudy } = useFreshPayload()
-  const [prevFreshStudy, setPrevFreshStudy] = useState(freshStudy)
-  if (freshStudy !== prevFreshStudy) {
-    setPrevFreshStudy(freshStudy)
-    if (
-      freshStudy !== null &&
-      phase === 'select-mode' &&
-      !isFilterLoading &&
-      isFullSpan(lessonFrom, lessonTo, maxOrder)
-    ) {
-      setStudyCards(freshStudy)
-      setScope('due')
+    // A genuinely fresher RSC delivery is strictly newer than any cache
+    // entry — fire-and-forget write-through so the cache does not fall
+    // behind an RSC-delivered update (34-02-PLAN.md Task 1). Only fires once
+    // a version is known (post-mount); matches HabitsClient.tsx's identical
+    // precedent.
+    if (versionRef.current && buildIdRef.current) {
+      writeCache(buildIdRef.current, 'study', initialCards, versionRef.current).catch(() => {})
     }
   }
+
+  // Shared revalidation body (mirrors HabitsClient.tsx's `revalidate`,
+  // 34-01-PLAN.md Task 3 precedent): fetches the unfiltered (full-span) due
+  // list — always with NO lesson params, matching what the `study` cache
+  // entry itself always stores — applies the SAME discard guard `loadDue`
+  // already uses (phaseRef.current === 'select-mode') PLUS a full-span
+  // check (an unfiltered fetch must never clobber a narrowed lesson-range
+  // view), then writes the cache regardless of whether adoption was
+  // rejected — the payload is server truth for that version regardless of
+  // what the user is currently looking at.
+  const revalidate = useCallback(async (buildId: string, version: string, cancelledRef: { current: boolean }) => {
+    setIsRevalidating(true)
+    try {
+      const res = await fetch('/api/cards/due')
+      if (cancelledRef.current || !res.ok) return
+      const fresh = (await res.json()) as CardDTO[]
+      if (cancelledRef.current) return
+      if (phaseRef.current === 'select-mode' && isFullSpan(lessonFrom, lessonTo, maxOrder)) {
+        setStudyCards(fresh)
+        setScope('due')
+      }
+      await writeCache(buildId, 'study', fresh, version)
+    } finally {
+      if (!cancelledRef.current) setIsRevalidating(false)
+    }
+  }, [lessonFrom, lessonTo, maxOrder])
+
+  // Cache-first mount read (LOCAL-01) + version-checked background
+  // revalidation (LOCAL-02) — never gated on elapsed time (D-00 rule 2). No
+  // gate is needed on the initial cache-read paint itself: this effect runs
+  // at mount, where phase is 'select-mode', isFilterLoading is false, and
+  // the lesson range is the full span by construction.
+  useEffect(() => {
+    const cancelledRef = { current: false }
+    ;(async () => {
+      const ctx = await fetchCacheContext()
+      if (cancelledRef.current || !ctx) return // offline cold path — RSC-provided initialCards already rendered
+      const { version, buildId } = ctx
+      versionRef.current = version
+      buildIdRef.current = buildId
+
+      const cached = await readCache<StudyCachePayload>(buildId, 'study')
+      if (cancelledRef.current) return
+      if (cached) {
+        setStudyCards(cached.data)
+        setScope('due')
+      }
+
+      if (!cached || cached.dataVersion !== version) {
+        await revalidate(buildId, version, cancelledRef)
+        if (!cancelledRef.current) versionRef.current = version
+      }
+    })()
+    return () => { cancelledRef.current = true }
+  }, [revalidate])
+
+  // Boundary-event revalidation (Rule 2 auto-add — see SUMMARY Deviations):
+  // /study has its own app/study/loading.tsx, making it one of the exact
+  // routes affected by the same real, unfixed Next.js 16.2.1 RSC-application
+  // flake 34-01-SUMMARY.md's Deviation #2 found and fixed for /habits — a
+  // boundary-triggered router.refresh() can fetch a fresh RSC payload on the
+  // server but silently fail to apply it to the already-mounted client tree.
+  // Mirrors HabitsClient.tsx's second effect: re-checks /api/version on the
+  // same three events FreshnessWatcher's now-removed JSON backstop used to
+  // (visibility hidden→visible, popstate, a genuine bfcache pageshow), with
+  // the same 300ms coalesce guard.
+  useEffect(() => {
+    const cancelledRef = { current: false }
+    const lastCheckRef = { current: 0 }
+    const check = () => {
+      const now = Date.now()
+      if (now - lastCheckRef.current < 300) return
+      lastCheckRef.current = now
+      ;(async () => {
+        const ctx = await fetchCacheContext()
+        if (cancelledRef.current || !ctx) return
+        if (ctx.version !== versionRef.current) {
+          buildIdRef.current = ctx.buildId
+          await revalidate(ctx.buildId, ctx.version, cancelledRef)
+          if (!cancelledRef.current) versionRef.current = ctx.version
+        }
+      })()
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') check()
+    }
+    const onPopState = () => { setTimeout(check, 0) }
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) check() }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('popstate', onPopState)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      cancelledRef.current = true
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [revalidate])
 
   const handleRangeChange = (from: number, to: number) => {
     setShowFilterSheet(false)
@@ -217,6 +306,19 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
     setPhase('complete')
   }
 
+  // Cache write-through (LOCAL-03) — StudySession calls this synchronously
+  // from the same code path as its optimistic queue advance (submitReview)
+  // and a successful undo. Fire-and-forget, never awaited: patchStudyCard
+  // owns its own error swallowing (lib/local-cache.ts). No-ops before a
+  // buildId is known (offline cold path — nothing was ever cached to patch).
+  // updatedCardOrNull is typed as StudySession's own (narrower) Card shape;
+  // the runtime value always originates from a real CardDTO passed in as
+  // `cards` prop, only ever spread with additive `review` field updates.
+  const handleReviewCommitted = useCallback((cardId: string, updatedCardOrNull: StudySessionCard | null) => {
+    if (!buildIdRef.current) return
+    void patchStudyCard(buildIdRef.current, cardId, updatedCardOrNull as CardDTO | null)
+  }, [])
+
   // Fetch the next batch of ahead cards and start a new session.
   // startAhead still uses setPhase('loading') — brief skeleton is acceptable for the
   // ahead fetch per the UI-SPEC; 'loading' is only eliminated from the INITIAL paint path.
@@ -244,6 +346,45 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
       })
   }, [buildParams, lessonFrom, lessonTo, maxOrder])
 
+  // Mount-guard for handleRefresh (mirrors HabitsClient.tsx's isMountedRef):
+  // a pull-to-refresh can still be in flight when the user navigates away
+  // mid-gesture; this prevents its continuation from calling setState after
+  // unmount.
+  const isMountedRef = useRef(true)
+  useEffect(() => { return () => { isMountedRef.current = false } }, [])
+
+  // Route-local pull-to-refresh (D-04, LOCAL-04) — a separate function from
+  // Home's sync handler (HomeClient.tsx), never parameterised together.
+  // Bypasses BOTH the cache read AND the version check entirely: fetches
+  // the CURRENT lesson range unconditionally and triggers NO Google Doc sync.
+  const [refreshError, setRefreshError] = useState(false)
+  const handleRefresh = useCallback(async () => {
+    haptic('impact-light')
+    if (isMountedRef.current) setRefreshError(false)
+    try {
+      // NOT a gate — the result is used only to stamp the subsequent write.
+      const ctx = await fetchCacheContext()
+      const res = await fetch(`/api/cards/due${buildParams(lessonFrom, lessonTo, 'due', maxOrder)}`)
+      if (!isMountedRef.current) return
+      if (!res.ok) throw new Error('refresh failed')
+      const fresh = (await res.json()) as CardDTO[]
+      if (!isMountedRef.current) return
+      if (phaseRef.current === 'select-mode') {
+        setStudyCards(fresh)
+        setScope('due')
+      }
+      if (ctx) {
+        versionRef.current = ctx.version
+        buildIdRef.current = ctx.buildId
+        await writeCache(ctx.buildId, 'study', fresh, ctx.version)
+      }
+    } catch {
+      if (isMountedRef.current) setRefreshError(true)
+    }
+  }, [buildParams, lessonFrom, lessonTo, maxOrder])
+
+  const { pullDistance, refreshing } = usePullToRefresh(handleRefresh)
+
   // ── Render ─────────────────────────────────────────────────────────────────
 
   if (phase === 'loading') {
@@ -267,6 +408,37 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
 
     return (
       <div className="flex flex-col gap-6 pt-4">
+        {/* ── Route-local pull-to-refresh indicator (D-03/D-04, UI-SPEC Component Note 3) ── */}
+        {(pullDistance > 0 || refreshing) && (
+          <div
+            className="flex items-center justify-center overflow-hidden text-xs text-muted"
+            style={{ height: refreshing ? 28 : pullDistance }}
+          >
+            {refreshing ? 'Refreshing…' : pullDistance >= PULL_THRESHOLD ? 'Release to refresh' : 'Pull to refresh'}
+          </div>
+        )}
+        {refreshError && !refreshing && pullDistance === 0 && (
+          <p className="text-center text-sm text-muted">
+            Couldn&apos;t refresh. Check your connection and try again.{' '}
+            <button type="button" onClick={handleRefresh} className="text-button font-semibold">
+              Try again
+            </button>
+          </p>
+        )}
+
+        {/* ── Background-revalidation pill (D-01, UI-SPEC Component Note 1) ── */}
+        {isRevalidating && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="fixed left-1/2 -translate-x-1/2 z-[5] flex items-center gap-1.5 bg-surface-1 border border-border text-muted text-xs px-2 py-1 rounded-full shadow-sm"
+            style={{ top: 'calc(var(--nav-height, 68px) + 8px)' }}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-muted animate-pulse" aria-hidden="true" />
+            Updating…
+          </div>
+        )}
+
         {/* Filter trigger → opens a bottom sheet */}
         {lessons.length >= 2 && (
           <div className="flex justify-center">
@@ -389,6 +561,7 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
         extraPractice={practice}
         mode={mode}
         onComplete={handleComplete}
+        onReviewCommitted={handleReviewCommitted}
       />
     )
   }

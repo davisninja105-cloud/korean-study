@@ -145,9 +145,17 @@ interface Props {
   extraPractice: PracticeCard[]
   mode: StudyMode
   onComplete: (stats: { reviewed: number; correct: number; incorrect: number }) => void
+  // Optional cache write-through hook (LOCAL-03, Phase 34 Plan 02) — mirrors
+  // the existing onComplete prop. Called synchronously (never awaited) from
+  // the SAME code path as the optimistic queue advance: once from
+  // submitReview's 'real' branch, once from handleUndo's success path.
+  // updatedCardOrNull is the card to patch into the cache in place, or null
+  // to remove it (fully graduated / no longer due). Absent for practice
+  // cards, which have no server-side FSRS state and no cache entry.
+  onReviewCommitted?: (cardId: string, updatedCardOrNull: Card | null) => void
 }
 
-export default function StudySession({ cards, extraPractice, mode, onComplete }: Props) {
+export default function StudySession({ cards, extraPractice, mode, onComplete, onReviewCommitted }: Props) {
   // Queue: mutable list of remaining items. Always show queue[0].
   // Initialized once — the component is remounted per batch via key={sessionKey}.
   // initialCount is derived from stable props so it's safe to compute during render.
@@ -462,6 +470,12 @@ export default function StudySession({ cards, extraPractice, mode, onComplete }:
       undoRef.current = { cardId, prevState, prevQueue: queue, prevStats, prevSeenCount, prevSeenCardIds, controller }
       setCanUndo(true)
 
+      // Cache write-through (LOCAL-03) — same synchronous code path as the
+      // optimistic queue advance below, after requeue/updatedItem are final.
+      // Never awaited: the callback (StudyClient's patchStudyCard) is
+      // fire-and-forget and owns its own error swallowing.
+      onReviewCommitted?.(cardId, requeue && updatedItem.kind === 'real' ? updatedItem.card : null)
+
       // 4. Fire background save — NOT awaited; bounded silent retry (REVIEW-04).
       // A toast surfaces only after all retries are exhausted (via onExhausted),
       // guarded by isMountedRef so a setState fired after unmount is skipped.
@@ -548,6 +562,14 @@ export default function StudySession({ cards, extraPractice, mode, onComplete }:
     // share the same all-or-nothing gate, so an interrupted undo can never leave
     // the ref mutated while the setters silently no-op post-unmount.
     if (!isMountedRef.current) return
+
+    // Cache write-through (LOCAL-03) — reverts the cached study entry to the
+    // pre-grade card in the SAME code path the UI reverts in, so the cache
+    // never holds a rating the server has already reverted. Success path
+    // only — the failure path above deliberately leaves client state (and
+    // therefore the cache) at the post-review value.
+    const prevHead = prevQueue[0]
+    onReviewCommitted?.(cardId, prevHead && prevHead.kind === 'real' ? prevHead.card : null)
 
     setStats(prevStats)
     setQueue(prevQueue)
