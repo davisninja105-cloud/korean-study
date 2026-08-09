@@ -244,11 +244,11 @@ Plans:
   3. When the counter has moved (for example after the daily cron sync), the same resume path re-fetches and the route shows the new data; the existing `e2e/freshness-*` resume and back-forward specs stay green.
   4. `FreshnessWatcher` still exists and still applies its JSON re-fetch backstop when the version has changed, carrying a `TODO` that records the Next.js version last tested for the underlying Suspense/Segment-Cache flake.
 
-**Plans**: 2 plans
+**Plans**: 1/2 plans executed
 
 **Wave 1**
 
-- [ ] 33-01-PLAN.md — tracer: review write → `dataVersion` Setting row → `GET /api/version` → version-gated `FreshnessWatcher` backstop (`router.refresh()` stays unconditional); plus the `runSync()` bump and the real-DB bump/non-bump regression locks
+- [x] 33-01-PLAN.md — tracer: review write → `dataVersion` Setting row → `GET /api/version` → version-gated `FreshnessWatcher` backstop (`router.refresh()` stays unconditional); plus the `runSync()` bump and the real-DB bump/non-bump regression locks
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
@@ -328,7 +328,7 @@ Re-measure the baseline table after Phase 30 before starting Phase 31 — the nu
 | 30. Instant Feedback & Cold-Start Unblocking | v1.8 | 4/4 | Complete    | 2026-08-06 |
 | 31. Cards List Pagination & Virtualization | v1.8 | 7/7 | Complete    | 2026-08-07 |
 | 32. Study Load Round-Trip Collapse | v1.8 | 4/4 | Complete    | 2026-08-08 |
-| 33. Version-Gated Freshness Backstop | v1.8 | 0/TBD | Not started | - |
+| 33. Version-Gated Freshness Backstop | v1.8 | 1/2 | In Progress|  |
 | 34. Local-First Shell | v1.8 | 0/TBD | Not started | - |
 | 35. Service Worker & Offline Review Queue | v1.8 | 0/TBD | Not started | - |
 

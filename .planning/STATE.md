@@ -3,10 +3,10 @@ gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: Perceived & Real Performance
 current_phase: 33
-current_phase_name: Version-Gated Freshness Backstop
+current_phase_name: version-gated-freshness-backstop
 status: executing
 stopped_at: Phase 31 UI-SPEC approved
-last_updated: "2026-08-09T00:26:18.874Z"
+last_updated: "2026-08-09T00:28:24.424Z"
 last_activity: 2026-08-08
 last_activity_desc: Phase 32 complete, transitioned to Phase 33
 progress:
@@ -24,14 +24,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-08-06)
 
 **Core value:** When you study, what you're meant to learn is always learnable in the moment — prerequisites come first, and new words are shown bare before context.
-**Current focus:** Phase 32 — study-load-round-trip-collapse
+**Current focus:** Phase 33 — version-gated-freshness-backstop
 
 ## Current Position
 
-Phase: 33 — Version-Gated Freshness Backstop
-Plan: Not started
-Status: Ready to execute
-Last activity: 2026-08-08 — Phase 32 complete, transitioned to Phase 33
+Phase: 33 (version-gated-freshness-backstop) — EXECUTING
+Plan: 1 of 2
+Status: Executing Phase 33
+Last activity: 2026-08-08 — Phase 33 execution started
 
 ## Performance Metrics
 
