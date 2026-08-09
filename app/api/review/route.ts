@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma'
 import { reviewCard, type Grade } from '@/lib/fsrs'
 import { Prisma } from '@/app/generated/prisma/client'
 import { isUniqueConstraintError } from '@/lib/db-errors'
+import { DATA_VERSION_KEY, nextDataVersionToken } from '@/lib/settings'
 
 // IN-01: named type guard instead of an unchecked `as Grade` cast, so the
 // compiler — not just the runtime check below — enforces the relationship.
@@ -99,6 +100,19 @@ export async function POST(req: NextRequest) {
       // request), the whole transaction rolls back so cardReview.update
       // never re-applies FSRS state (see catch below).
       await tx.reviewLog.create({ data: { cardId, rating, idempotencyKey, ...updated } })
+
+      // VERS-01: bump the dataVersion change token inside this same
+      // transaction so it rolls back together with everything above —
+      // StaleReviewError, CardReviewNotFoundError, and the idempotent
+      // duplicate-idempotencyKey replay (which returns 200 from the catch
+      // block below without re-entering this transaction body) must never
+      // move the counter for a request that didn't actually commit a review.
+      const dataVersionToken = nextDataVersionToken()
+      await tx.setting.upsert({
+        where: { key: DATA_VERSION_KEY },
+        create: { key: DATA_VERSION_KEY, value: dataVersionToken },
+        update: { value: dataVersionToken },
+      })
 
       return tx.cardReview.findUniqueOrThrow({ where: { cardId } })
     })

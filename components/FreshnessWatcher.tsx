@@ -6,6 +6,8 @@ import {
   useEffect,
   useRef,
   useState,
+  type Dispatch,
+  type SetStateAction,
 } from 'react'
 import { useRouter } from 'next/navigation'
 import type { CardDTO, CardsPageDTO, ActivityDTO, StatsDTO } from '@/lib/dto'
@@ -50,6 +52,74 @@ export function useFreshPayload(): FreshPayloads {
   return useContext(FreshPayloadContext)
 }
 
+// Module-internal (Phase 33, VERS-02): the route-specific JSON payload
+// fetch, extracted VERBATIM from the pre-gate body of fetchBackstop() below
+// — same window.location.pathname-at-call-time read, same per-route
+// endpoints, same response-time pathname re-check, same .catch(() => {})
+// terminator on every chain. Takes `setPayloads` as a parameter (rather than
+// closing over component state) since it now lives outside the component;
+// FreshnessWatcher is a root-layout singleton, so there is only ever one
+// `setPayloads` in practice, but keeping this at module scope makes the
+// extraction genuinely verbatim and independently readable from the new
+// version-gate logic in fetchBackstop().
+function fetchRoutePayload(setPayloads: Dispatch<SetStateAction<FreshPayloads>>): void {
+  const path = window.location.pathname
+
+  if (path === '/study') {
+    fetch('/api/cards/due')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((result: unknown) => {
+        // Re-check pathname at response time: a backstop response
+        // arriving after the user navigated away must never be written
+        // into another route's slice.
+        if (Array.isArray(result) && window.location.pathname === '/study') {
+          setPayloads((prev) => ({ ...prev, study: result as CardDTO[] }))
+        }
+      })
+      .catch(() => {})
+  } else if (path === '/cards') {
+    // CARDS-01 made GET /api/cards cursor-paginated — this backstop's
+    // own no-cursor call now returns a CardsPageDTO page-1 object
+    // (`{ cards, nextCursor, hasMore, groupCounts }`), never the old raw
+    // full-array shape. The consumer (CardsClient.tsx) upserts by id
+    // into its existing per-group loaded arrays — this is never
+    // authoritative for "what else exists" (31-RESEARCH.md Pitfall 1).
+    fetch('/api/cards')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((result: unknown) => {
+        const page = result as CardsPageDTO | null
+        if (page && Array.isArray(page.cards) && window.location.pathname === '/cards') {
+          setPayloads((prev) => ({ ...prev, cards: page }))
+        }
+      })
+      .catch(() => {})
+  } else if (path === '/habits') {
+    Promise.all([
+      fetch('/api/activity').then((res) => (res.ok ? res.json() : null)),
+      fetch('/api/stats').then((res) => (res.ok ? res.json() : null)),
+    ])
+      .then(([activity, stats]: [ActivityDTO | null, StatsDTO | null]) => {
+        if (activity && stats && window.location.pathname === '/habits') {
+          setPayloads((prev) => ({
+            ...prev,
+            habits: {
+              days: activity.days,
+              dailyGoalSeconds: activity.dailyGoalSeconds,
+              dayStartHour: activity.dayStartHour,
+              masteredCount: stats.masteredCount,
+              cardsByState: stats.cardsByState,
+            },
+          }))
+        }
+      })
+      .catch(() => {})
+  }
+  // Any other path (including '/'): no backstop fetch. '/' has no
+  // loading.tsx and never exhibited the delivery flake across 10+
+  // isolated runs (deferred-items.md); router.refresh() remains its
+  // sole, reliable delivery path.
+}
+
 /**
  * Mounted once in the root layout (app/layout.tsx), wrapping the app subtree.
  * Mirrors ThemeWatcher's/GlossProvider's shape but is not invisible: it now
@@ -60,9 +130,16 @@ export function useFreshPayload(): FreshPayloads {
  *   1. router.refresh() — re-fetches the RSC payload, keeping the Next.js
  *      Router Cache honest (defense in depth; also the sole delivery path
  *      for '/', which has no loading.tsx and never exhibited the issue
- *      below across 10+ isolated runs).
+ *      below across 10+ isolated runs). ALWAYS unconditional — Phase 33's
+ *      version gate below applies ONLY to the JSON half of this dual
+ *      delivery, never to this RSC half.
  *   2. A route-scoped JSON backstop fetch (existing /api endpoints — no new
- *      routes) whose response is exposed via `useFreshPayload()`.
+ *      routes) whose response is exposed via `useFreshPayload()`. As of
+ *      Phase 33 (VERS-02), this half is now version-gated: it only re-fires
+ *      when `GET /api/version` reports a value different from the last one
+ *      this component observed. The common "nothing changed" resume now
+ *      costs one tiny Setting-row read instead of a full route payload
+ *      fetch.
  *
  * The backstop exists because deferred-items.md (Plan 26-03's root-cause
  * investigation) proved that on routes with a `loading.tsx` file (/study,
@@ -74,7 +151,15 @@ export function useFreshPayload(): FreshPayloads {
  * identical trigger 100% reliable). The JSON fetch below is a second,
  * Suspense-independent delivery mechanism for the SAME data — it is not a
  * second freshness trigger; both deliveries originate from the same
- * coalesced boundary event.
+ * coalesced boundary event. WHY the JSON half is gated and the RSC half is
+ * not: router.refresh() is the sole reliable delivery path for '/' and the
+ * only mechanism every existing freshness e2e test asserts network evidence
+ * against — narrowing it would risk silently reintroducing the flake this
+ * backstop exists to work around. The JSON half is pure, provable
+ * redundancy on top of that — safe to skip whenever nothing has changed.
+ * TODO: 16.2.1 is the Next.js version this delivery flake and its gate were
+ * last verified against — re-test the backstop (and this version gate) after
+ * any Next.js upgrade before considering either for removal.
  *
  * A 300ms coalesce ref collapses bursts of these events into one refresh +
  * one backstop fetch.
@@ -82,70 +167,66 @@ export function useFreshPayload(): FreshPayloads {
 export default function FreshnessWatcher({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const lastRefreshRef = useRef<number>(0)
+  // VERS-02: last dataVersion this component has observed. null until the
+  // mount-time seeding fetch below resolves — see fetchBackstop()'s gate
+  // logic for why a null value means "treat as fresh, skip" rather than
+  // "always re-fetch" (Pitfall 2: RootLayout can't block on a DB read, so
+  // there is no server-supplied baseline to seed this from).
+  const lastVersionRef = useRef<string | null>(null)
   const [payloads, setPayloads] = useState<FreshPayloads>(EMPTY_PAYLOADS)
 
   useEffect(() => {
-    // Route-aware JSON backstop — reads window.location.pathname at CALL time
+    // Mount-time baseline seed (Pitfall 2). Fires once after hydration —
+    // never blocks first paint. Assigns lastVersionRef.current ONLY when it
+    // is still null, so a slower mount response can never clobber a faster
+    // boundary-event check that happened to resolve first. Assigned inside
+    // the .then() callback, never synchronously in the effect body
+    // (react-hooks/set-state-in-effect / react-hooks/purity both apply to
+    // this file, even though this is a ref write, not setState).
+    fetch('/api/version')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((result: unknown) => {
+        const version = (result as { version?: unknown } | null)?.version
+        if (typeof version === 'string' && lastVersionRef.current === null) {
+          lastVersionRef.current = version
+        }
+      })
+      .catch(() => {})
+
+    // VERS-02 gate: checks GET /api/version before deciding whether to run
+    // fetchRoutePayload(). Reads window.location.pathname at CALL time
     // (never a closure-captured pathname), because popstate fires after the
-    // URL has already updated, so this is the RESTORED route. Every promise
-    // chain ends in .catch(() => {}) — a failed backstop just degrades to
-    // today's router.refresh()-only behavior, never surfaces an error.
+    // URL has already updated, so this is the RESTORED route. A failed
+    // version check degrades to today's router.refresh()-only behaviour via
+    // .catch(() => {}).
     const fetchBackstop = () => {
       const path = window.location.pathname
-
-      if (path === '/study') {
-        fetch('/api/cards/due')
-          .then((res) => (res.ok ? res.json() : null))
-          .then((result: unknown) => {
-            // Re-check pathname at response time: a backstop response
-            // arriving after the user navigated away must never be written
-            // into another route's slice.
-            if (Array.isArray(result) && window.location.pathname === '/study') {
-              setPayloads((prev) => ({ ...prev, study: result as CardDTO[] }))
-            }
-          })
-          .catch(() => {})
-      } else if (path === '/cards') {
-        // CARDS-01 made GET /api/cards cursor-paginated — this backstop's
-        // own no-cursor call now returns a CardsPageDTO page-1 object
-        // (`{ cards, nextCursor, hasMore, groupCounts }`), never the old raw
-        // full-array shape. The consumer (CardsClient.tsx) upserts by id
-        // into its existing per-group loaded arrays — this is never
-        // authoritative for "what else exists" (31-RESEARCH.md Pitfall 1).
-        fetch('/api/cards')
-          .then((res) => (res.ok ? res.json() : null))
-          .then((result: unknown) => {
-            const page = result as CardsPageDTO | null
-            if (page && Array.isArray(page.cards) && window.location.pathname === '/cards') {
-              setPayloads((prev) => ({ ...prev, cards: page }))
-            }
-          })
-          .catch(() => {})
-      } else if (path === '/habits') {
-        Promise.all([
-          fetch('/api/activity').then((res) => (res.ok ? res.json() : null)),
-          fetch('/api/stats').then((res) => (res.ok ? res.json() : null)),
-        ])
-          .then(([activity, stats]: [ActivityDTO | null, StatsDTO | null]) => {
-            if (activity && stats && window.location.pathname === '/habits') {
-              setPayloads((prev) => ({
-                ...prev,
-                habits: {
-                  days: activity.days,
-                  dailyGoalSeconds: activity.dailyGoalSeconds,
-                  dayStartHour: activity.dayStartHour,
-                  masteredCount: stats.masteredCount,
-                  cardsByState: stats.cardsByState,
-                },
-              }))
-            }
-          })
-          .catch(() => {})
+      if (path !== '/study' && path !== '/cards' && path !== '/habits') {
+        // '/' (and any other route): no backstop fetch, same as before this
+        // gate existed — no version check needed either, since there was
+        // never a payload fetch to gate here.
+        return
       }
-      // Any other path (including '/'): no backstop fetch. '/' has no
-      // loading.tsx and never exhibited the delivery flake across 10+
-      // isolated runs (deferred-items.md); router.refresh() remains its
-      // sole, reliable delivery path.
+
+      fetch('/api/version')
+        .then((res) => (res.ok ? res.json() : null))
+        .then((result: unknown) => {
+          const version = (result as { version?: unknown } | null)?.version
+          if (typeof version !== 'string') return
+
+          const previous = lastVersionRef.current
+          lastVersionRef.current = version
+
+          // A null previous value means the mount-time baseline above
+          // hasn't resolved yet — treat the just-rendered RSC payload as
+          // fresh and skip (Pitfall 2), rather than either always
+          // re-fetching or corrupting the baseline. Only a KNOWN inequality
+          // (previous non-null AND different) triggers the payload fetch.
+          if (previous !== null && previous !== version) {
+            fetchRoutePayload(setPayloads)
+          }
+        })
+        .catch(() => {})
     }
 
     const refresh = () => {
