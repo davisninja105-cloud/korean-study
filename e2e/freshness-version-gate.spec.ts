@@ -17,6 +17,7 @@ import { test, expect, type Page, type Request as PwRequest } from '@playwright/
 import { resetToBaseline } from './seed'
 import { isRscRequest } from './helpers/rsc'
 import { simulateResume } from './helpers/resume'
+import { flipOneReviewDueState, createMutationCard, promoteOneReviewToMastered, readDataVersion } from './helpers/mutate'
 
 test.beforeEach(async () => {
   await resetToBaseline()
@@ -111,4 +112,34 @@ test('/study resume after a real graded review re-fetches the payload (VERS-01 +
 
   const dueRequests = requestLog.slice(preLen).filter((r) => r.pathname === '/api/cards/due')
   expect(dueRequests.length).toBeGreaterThan(0)
+})
+
+// Non-vacuity lock (plan 33-02 Task 2): every freshness-spec mutator in
+// e2e/helpers/mutate.ts must move the dataVersion counter, or the entire
+// gate this file proves has nothing left to gate. Kept in this file rather
+// than a separate one so the two-sided gate proof above (closed / open) and
+// this lock read as one contract. Needs no browser page — a direct DB
+// read/mutate/read round-trip is sufficient and cheaper.
+test('every freshness-spec mutator moves the dataVersion counter (non-vacuity lock)', async () => {
+  // FAILURE MEANING: if any assertion below fails, the four
+  // e2e/freshness-*.spec.ts files have gone green-but-vacuous — the
+  // mutator that failed no longer opens the version gate as their "the
+  // server changed" step, so their backstop-delivery assertions prove
+  // nothing even while passing. The fix is to restore the bump inside that
+  // mutator's *Direct implementation in e2e/helpers/mutate.ts — never to
+  // relax or delete an assertion in the freshness specs themselves.
+  const before1 = await readDataVersion()
+  await flipOneReviewDueState()
+  const after1 = await readDataVersion()
+  expect(after1, 'flipOneReviewDueState() must bump dataVersion (see FAILURE MEANING above)').not.toBe(before1)
+
+  const before2 = await readDataVersion()
+  await createMutationCard()
+  const after2 = await readDataVersion()
+  expect(after2, 'createMutationCard() must bump dataVersion (see FAILURE MEANING above)').not.toBe(before2)
+
+  const before3 = await readDataVersion()
+  await promoteOneReviewToMastered()
+  const after3 = await readDataVersion()
+  expect(after3, 'promoteOneReviewToMastered() must bump dataVersion (see FAILURE MEANING above)').not.toBe(before3)
 })
