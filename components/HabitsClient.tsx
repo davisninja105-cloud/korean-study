@@ -1,13 +1,15 @@
 'use client'
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import HabitsLoading from '@/app/habits/loading'
 import HabitHeatmap from '@/components/HabitHeatmap'
 import ProgressRing from '@/components/ProgressRing'
 import ProficiencyArc from '@/components/ProficiencyArc'
-import { useFreshPayload, type HabitsFreshPayload } from '@/components/FreshnessWatcher'
-import type { StatsDTO } from '@/lib/dto'
+import { fetchCacheContext, readCache, writeCache, type HabitsCachePayload } from '@/lib/local-cache'
+import { usePullToRefresh, PULL_THRESHOLD } from '@/lib/usePullToRefresh'
+import { haptic } from '@/lib/haptics'
+import type { StatsDTO, ActivityDTO } from '@/lib/dto'
 import {
   computeStreaks,
   computeHabitStats,
@@ -66,45 +68,203 @@ export default function HabitsClient({
   // JSX and useMemo bodies are unchanged (same identifiers, now tracking the
   // props instead of a frozen initial snapshot).
   //
-  // Two-source derivation (26-05-PLAN.md): props are the default source, but
-  // a JSON backstop override (from FreshnessWatcher's /api/activity +
-  // /api/stats fetch — Suspense-independent, see deferred-items.md) can win
-  // until fresher RSC props arrive. This shell has no setters for its
-  // "direct read" values, so adoption is a derived-read override layer
-  // rather than a reverted design: freshOverride, once set, is read instead
-  // of the initial* props; a subsequent real RSC delivery (a new initialDays
-  // reference) clears the override so fresh props always take precedence.
-  const { habits: freshHabits } = useFreshPayload()
-  const [freshOverride, setFreshOverride] = useState<HabitsFreshPayload | null>(null)
+  // Two-source derivation, now cache-backed (Phase 34, LOCAL-01/02): props
+  // are the default source, but a cache-read override (IndexedDB, via
+  // lib/local-cache.ts — Suspense-independent, same shape as the retired
+  // FreshnessWatcher JSON backstop) can win until fresher RSC props arrive.
+  // This shell has no setters for its "direct read" values, so adoption is a
+  // derived-read override layer rather than a reverted design: cacheOverride,
+  // once set, is read instead of the initial* props; a subsequent real RSC
+  // delivery (a new initialDays reference) clears the override so fresh
+  // props always take precedence.
+  const [cacheOverride, setCacheOverride] = useState<HabitsCachePayload | null>(null)
+  // The /api/version value + buildId this mount observed — read once on
+  // mount, held in refs so the render-phase props-win block below (which
+  // cannot await) can fire a write-through without needing a second fetch.
+  const versionRef = useRef<string | null>(null)
+  const buildIdRef = useRef<string | null>(null)
+  const [isRevalidating, setIsRevalidating] = useState(false)
+  const [refreshError, setRefreshError] = useState(false)
+  // Mount-guard for handleRefresh (Task 3, 34-01-PLAN.md): handleRefresh is a
+  // user-triggered callback, not an effect, so it has no natural per-call
+  // `cancelled` closure the way the mount effect below does. A pull-to-
+  // refresh can still be in flight when the user navigates away mid-gesture;
+  // this ref (same idiom as HomeClient.tsx's isMountedRef) prevents its
+  // continuation from calling setState after unmount.
+  const isMountedRef = useRef(true)
+  useEffect(() => { return () => { isMountedRef.current = false } }, [])
 
-  // Backstop consume-and-adopt: freshHabits is mount-seeded via useState's
-  // lazy initializer equivalent (prevFreshHabits), so only deliveries
-  // arriving AFTER mount are ever adopted (a remounted shell always sees a
-  // post-mount slice update because the backstop fetch needs a server
-  // round-trip; a Link-navigated shell with fresh RSC props sees no
-  // post-mount slice change and adopts nothing).
-  const [prevFreshHabits, setPrevFreshHabits] = useState(freshHabits)
-  if (freshHabits !== prevFreshHabits) {
-    setPrevFreshHabits(freshHabits)
-    if (freshHabits !== null) setFreshOverride(freshHabits)
-  }
+  // Shared revalidation body (Task 3, 34-01-PLAN.md finding): `/habits` has
+  // its own app/habits/loading.tsx, making it one of the exact routes
+  // FreshnessWatcher.tsx's own header comment names as affected by a real,
+  // unfixed Next.js 16.2.1 bug — a boundary-triggered router.refresh() can
+  // fetch a fresh RSC payload on the server but silently fail to apply it to
+  // the already-mounted client tree. The retired JSON backstop
+  // (useFreshPayload) used to paper over exactly this by re-fetching
+  // /api/activity+/api/stats on every visibilitychange/popstate/pageshow,
+  // independent of whether the RSC application succeeded. D-00 rule 3 says
+  // this cache is supposed to REPLACE that layer, not just delete it — which
+  // means the replacement must independently re-trigger on the SAME
+  // boundary events, not only once at mount. Verified empirically: without
+  // this, e2e/freshness-router-cache.spec.ts's "/habits resume" case
+  // regressed (confirmed by bisecting against the pre-Phase-34 HabitsClient,
+  // which passed only because the now-removed backstop was covering for
+  // this exact flake).
+  const revalidate = useCallback(async (buildId: string, version: string, cancelledRef: { current: boolean }) => {
+    setIsRevalidating(true)
+    try {
+      const [activityRes, statsRes] = await Promise.all([fetch('/api/activity'), fetch('/api/stats')])
+      if (cancelledRef.current) return
+      if (!activityRes.ok || !statsRes.ok) return
+      const activity = (await activityRes.json()) as ActivityDTO
+      const stats = (await statsRes.json()) as StatsDTO
+      if (cancelledRef.current) return
+      const fresh: HabitsCachePayload = {
+        days: activity.days,
+        dailyGoalSeconds: activity.dailyGoalSeconds,
+        dayStartHour: activity.dayStartHour,
+        masteredCount: stats.masteredCount,
+        cardsByState: stats.cardsByState,
+      }
+      setCacheOverride(fresh)
+      await writeCache(buildId, 'habits', fresh, version)
+    } finally {
+      if (!cancelledRef.current) setIsRevalidating(false)
+    }
+  }, [])
+
+  // Cache-first mount read (LOCAL-01, LOCAL-05): paints the cached entry
+  // instantly if one exists, then revalidates in the background against
+  // /api/version — never gated on elapsed time (cachedAt is display/debug
+  // metadata only, D-00 rule 2). A revalidation failure clears
+  // isRevalidating and shows no error copy — the already-painted content
+  // (cache or RSC props) stands (UI-SPEC E4 error).
+  useEffect(() => {
+    const cancelledRef = { current: false }
+    ;(async () => {
+      const ctx = await fetchCacheContext()
+      if (cancelledRef.current || !ctx) return // offline cold path — RSC props already rendered
+      const { version, buildId } = ctx
+      versionRef.current = version
+      buildIdRef.current = buildId
+
+      const cached = await readCache<HabitsCachePayload>(buildId, 'habits')
+      if (cancelledRef.current) return
+      if (cached) setCacheOverride(cached.data)
+
+      if (!cached || cached.dataVersion !== version) {
+        await revalidate(buildId, version, cancelledRef)
+        if (!cancelledRef.current) versionRef.current = version
+      }
+    })()
+    return () => { cancelledRef.current = true }
+  }, [revalidate])
+
+  // Boundary-event revalidation: re-checks /api/version on the same events
+  // FreshnessWatcher.tsx's now-removed JSON backstop used to (visibility
+  // hidden→visible, popstate, a genuine bfcache pageshow) — this is what
+  // lets /habits catch up after a resume/back-forward even when
+  // router.refresh()'s RSC application silently fails (see revalidate's doc
+  // comment above). A 300ms coalesce guard mirrors FreshnessWatcher's own
+  // COALESCE_MS constant, collapsing an event burst into one check.
+  useEffect(() => {
+    const cancelledRef = { current: false }
+    const lastCheckRef = { current: 0 }
+    const check = () => {
+      const now = Date.now()
+      if (now - lastCheckRef.current < 300) return
+      lastCheckRef.current = now
+      ;(async () => {
+        const ctx = await fetchCacheContext()
+        if (cancelledRef.current || !ctx) return
+        if (ctx.version !== versionRef.current) {
+          buildIdRef.current = ctx.buildId
+          await revalidate(ctx.buildId, ctx.version, cancelledRef)
+          if (!cancelledRef.current) versionRef.current = ctx.version
+        }
+      })()
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') check()
+    }
+    const onPopState = () => { setTimeout(check, 0) }
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) check() }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('popstate', onPopState)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      cancelledRef.current = true
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [revalidate])
 
   // Props-win: a genuinely fresher RSC delivery (a new initialDays
-  // reference) is strictly newer than any backstop override, so it clears
-  // the override and lets the fresh props shine through.
+  // reference) is strictly newer than any cache override, so it clears the
+  // override and lets the fresh props shine through. Also writes the fresh
+  // props through to the cache (fire-and-forget) so the cache does not fall
+  // behind an RSC-delivered update, keyed on the version this mount already
+  // observed — only fires once a version is known.
   const [prevInitialDays, setPrevInitialDays] = useState(initialDays)
   if (initialDays !== prevInitialDays) {
     setPrevInitialDays(initialDays)
-    setFreshOverride(null)
+    setCacheOverride(null)
+    if (versionRef.current && buildIdRef.current) {
+      const fresh: HabitsCachePayload = {
+        days: initialDays,
+        dailyGoalSeconds: initialGoal,
+        dayStartHour: initialDayStartHour,
+        masteredCount: initialMasteredCount,
+        cardsByState: initialCardsByState,
+      }
+      writeCache(buildIdRef.current, 'habits', fresh, versionRef.current).catch(() => {})
+    }
   }
 
-  const days = freshOverride ? freshOverride.days : initialDays
-  const goal = freshOverride ? freshOverride.dailyGoalSeconds : initialGoal
-  const masteredCount = freshOverride ? freshOverride.masteredCount : initialMasteredCount
-  const dayStartHour = freshOverride ? freshOverride.dayStartHour : initialDayStartHour
-  const cardsByState = freshOverride ? freshOverride.cardsByState : initialCardsByState
+  const days = cacheOverride ? cacheOverride.days : initialDays
+  const goal = cacheOverride ? cacheOverride.dailyGoalSeconds : initialGoal
+  const masteredCount = cacheOverride ? cacheOverride.masteredCount : initialMasteredCount
+  const dayStartHour = cacheOverride ? cacheOverride.dayStartHour : initialDayStartHour
+  const cardsByState = cacheOverride ? cacheOverride.cardsByState : initialCardsByState
   const [today, setToday] = useState('')
   const countFor = (s: number) => cardsByState.find((r) => r.state === s)?._count ?? 0
+
+  // Route-local pull-to-refresh (D-04, LOCAL-04) — NOT parameterised, NOT
+  // shared with Home's handleSync. Bypasses BOTH the cache read and the
+  // version check: fetches /api/activity + /api/stats unconditionally and
+  // triggers NO Google Doc sync.
+  const handleRefresh = useCallback(async () => {
+    haptic('impact-light')
+    if (isMountedRef.current) setRefreshError(false)
+    try {
+      const ctx = await fetchCacheContext()
+      if (!isMountedRef.current) return
+      const [activityRes, statsRes] = await Promise.all([fetch('/api/activity'), fetch('/api/stats')])
+      if (!isMountedRef.current) return
+      if (!activityRes.ok || !statsRes.ok) throw new Error('refresh failed')
+      const activity = (await activityRes.json()) as ActivityDTO
+      const stats = (await statsRes.json()) as StatsDTO
+      if (!isMountedRef.current) return
+      const fresh: HabitsCachePayload = {
+        days: activity.days,
+        dailyGoalSeconds: activity.dailyGoalSeconds,
+        dayStartHour: activity.dayStartHour,
+        masteredCount: stats.masteredCount,
+        cardsByState: stats.cardsByState,
+      }
+      setCacheOverride(fresh)
+      if (ctx) {
+        versionRef.current = ctx.version
+        buildIdRef.current = ctx.buildId
+        await writeCache(ctx.buildId, 'habits', fresh, ctx.version)
+      }
+    } catch {
+      if (isMountedRef.current) setRefreshError(true)
+    }
+  }, [])
+
+  const { pullDistance, refreshing } = usePullToRefresh(handleRefresh)
 
   // Compute client-local today in an effect (habitDateStr calls new Date() internally —
   // impure, must not run during render). Promise.resolve().then satisfies
@@ -172,6 +332,37 @@ export default function HabitsClient({
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-8 flex flex-col gap-6">
+      {/* ── Route-local pull-to-refresh indicator (D-03/D-04) ── */}
+      {(pullDistance > 0 || refreshing) && (
+        <div
+          className="flex items-center justify-center overflow-hidden text-xs text-muted"
+          style={{ height: refreshing ? 28 : pullDistance }}
+        >
+          {refreshing ? 'Refreshing…' : pullDistance >= PULL_THRESHOLD ? 'Release to refresh' : 'Pull to refresh'}
+        </div>
+      )}
+      {refreshError && !refreshing && pullDistance === 0 && (
+        <p className="text-center text-sm text-muted">
+          Couldn&apos;t refresh. Check your connection and try again.{' '}
+          <button type="button" onClick={handleRefresh} className="text-button font-semibold">
+            Try again
+          </button>
+        </p>
+      )}
+
+      {/* ── Background-revalidation pill (D-01) ── */}
+      {isRevalidating && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed left-1/2 -translate-x-1/2 z-[5] flex items-center gap-1.5 bg-surface-1 border border-border text-muted text-xs px-2 py-1 rounded-full shadow-sm"
+          style={{ top: 'calc(var(--nav-height, 68px) + 8px)' }}
+        >
+          <span className="w-1.5 h-1.5 rounded-full bg-muted animate-pulse" aria-hidden="true" />
+          Updating…
+        </div>
+      )}
+
       {/* Page header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-foreground">Habits</h1>
