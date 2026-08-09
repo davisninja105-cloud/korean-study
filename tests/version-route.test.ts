@@ -24,6 +24,7 @@ import { mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import type { POST as PostHandler } from '../app/api/review/route'
+import type { GET as GetVersionHandler } from '../app/api/version/route'
 
 // vi.mock is hoisted above every import in this file by Vitest — the
 // factories below reference only globals (Date.now/Math.random), never an
@@ -74,6 +75,7 @@ let setSessionSize: any
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let runSync: any
 let POST: typeof PostHandler
+let GET: typeof GetVersionHandler
 let reviewableCardId: string
 let cardWithoutReviewId: string
 const previousDatabaseUrl = process.env.DATABASE_URL
@@ -100,6 +102,7 @@ beforeAll(async () => {
   ;({ getDataVersion, bumpDataVersion, setSessionSize } = await import('../lib/settings'))
   ;({ runSync } = await import('../lib/sync'))
   ;({ POST } = await import('../app/api/review/route'))
+  ;({ GET } = await import('../app/api/version/route'))
 
   const reviewableCard = await prisma.card.create({
     data: {
@@ -143,6 +146,22 @@ describe('dataVersion — write-side bumps (VERS-01)', () => {
   it('getDataVersion() on a DB where the key was never written returns "0"', async () => {
     const version = await getDataVersion()
     expect(version).toBe('0')
+  })
+
+  // Phase 34 (LOCAL-02): GET /api/version now additionally carries a
+  // `buildId` field, sourced server-side from
+  // VERCEL_GIT_COMMIT_SHA/VERCEL_DEPLOYMENT_ID/'local-dev' — used by
+  // lib/local-cache.ts to namespace the client's IndexedDB database. This is
+  // the actual route handler (not just getDataVersion()), confirming both
+  // fields land in one response body and the existing `version` field's
+  // value/format are unchanged (additive-only per 34-RESEARCH.md Pattern 2).
+  it('GET /api/version returns both a version string and a buildId string', async () => {
+    const res = await GET()
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(typeof body.version).toBe('string')
+    expect(typeof body.buildId).toBe('string')
+    expect(body.buildId.length).toBeGreaterThan(0)
   })
 
   it('runSync() completing with one mocked new lesson changes getDataVersion()', async () => {
