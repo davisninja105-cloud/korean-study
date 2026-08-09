@@ -268,11 +268,18 @@ Plans:
   5. Pull-to-refresh bypasses both the cache and the version check entirely and repopulates from the server, so any cache problem is recoverable from the phone.
 
 **Plans**: 5 plans
+**Wave 1**
 
 - [ ] 34-01-PLAN.md — Cache foundation (`lib/local-cache.ts`, `/api/version` buildId) plus the `/habits` tracer slice
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 34-02-PLAN.md — `/study` cache-first, review write-through via `onReviewCommitted`, route-local pull-to-refresh
 - [ ] 34-03-PLAN.md — `/cards` cache-first (D-05 session-accumulated), edit/delete/add write-through, bounded pull-to-refresh
 - [ ] 34-04-PLAN.md — `/` cache-first, `handleSync` write-through, settings write-through, `Offline` pill in `Nav.tsx`
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
 - [ ] 34-05-PLAN.md — `FreshnessWatcher` backstop narrowing (blocking decision checkpoint) plus phase-gate e2e
 
 **UI hint**: yes
