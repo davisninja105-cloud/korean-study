@@ -31,8 +31,8 @@
 
 ### Freshness Backstop Narrowing (P3.4)
 
-- [ ] **VERS-01**: `/api/version` returns a monotonic counter bumped by sync completion and review writes
-- [ ] **VERS-02**: The `FreshnessWatcher` JSON backstop re-fetches full payloads only when the version counter has changed since the cache was built — the backstop itself is not removed (works around a real Next 16.2.1 flake)
+- [x] **VERS-01**: `/api/version` returns a monotonic counter bumped by sync completion and review writes
+- [x] **VERS-02**: The `FreshnessWatcher` JSON backstop re-fetches full payloads only when the version counter has changed since the cache was built — the backstop itself is not removed (works around a real Next 16.2.1 flake)
 
 ### Region Pinning (P3.5)
 
@@ -85,8 +85,8 @@ All 21 v1 requirements map to exactly one phase. No orphans, no duplicates.
 | STUDY-01 | Phase 32 | Complete |
 | STUDY-02 | Phase 32 | Complete |
 | STUDY-03 | Phase 32 | Complete |
-| VERS-01 | Phase 33 | Pending |
-| VERS-02 | Phase 33 | Pending |
+| VERS-01 | Phase 33 | Complete |
+| VERS-02 | Phase 33 | Complete |
 | REGION-01 | Phase 30 | Complete |
 | LOCAL-01 | Phase 34 | Pending |
 | LOCAL-02 | Phase 34 | Pending |

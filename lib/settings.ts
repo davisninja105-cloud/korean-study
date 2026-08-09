@@ -18,6 +18,16 @@ const LAST_AUTO_SYNCED_KEY = 'lastAutoSyncedAt'
 // the same way a sync/relink does, or a warm /study load keeps serving the
 // stale sessionSize indefinitely).
 const STUDY_CACHE_VERSION_KEY = 'studyCacheVersion'
+// Phase 33 (VERS-01): opaque, monotonically non-decreasing change token for
+// the freshness backstop's version gate. Written ONLY by bumpDataVersion()
+// below, called from lib/sync.ts:runSync() and app/api/review/route.ts's
+// $transaction block. See bumpDataVersion()'s own doc comment for why this
+// is a plain Date.now() token (no random suffix), unlike
+// STUDY_CACHE_VERSION_KEY above. Exported (unlike the other Setting key
+// consts in this file) because app/api/review/route.ts's transaction-scoped
+// upsert must reference this exact key with `tx.setting.upsert`, not the
+// top-level prisma client bumpDataVersion() below uses.
+export const DATA_VERSION_KEY = 'dataVersion'
 
 // Single source of truth for every Setting-table key name. NOTE: getAllSettings()
 // below does NOT spread Object.values(this) — it uses an explicit array of the
@@ -33,6 +43,7 @@ export const SETTING_KEYS = {
   readingAid: READING_AID_KEY,
   lastAutoSyncedAt: LAST_AUTO_SYNCED_KEY,
   studyCacheVersion: STUDY_CACHE_VERSION_KEY,
+  dataVersion: DATA_VERSION_KEY,
 } as const
 
 const HEX_RE = /^#[0-9a-fA-F]{6}$/
@@ -312,6 +323,51 @@ export async function bumpStudyCacheVersion(): Promise<string> {
   await prisma.setting.upsert({
     where: { key: STUDY_CACHE_VERSION_KEY },
     create: { key: STUDY_CACHE_VERSION_KEY, value: token },
+    update: { value: token },
+  })
+  return token
+}
+
+// Pure token generator — separated from bumpDataVersion() so
+// app/api/review/route.ts's transaction-scoped upsert can compute the SAME
+// kind of token without calling bumpDataVersion() itself (that function
+// writes through the top-level `prisma` client, not a passed-in `tx`).
+export function nextDataVersionToken(): string {
+  return String(Date.now())
+}
+
+export async function getDataVersion(): Promise<string> {
+  const row = await prisma.setting.findUnique({ where: { key: DATA_VERSION_KEY } })
+  return row?.value ?? '0'
+}
+
+/**
+ * Bump the `dataVersion` change token — the single global counter
+ * `GET /api/version` serves and `components/FreshnessWatcher.tsx` compares
+ * against to decide whether its JSON backstop needs to re-fetch (Phase 33,
+ * VERS-01/VERS-02).
+ *
+ * Unlike `bumpStudyCacheVersion()` above, this is a PLAIN `String(Date.now())`
+ * token with no random suffix — no random suffix is needed to avoid a
+ * lost-update race (the upsert alone already prevents that: whichever upsert
+ * lands last simply wins with its own fresh token, and any caller-held stale
+ * token still compares unequal to it), and the plain numeric string gives a
+ * later numeric-comparison consumer (Phase 34's LOCAL-02 IndexedDB cache-key
+ * check) a value it can compare with `>` directly, without stripping a
+ * suffix first.
+ *
+ * Called from exactly two places: lib/sync.ts:runSync() (unconditionally, at
+ * the end of every sync run) and app/api/review/route.ts's
+ * `prisma.$transaction()` block (via a `tx.setting.upsert()` using this same
+ * DATA_VERSION_KEY + nextDataVersionToken(), since a transaction-scoped write
+ * must use the `tx` client, not the top-level `prisma` client this function
+ * uses — see that route file for the inline upsert).
+ */
+export async function bumpDataVersion(): Promise<string> {
+  const token = nextDataVersionToken()
+  await prisma.setting.upsert({
+    where: { key: DATA_VERSION_KEY },
+    create: { key: DATA_VERSION_KEY, value: token },
     update: { value: token },
   })
   return token
