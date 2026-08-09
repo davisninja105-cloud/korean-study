@@ -135,3 +135,14 @@ None.
 ---
 *Phase: 33-version-gated-freshness-backstop*
 *Completed: 2026-08-08*
+
+## Self-Check: PASSED
+
+- FOUND: `e2e/helpers/mutate.ts`
+- FOUND: `e2e/run-mutate.ts`
+- FOUND: `e2e/freshness-version-gate.spec.ts`
+- FOUND: `e2e/freshness-fresh-paths.spec.ts`
+- FOUND: `.planning/phases/33-version-gated-freshness-backstop/33-02-SUMMARY.md`
+- FOUND: commit `be8d3a2` (Task 1)
+- FOUND: commit `dcab683` (Task 2)
+- FOUND: commit `43a0df2` (SUMMARY)
