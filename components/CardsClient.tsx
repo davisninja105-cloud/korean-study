@@ -482,6 +482,15 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   const versionRef = useRef<string | null>(null)
   const buildIdRef = useRef<string | null>(null)
   const [isRevalidating, setIsRevalidating] = useState(false)
+  // Flips true once the mount effect has resolved fetchCacheContext() and
+  // populated versionRef/buildIdRef. A plain ref write does NOT re-trigger
+  // the persistence effect below (refs aren't reactive) — without this state
+  // flag, a true cold start (no prior cache entry, so the mount effect never
+  // calls setGroups/setGroupCounts) would never write ANYTHING to the cache
+  // until some unrelated later interaction happened to change groups/
+  // groupCounts. Included in the persistence effect's dep array precisely so
+  // its very first successful write can fire off of THIS flag alone.
+  const [cacheReady, setCacheReady] = useState(false)
 
   // Kept in sync on every render (a plain assignment, not a setState call —
   // safe outside an effect) so an async continuation resolving mid-flight
@@ -509,6 +518,7 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       const { version, buildId } = ctx
       versionRef.current = version
       buildIdRef.current = buildId
+      setCacheReady(true)
 
       const cached = await readCache<CardsCachePayload>(buildId, 'cards')
       if (cancelled) return
@@ -602,7 +612,12 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       }
     }
     void writeCache(buildId, 'cards', { groups: strippedGroups, groupCounts }, version)
-  }, [groups, groupCounts, hasActiveClientQuery])
+    // cacheReady is intentionally a dependency (not just a guard read via
+    // ref) — see its declaration comment above: it's what lets a true cold
+    // start's first write fire off of the mount effect resolving alone,
+    // without requiring groups/groupCounts to ALSO change from some
+    // unrelated later interaction.
+  }, [groups, groupCounts, hasActiveClientQuery, cacheReady])
 
   // ── Stale-response / out-of-order-response guards (CARDS-03) ────────────
   // A strictly later request advances these refs past whatever an earlier,
