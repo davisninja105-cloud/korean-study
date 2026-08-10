@@ -30,7 +30,7 @@ findings:
   warning: 3
   info: 2
   total: 6
-status: issues_found
+status: fixed
 ---
 
 # Phase 34: Code Review Report
@@ -38,7 +38,7 @@ status: issues_found
 **Reviewed:** 2026-08-10
 **Depth:** standard
 **Files Reviewed:** 20
-**Status:** issues_found
+**Status:** fixed — CR-01, WR-01, WR-02, WR-03 applied in commit `6dded0c`; IN-01/IN-02 left as-is (cosmetic / no fix owed by this phase per IN-02's own text). Re-verified: lint 0 errors, tsc clean, 354/354 unit tests, 68/68 Playwright.
 
 ## Summary
 
