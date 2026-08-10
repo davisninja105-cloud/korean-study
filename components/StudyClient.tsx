@@ -171,6 +171,17 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
     }
   }
 
+  // CR-01 fix (34-REVIEW.md): revalidate must have a STABLE identity so the
+  // mount effect and the boundary-event effect below (both depending on
+  // [revalidate]) only ever run once at mount / register listeners once —
+  // not on every lesson-range filter change. filterRef mirrors phaseRef's
+  // established pattern: read the CURRENT filter from inside the async
+  // callback without making revalidate depend on it.
+  const filterRef = useRef({ lessonFrom, lessonTo, maxOrder })
+  useEffect(() => {
+    filterRef.current = { lessonFrom, lessonTo, maxOrder }
+  }, [lessonFrom, lessonTo, maxOrder])
+
   // Shared revalidation body (mirrors HabitsClient.tsx's `revalidate`,
   // 34-01-PLAN.md Task 3 precedent): fetches the unfiltered (full-span) due
   // list — always with NO lesson params, matching what the `study` cache
@@ -187,6 +198,7 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
       if (cancelledRef.current || !res.ok) return
       const fresh = (await res.json()) as CardDTO[]
       if (cancelledRef.current) return
+      const { lessonFrom, lessonTo, maxOrder } = filterRef.current
       if (phaseRef.current === 'select-mode' && isFullSpan(lessonFrom, lessonTo, maxOrder)) {
         setStudyCards(fresh)
         setScope('due')
@@ -195,13 +207,16 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
     } finally {
       if (!cancelledRef.current) setIsRevalidating(false)
     }
-  }, [lessonFrom, lessonTo, maxOrder])
+  }, []) // stable — mount effect and boundary-event effect below now only run once (CR-01 fix)
 
   // Cache-first mount read (LOCAL-01) + version-checked background
   // revalidation (LOCAL-02) — never gated on elapsed time (D-00 rule 2). No
   // gate is needed on the initial cache-read paint itself: this effect runs
   // at mount, where phase is 'select-mode', isFilterLoading is false, and
-  // the lesson range is the full span by construction.
+  // the lesson range is the full span by construction. CR-01 fix: the
+  // cache-adoption step below is ALSO full-span-gated now — revalidate
+  // becoming stable means this effect only runs once, but the guard stays as
+  // defense-in-depth against a future dependency-array regression.
   useEffect(() => {
     const cancelledRef = { current: false }
     ;(async () => {
@@ -213,7 +228,8 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
 
       const cached = await readCache<StudyCachePayload>(buildId, 'study')
       if (cancelledRef.current) return
-      if (cached) {
+      const { lessonFrom, lessonTo, maxOrder } = filterRef.current
+      if (cached && isFullSpan(lessonFrom, lessonTo, maxOrder)) {
         setStudyCards(cached.data)
         setScope('due')
       }

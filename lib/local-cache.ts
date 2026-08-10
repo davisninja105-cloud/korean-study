@@ -194,8 +194,16 @@ function groupKeyForCardType(type: string): string {
  * (fully graduated / no longer due this session). A no-op when the `study`
  * entry doesn't exist yet — never creates one. Never rejects.
  *
- * Call site: StudySession.tsx's `submitReview`, alongside the existing
- * optimistic in-memory `queue` update.
+ * WR-01 fix (34-REVIEW.md): a non-null `updatedCard` whose id is NOT already
+ * present is prepended rather than dropped. This matters for undo — grading
+ * a card so it graduates out of the session removes it from the cache
+ * (`updatedCard: null`), and `POST /api/review/undo` does not bump the
+ * server's dataVersion, so a subsequent undo's restore patch is the ONLY
+ * mechanism that can bring the card back into the cache before the next
+ * unrelated write happens to trigger a real revalidation.
+ *
+ * Call site: StudySession.tsx's `submitReview` and `handleUndo`, alongside
+ * the existing optimistic in-memory `queue` update.
  */
 export async function patchStudyCard(
   buildId: string,
@@ -206,7 +214,9 @@ export async function patchStudyCard(
     const entry = await readCache<StudyCachePayload>(buildId, 'study')
     if (!entry) return
     const nextData = updatedCard
-      ? entry.data.map((c) => (c.id === cardId ? updatedCard : c))
+      ? (entry.data.some((c) => c.id === cardId)
+          ? entry.data.map((c) => (c.id === cardId ? updatedCard : c))
+          : [updatedCard, ...entry.data])
       : entry.data.filter((c) => c.id !== cardId)
     await writeCache(buildId, 'study', nextData, entry.dataVersion)
   } catch {

@@ -221,7 +221,20 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
       }
     })()
     return () => { cancelled = true }
-  }, [checkBandUp, initialStats, initialActivity])
+    // WR-02 fix (34-REVIEW.md): initialStats/initialActivity are deliberately
+    // OMITTED from this dependency array. FreshnessWatcher's router.refresh()
+    // re-delivers them with a new object reference on every boundary event
+    // (visibilitychange/popstate/pageshow) — Home has no loading.tsx, so this
+    // re-delivery is frequent. With the props in the deps, this effect used to
+    // re-run on every one of those refreshes and unconditionally overwrite the
+    // just-delivered fresh RSC values with a (possibly older) cached value —
+    // a real content-flash on cross-tab/cross-device resume, violating D-01.
+    // Dropping them makes this effect run once at mount only, matching
+    // HabitsClient.tsx's equivalent `[revalidate]`-stable pattern; the
+    // render-phase "props-win" blocks above already adopt fresh props
+    // independently of this effect on every subsequent delivery.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // Derive heroState + today from stats + activityData.
   // habitDateStr must be called here (inside useEffect) — it calls new Date()
@@ -262,11 +275,15 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
         throw new Error(text || `sync failed (${res.status})`)
       }
       const data = await res.json()
-      setSyncMsg(
-        data.newCards > 0
-          ? `Synced — ${data.newCards} new card${data.newCards !== 1 ? 's' : ''}`
-          : 'Up to date'
-      )
+      // WR-03 fix (34-REVIEW.md): guard against setState after unmount, same
+      // as every other async continuation in this file.
+      if (isMountedRef.current) {
+        setSyncMsg(
+          data.newCards > 0
+            ? `Synced — ${data.newCards} new card${data.newCards !== 1 ? 's' : ''}`
+            : 'Up to date'
+        )
+      }
       // Awaited (not fire-and-forget) so the fresh DTOs are available to
       // write through to the cache below (Task 2, 34-04-PLAN.md).
       const [freshStats, freshActivity] = await Promise.all([
@@ -292,7 +309,7 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
         )
       }
     } catch {
-      setSyncMsg('Sync failed — try again from Settings')
+      if (isMountedRef.current) setSyncMsg('Sync failed — try again from Settings')
     }
   }, [loadStats, loadActivity])
 
