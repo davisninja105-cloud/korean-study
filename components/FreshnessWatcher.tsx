@@ -30,6 +30,24 @@ const COALESCE_MS = 300
  * against — re-test after any Next.js upgrade before considering this
  * component for removal.
  *
+ * Post-Phase-34 upgrade note (2026-08): the app was bumped from Next.js
+ * 16.2.1 to 16.3.0. Upstream GitHub issue vercel/next.js#86151 ("loading.js
+ * sometimes causes soft-navigation to get stuck and not render the new page,
+ * despite receiving it from the server") matches the flake diagnosed above
+ * closely enough to be the same bug: a route with loading.tsx,
+ * router.refresh() completing server-side but never applying to the mounted
+ * client tree. That issue is closed via vercel/next.js#95391, which shipped
+ * in 16.3.0. After the upgrade, the 22-test boundary-refresh e2e suite
+ * (freshness-version-gate/fresh-paths/gate/router-cache/client-shell,
+ * covering /study, /cards, /habits back-forward, resume, and mid-session
+ * refresh) was run 238 times total (--repeat-each across two batches) with
+ * zero reproductions of stale content — exceeding the original diagnosis's
+ * own "10+ isolated runs" confidence bar. This is empirical confidence, not
+ * a guarantee the intermittent flake is gone: router.refresh() and its three
+ * listeners stay exactly as they are regardless, since they cost nothing if
+ * the bug really is fixed and are the only defense if it is not. Re-run this
+ * same stress pass after any future Next.js upgrade.
+ *
  * Phase 34 (D-00 rule 3, LOCAL-01..05): this component used to also own a
  * second, Suspense-independent JSON payload backstop — a route-scoped
  * `/api/...` fetch, gated behind a `GET /api/version` comparison (Phase 33,
