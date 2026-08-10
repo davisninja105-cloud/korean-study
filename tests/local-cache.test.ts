@@ -153,6 +153,30 @@ describe('patchStudyCard', () => {
     const entry = await readCache<StudyCachePayload>(bId, 'study')
     expect(entry).toBeUndefined()
   })
+
+  // WR-01 regression (34-REVIEW.md): a non-null updatedCard whose id has
+  // already been removed from the entry (e.g. it graduated out of the
+  // session and was then undone) must be RE-INSERTED, not silently dropped.
+  // POST /api/review/undo doesn't bump the server dataVersion, so this patch
+  // is the only mechanism that can bring the card back before an unrelated
+  // write happens to trigger a real revalidation.
+  it('re-inserts a non-null updatedCard whose id is no longer present (undo-after-graduation)', async () => {
+    const bId = buildId()
+    const c1 = card('c1')
+    const c2 = card('c2')
+    await writeCache<StudyCachePayload>(bId, 'study', [c1, c2], 'v1')
+
+    // Grade graduates c1 out of the session — write-through removes it.
+    await patchStudyCard(bId, 'c1', null)
+    let entry = await readCache<StudyCachePayload>(bId, 'study')
+    expect(entry?.data.map((c) => c.id)).toEqual(['c2'])
+
+    // Undo restores the pre-grade card.
+    await patchStudyCard(bId, 'c1', c1)
+    entry = await readCache<StudyCachePayload>(bId, 'study')
+    expect(entry?.data.some((c) => c.id === 'c1')).toBe(true)
+    expect(entry?.data).toHaveLength(2)
+  })
 })
 
 function cardsPayload(groups: CardsCachePayload['groups']): CardsCachePayload {

@@ -193,3 +193,90 @@ test('reopening /study with /api/cards/due blocked shows the post-grade state, n
 
   await expect(page.getByTestId('due-count')).toHaveText(String(FIXTURE.dueCards - 1))
 })
+
+test('applying a lesson-range filter after the mount-time cache write does not revert to the unfiltered cached list (CR-01 regression, 34-REVIEW.md)', async ({
+  page,
+}) => {
+  await page.goto('/study')
+  await page.waitForLoadState('networkidle')
+
+  // Wait for the mount effect's own cache write to land — this is what
+  // creates the pre-existing 'study' cache entry CR-01's bug required
+  // (the bug only manifests on a route that ALREADY has a cache entry).
+  const before = await waitForStudyCacheEntry(page)
+  expect(before.data.length).toBe(FIXTURE.dueCards)
+  await expect(page.getByTestId('due-count')).toHaveText(String(FIXTURE.dueCards))
+
+  // Narrow to lesson 2 only — none of the 3 seeded due cards belong to
+  // lesson 2 (all three live in lesson 1, e2e/seed.ts), so the correctly
+  // filtered result is the empty state — unambiguously distinct from the
+  // cached unfiltered count of 3, so a revert is impossible to miss.
+  const filterTrigger = page.getByRole('button', { name: /Lessons \d|All lessons/ })
+  await filterTrigger.click()
+  await page.getByLabel('From lesson').selectOption('2')
+  await page.getByLabel('To lesson').selectOption('2')
+  await page.getByRole('button', { name: 'Apply' }).click()
+
+  const emptyState = page.getByText('No cards due for review right now.')
+  await expect(emptyState).toBeVisible()
+
+  // CR-01's bug: applying the filter changes lessonFrom/lessonTo, which (pre-
+  // fix) gave `revalidate` a new identity and re-fired the mount effect. That
+  // re-fire unconditionally overwrote studyCards with the STILL-cached
+  // unfiltered list (dataVersion unchanged, so no correcting revalidation
+  // fetch either) — reverting the due list back to all 3 cards with no
+  // further trigger to fix it. Hold the assertion across a window comfortably
+  // longer than the mount effect's readCache() round-trip (sub-500ms
+  // locally) to prove the revert does NOT happen post-fix.
+  await page.waitForTimeout(800)
+  await expect(emptyState).toBeVisible()
+  await expect(page.getByTestId('due-count')).toHaveCount(0)
+})
+
+test('undo after a graduating grade re-inserts the card into the cached study entry (WR-01 regression, 34-REVIEW.md)', async ({
+  page,
+}) => {
+  await page.goto('/study')
+  await page.waitForLoadState('networkidle')
+  const before = await waitForStudyCacheEntry(page)
+  expect(before.data.length).toBe(FIXTURE.dueCards)
+
+  await startPassiveSession(page)
+  await page.getByTestId('reveal-btn').waitFor({ state: 'visible' })
+  const front = ((await page.getByTestId('card-front-word').first().textContent()) ?? '').trim()
+  const targetCard = before.data.find((c) => c.front === front)
+  expect(targetCard).toBeTruthy()
+
+  await page.getByTestId('reveal-btn').click()
+  await expect(page.getByTestId('grade-easy')).toBeVisible()
+  // Easy on a brand-new due card graduates it out of the session in one grade
+  // (empirically confirmed against lib/fsrs.ts's reviewCard() — see the
+  // "reopening /study..." test above for the same fact) — requeue=false, so
+  // onReviewCommitted(cardId, null) removes the card from the cache.
+  await page.getByTestId('grade-easy').click()
+
+  await expect
+    .poll(
+      async () => {
+        const after = await readStudyCacheEntry(page)
+        return after?.data.some((c) => c.id === targetCard!.id) ?? true
+      },
+      { timeout: 5000 },
+    )
+    .toBe(false)
+
+  // Undo immediately — before WR-01's fix, patchStudyCard's replace-only
+  // .map() silently no-op'd here because the card was no longer present in
+  // the cached array, permanently understating the cache's due count.
+  await page.getByRole('button', { name: 'Undo last rating' }).click()
+
+  await expect
+    .poll(
+      async () => {
+        const after = await readStudyCacheEntry(page)
+        return after?.data.some((c) => c.id === targetCard!.id) ?? false
+      },
+      { timeout: 5000 },
+    )
+    .toBe(true)
+})
