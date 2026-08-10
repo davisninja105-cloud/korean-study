@@ -52,9 +52,9 @@ export interface CacheContext {
 // — plans 34-02/03/04 build against these, and declaring them here keeps
 // lib/local-cache.ts owned by exactly one plan.
 
-// Field-for-field identical to HabitsFreshPayload in
-// components/FreshnessWatcher.tsx, so a later plan can delete that type
-// without a shape migration.
+// Field-for-field identical to the JSON backstop payload FreshnessWatcher.tsx
+// used to expose for '/habits' before Phase 34 (34-05-PLAN.md) retired that
+// half of the dual-delivery design.
 export interface HabitsCachePayload {
   days: ActivityDTO['days']
   dailyGoalSeconds: number

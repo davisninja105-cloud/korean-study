@@ -11,7 +11,6 @@
 import { test, expect, type Page, type Request as PwRequest } from '@playwright/test'
 import { resetToBaseline } from './seed'
 import { isRscRequest } from './helpers/rsc'
-import { simulateResume } from './helpers/resume'
 import {
   flipOneReviewDueState,
   createMutationCard,
@@ -20,7 +19,6 @@ import {
   expectedDueState,
   expectedCardsCount,
   expectedMasteredCount,
-  bumpDataVersionOnly,
 } from './helpers/mutate'
 import { readHomeState, readStudySelectModeState, readCardsCount, readHabitsMasteredCount } from './helpers/readers'
 
@@ -223,78 +221,38 @@ test('/cards post-mutation-return stays fresh - regression net for Phase 26 (D-0
   const expected = await expectedCardsCount()
   const observed = await readCardsCount(page)
   expect(observed).toBe(expected)
-
-  // ── Upsert-not-replace extension (Phase 31, plan 04, Task 3) ─────────────
-  // Proves FreshnessWatcher's `/cards` backstop (visibilitychange-triggered,
-  // NOT the plain-Link revisit above — that's a legitimate full CardsClient
-  // remount with fresh SSR data, unrelated to this fix) merges by id rather
-  // than wholesale-replacing `groups.vocabulary.loaded` (31-RESEARCH.md
-  // Pitfall 1, T-31-08). The e2e fixture (8-9 cards, well under PAGE_SIZE=30)
-  // can't naturally produce a genuine second DB page to lose, so the
-  // backstop's own exact no-cursor `/api/cards` call is intercepted and
-  // forced to return a deliberately tiny/empty partial page — a wholesale-
-  // replace bug would zero out every already-loaded row; the correct
-  // upsert-by-id merge leaves them all untouched.
-  const loadedFrontSelector = page.locator('p.font-bold.text-foreground.hangul')
-  const loadedBefore = await loadedFrontSelector.count()
-  expect(loadedBefore).toBeGreaterThan(0)
-
-  // router.refresh()'s own RSC re-fetch of the SAME '/cards' route (it
-  // appends its own `_rsc=<hash>` cache-busting query param, distinguished
-  // from ordinary requests by the `rsc: 1` header) legitimately delivers
-  // fresh real data too and would otherwise mask a wholesale-replace
-  // regression in the backstop path (the real refresh happens to restore
-  // the correct count regardless of what the backstop does, since this
-  // fixture's total card count fits on a single real page anyway). Delaying
-  // it well past this test's settle window isolates the backstop's own
-  // merge behavior as the only thing that can have affected `loadedAfter`
-  // below (verified empirically: reverting the upsert fix to a wholesale
-  // replace makes this assertion fail with `loadedAfter === 0` when this
-  // delay is in place, and only in place — confirming this actually
-  // exercises the fix and doesn't just vacuously pass).
-  await page.route(
-    (url) => url.pathname === '/cards',
-    async (route) => {
-      if (route.request().headers()['rsc'] === '1') {
-        await new Promise((r) => setTimeout(r, 3000))
-      }
-      await route.continue()
-    }
-  )
-
-  // The backstop's own exact, no-query-string call to /api/cards — every
-  // other client fetch to /api/cards (expand-on-tap, scroll, filter-commit)
-  // always carries query params and must pass through untouched.
-  await page.route(
-    (url) => url.pathname === '/api/cards' && url.search === '',
-    async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ cards: [], nextCursor: null, hasMore: false }),
-      })
-    }
-  )
-
-  // Phase 33-02 (VERS-01/02): the client's last render already reflects the
-  // createMutationCard() call from earlier in this test, so by this point in
-  // the flow nothing has changed since — without an intervening version
-  // advance the gate is correctly closed here, and the mocked no-cursor
-  // /api/cards interception above would never be reached, making the final
-  // equality assertion below pass trivially instead of proving the
-  // upsert-by-id merge. bumpDataVersionOnly() reopens the gate without
-  // touching any DOM-observable value, so the interception is genuinely
-  // exercised.
-  await bumpDataVersionOnly()
-
-  await simulateResume(page, true)
-  await page.waitForTimeout(150)
-  await simulateResume(page, false)
-  await page.waitForTimeout(800) // settles the (unmocked) backstop fetch; well under the RSC route's 3000ms delay
-
-  const loadedAfter = await loadedFrontSelector.count()
-  // The upsert-by-id merge of an EMPTY partial payload must be a pure no-op
-  // — never truncate already-loaded rows down to the backstop's own
-  // (synthetically tiny) page size.
-  expect(loadedAfter).toBe(loadedBefore)
 })
+
+// ── Upsert-not-replace extension: DELETED (34-05-PLAN.md Task 2) ───────────
+// This sub-test (Phase 31, plan 04, Task 3) proved FreshnessWatcher's `/cards`
+// JSON backstop merged its own raw, unbounded, no-cursor `/api/cards` fetch
+// by id rather than wholesale-replacing `groups.vocabulary.loaded`
+// (31-RESEARCH.md Pitfall 1, T-31-08). Phase 34 (D-00 rule 3) retired that
+// entire raw no-cursor fetch — `fetchRoutePayload`'s `/cards` branch is gone
+// from components/FreshnessWatcher.tsx, so the interception this test relied
+// on (`url.pathname === '/api/cards' && url.search === ''`) can never fire
+// again: `CardsClient.tsx`'s own surviving revalidation (mount-time AND, as
+// of this plan's Rule 2 fix, boundary-event-triggered) never issues a
+// no-query-string call — every request always carries `type=`/`take=`/other
+// params. Left in place, this test would pass GREEN-BUT-VACUOUS: the mocked
+// empty-page interception would simply never be reached, the real
+// (unintercepted) endpoint would serve genuine data, and the final equality
+// assertion would pass trivially rather than proving any merge behavior
+// (confirmed empirically: the interception's own `route.fulfill` never fires
+// under the narrowed FreshnessWatcher).
+//
+// No rewrite against the surviving mechanism is possible for the SAME
+// invariant, because the invariant itself is now structurally moot: the old
+// backstop's specific failure mode (an unbounded page-1-only fetch silently
+// truncating MORE-than-page-1 already-loaded rows) required a raw, size-
+// unaware fetch. CardsClient's own revalidation (`lib/cards-list.ts`'s
+// `fetchCardsPage` call inside `revalidate()`, `components/CardsClient.tsx`)
+// is bounded to `take: <the group's own current loaded.length>` — by
+// construction it can never be smaller than what's already on screen under
+// normal (non-deletion) operation, so the specific "silently drops rows past
+// page 1" bug this test guarded against cannot recur through this path. The
+// already-shipped Phase 31/34 coverage for CardsClient's own revalidation and
+// write-through correctness (e2e/cards-tab-switch-scroll.spec.ts,
+// e2e/local-cache-cards-edit.spec.ts) is unaffected by this deletion — this
+// deletion removes exactly one test whose subject (the retired backstop's
+// raw fetch) no longer exists, not the underlying correctness guarantee.

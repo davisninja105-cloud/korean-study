@@ -94,6 +94,16 @@ export default defineConfig({
       DATABASE_URL: TEST_DB_URL,
       AUTH_SECRET: process.env.AUTH_SECRET ?? 'e2e-test-secret',
       APP_PASSWORD: process.env.APP_PASSWORD ?? 'e2e-test-password',
+      // 34-05-PLAN.md Task 3 (Rule 3 blocking fix): without this,
+      // components/HomeClient.tsx's `DOC_ID` const is empty at build time
+      // (NEXT_PUBLIC_* vars are inlined at build, not read at runtime), so
+      // handleSync's `if (!DOC_ID) return` guard fires before ever calling
+      // `POST /api/sync` — making e2e/pull-to-refresh.spec.ts's Home cell
+      // structurally unable to observe the sync request it exists to prove.
+      // A fake id is sufficient: e2e/pull-to-refresh.spec.ts intercepts and
+      // mocks POST /api/sync's response, so the real Google Docs API is
+      // never actually called.
+      NEXT_PUBLIC_GOOGLE_DOC_ID: process.env.NEXT_PUBLIC_GOOGLE_DOC_ID ?? 'e2e-test-doc-id',
       // Blanked so the real Turso token can never reach the child even via
       // env merge — mirrors scripts/diagnose-freshness.mts's delete of this var.
       DATABASE_AUTH_TOKEN: '',

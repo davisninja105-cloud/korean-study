@@ -504,6 +504,59 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   canAdoptCacheRef.current =
     editingId === null && !showAdd && !adding && deletingIds.size === 0 && !hasActiveClientQuery
 
+  // Live mirror of `groups`, kept in sync via a plain (non-setState)
+  // assignment on every render — same idiom as `canAdoptCacheRef` just above.
+  // Lets the boundary-event revalidation below (Rule 2 auto-add, see
+  // 34-05-SUMMARY.md Deviations) read "what's currently loaded" without
+  // depending on `groups` itself, which would otherwise force a brand-new
+  // listener registration on every group-content change.
+  const groupsRef = useRef(groups)
+  groupsRef.current = groups
+
+  // Shared revalidation body (mirrors HabitsClient.tsx's/StudyClient.tsx's
+  // `revalidate`, 34-01/34-02-PLAN.md precedent — added here as a Rule 2
+  // auto-add during 34-05's FreshnessWatcher narrowing, see SUMMARY
+  // Deviations): fetches, per already-loaded group, exactly that group's
+  // current row count (D-05 — never a full-deck fetch), applies the SAME
+  // discard guard the mount effect already uses (canAdoptCacheRef), then
+  // writes the merged snapshot through to the cache regardless of whether
+  // adoption was rejected.
+  const revalidate = useCallback(async (buildId: string, version: string, cancelledRef: { current: boolean }) => {
+    setIsRevalidating(true)
+    try {
+      const sourceGroups = groupsRef.current
+      const loadedLenFor = (key: GroupKey) => sourceGroups[key]?.loaded.length ?? 0
+      const keysToRevalidate = GROUP_KEYS.filter((key) => loadedLenFor(key) > 0)
+      const fetchResults = await Promise.all(
+        keysToRevalidate.map(async (key) => {
+          const page = await fetchCardsPage({
+            type: key,
+            cursor: null,
+            search: null,
+            lessonFrom: null,
+            lessonTo: null,
+            take: loadedLenFor(key),
+          })
+          return { key, page }
+        })
+      )
+      if (cancelledRef.current) return
+      if (canAdoptCacheRef.current) {
+        let latestCounts: GroupCountsDTO | undefined
+        for (const { key, page } of fetchResults) {
+          applyGroupPage(key, page, 'replace')
+          if (page.groupCounts) latestCounts = page.groupCounts
+        }
+        if (latestCounts) setGroupCounts(latestCounts)
+      }
+    } catch {
+      // Silent — the already-painted cached (or RSC) rows stand (UI-SPEC E3
+      // error). No error copy for a background revalidation failure.
+    } finally {
+      if (!cancelledRef.current) setIsRevalidating(false)
+    }
+  }, [])
+
   // Cache-first mount read + version-checked revalidation (LOCAL-01/02/05).
   // Paints the session-accumulated groups from IndexedDB before GET
   // /api/cards resolves; revalidates only when GET /api/version reports a
@@ -511,27 +564,31 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   // rule 2 — never on elapsed time), and only for groups that already have
   // loaded rows (D-05 — never a full-deck fetch).
   useEffect(() => {
-    let cancelled = false
+    const cancelledRef = { current: false }
     ;(async () => {
       const ctx = await fetchCacheContext()
-      if (cancelled || !ctx) return // offline cold path — RSC props already rendered
+      if (cancelledRef.current || !ctx) return // offline cold path — RSC props already rendered
       const { version, buildId } = ctx
       versionRef.current = version
       buildIdRef.current = buildId
       setCacheReady(true)
 
       const cached = await readCache<CardsCachePayload>(buildId, 'cards')
-      if (cancelled) return
+      if (cancelledRef.current) return
 
       if (cached && canAdoptCacheRef.current) {
-        setGroups((prev) => {
-          const next = { ...prev }
-          for (const key of GROUP_KEYS) {
-            const g = cached.data.groups[key]
-            next[key] = g ? { ...g, loading: false, error: null } : { ...EMPTY_GROUP_STATE }
-          }
-          return next
-        })
+        const adopted: Record<GroupKey, GroupState> = { ...groupsRef.current }
+        for (const key of GROUP_KEYS) {
+          const g = cached.data.groups[key]
+          adopted[key] = g ? { ...g, loading: false, error: null } : { ...EMPTY_GROUP_STATE }
+        }
+        setGroups(adopted)
+        // React batches this setGroups call rather than applying it
+        // synchronously — seed groupsRef directly so the revalidate() call
+        // just below (still in this same synchronous block, no intervening
+        // render) reads the just-adopted cached groups, not the stale
+        // pre-adoption ref value.
+        groupsRef.current = adopted
         setGroupCounts(cached.data.groupCounts)
         setCollapsed((prev) => {
           const next = { ...prev }
@@ -552,44 +609,57 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       // asserts zero /api/cards requests across a tab-switch flow with no
       // prior cache — see this plan's SUMMARY Deviations).
       if (cached && cached.dataVersion !== version) {
-        setIsRevalidating(true)
-        try {
-          const sourceGroups = cached.data.groups
-          const loadedLenFor = (key: GroupKey) => sourceGroups[key]?.loaded.length ?? 0
-          const keysToRevalidate = GROUP_KEYS.filter((key) => loadedLenFor(key) > 0)
-          const fetchResults = await Promise.all(
-            keysToRevalidate.map(async (key) => {
-              const page = await fetchCardsPage({
-                type: key,
-                cursor: null,
-                search: null,
-                lessonFrom: null,
-                lessonTo: null,
-                take: loadedLenFor(key),
-              })
-              return { key, page }
-            })
-          )
-          if (cancelled) return
-          if (canAdoptCacheRef.current) {
-            let latestCounts: GroupCountsDTO | undefined
-            for (const { key, page } of fetchResults) {
-              applyGroupPage(key, page, 'replace')
-              if (page.groupCounts) latestCounts = page.groupCounts
-            }
-            if (latestCounts) setGroupCounts(latestCounts)
-          }
-        } catch {
-          // Silent — the already-painted cached (or RSC) rows stand
-          // (UI-SPEC E3 error). No error copy for a background revalidation
-          // failure.
-        } finally {
-          if (!cancelled) setIsRevalidating(false)
-        }
+        await revalidate(buildId, version, cancelledRef)
       }
     })()
-    return () => { cancelled = true }
-  }, [])
+    return () => { cancelledRef.current = true }
+  }, [revalidate])
+
+  // Boundary-event revalidation (Rule 2 auto-add — see 34-05-SUMMARY.md
+  // Deviations): /cards has its own app/cards/loading.tsx, making it one of
+  // the exact routes affected by the same real, unfixed Next.js 16.2.1
+  // RSC-application flake 34-01-SUMMARY.md's Deviation #2 found and fixed for
+  // /habits, and 34-02-SUMMARY.md replicated for /study — a boundary-
+  // triggered router.refresh() can fetch a fresh RSC payload on the server
+  // but silently fail to apply it to the already-mounted client tree. Before
+  // this fix, /cards had NO revalidation trigger on visibilitychange/
+  // popstate/pageshow at all (only a mount-time check), which the retired
+  // FreshnessWatcher JSON backstop used to cover for. Mirrors
+  // HabitsClient.tsx's/StudyClient.tsx's second effect exactly: re-checks
+  // /api/version on the same three events, with the same 300ms coalesce
+  // guard.
+  useEffect(() => {
+    const cancelledRef = { current: false }
+    const lastCheckRef = { current: 0 }
+    const check = () => {
+      const now = Date.now()
+      if (now - lastCheckRef.current < 300) return
+      lastCheckRef.current = now
+      ;(async () => {
+        const ctx = await fetchCacheContext()
+        if (cancelledRef.current || !ctx) return
+        if (ctx.version !== versionRef.current) {
+          buildIdRef.current = ctx.buildId
+          await revalidate(ctx.buildId, ctx.version, cancelledRef)
+          if (!cancelledRef.current) versionRef.current = ctx.version
+        }
+      })()
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') check()
+    }
+    const onPopState = () => { setTimeout(check, 0) }
+    const onPageShow = (e: PageTransitionEvent) => { if (e.persisted) check() }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    window.addEventListener('popstate', onPopState)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      cancelledRef.current = true
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      window.removeEventListener('popstate', onPopState)
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [revalidate])
 
   // Group-snapshot persistence effect (D-05 accumulation): whenever the
   // session-accumulated groups/groupCounts change AND no client-side query
