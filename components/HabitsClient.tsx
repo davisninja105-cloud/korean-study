@@ -99,9 +99,10 @@ export default function HabitsClient({
   // FreshnessWatcher.tsx's own header comment names as affected by a real,
   // unfixed Next.js 16.2.1 bug — a boundary-triggered router.refresh() can
   // fetch a fresh RSC payload on the server but silently fail to apply it to
-  // the already-mounted client tree. The retired JSON backstop
-  // (useFreshPayload) used to paper over exactly this by re-fetching
-  // /api/activity+/api/stats on every visibilitychange/popstate/pageshow,
+  // the already-mounted client tree. The retired JSON backstop (its exported
+  // consumer hook, now fully removed as of 34-05-PLAN.md) used to paper over
+  // exactly this by re-fetching /api/activity+/api/stats on every
+  // visibilitychange/popstate/pageshow,
   // independent of whether the RSC application succeeded. D-00 rule 3 says
   // this cache is supposed to REPLACE that layer, not just delete it — which
   // means the replacement must independently re-trigger on the SAME
