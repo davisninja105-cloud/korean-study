@@ -179,6 +179,35 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
       versionRef.current = version
       buildIdRef.current = buildId
 
+      // Home-mount study-pool warm (D-01–D-04, OFFLINE-02, 35-02-PLAN.md
+      // Task 2): keeps /study's due-session cache entry fresh on every Home
+      // visit, not just a visit to /study itself — Home is the default
+      // landing screen and is visited far more often than /study, which is
+      // exactly why the warm rides here rather than on sync completion
+      // (D-02). Runs immediately after the cache context resolves and BEFORE
+      // this file's own Home revalidation branch below, so it fires on every
+      // mount regardless of whether the Home cache entry itself was fresh.
+      // Fetches exactly the due session (D-03 — same scope='due' pool /study
+      // itself loads, capped server-side at sessionSize, never a larger
+      // due-plus-ahead buffer) and never a lesson-range parameter (D-04 —
+      // always the plain unfiltered everything pool, never reading or
+      // reproducing a filter the user may have set on /study). Fire-and-
+      // forget: never awaited by the revalidation branch below, and never
+      // sets any state — a warm is invisible by design, exactly like
+      // background revalidation. Skipped entirely when the resolved context
+      // is stale — a stale context means the live version read failed, so
+      // there is no trustworthy data version to stamp a cache entry with,
+      // and no network to fetch a fresh pool over anyway.
+      if (!ctx.stale) {
+        fetch('/api/cards/due?scope=due')
+          .then((res) => (res.ok ? res.json() : null))
+          .then((cards) => {
+            if (cancelled || !Array.isArray(cards)) return
+            return writeCache(buildId, 'study', cards, version)
+          })
+          .catch(() => {})
+      }
+
       const cached = await readCache<HomeCachePayload>(buildId, 'home')
       if (cancelled) return
       if (cached) {
