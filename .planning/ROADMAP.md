@@ -140,7 +140,7 @@ See `.planning/milestones/v1.6-ROADMAP.md` for full phase details.
 - [x] **Phase 32: Study Load Round-Trip Collapse** - `/study` drops from 4–5 sequential Turso round trips to at most two, with sync-invalidated caching of invariant reads (completed 2026-08-08)
 - [x] **Phase 33: Version-Gated Freshness Backstop** - `/api/version` monotonic counter lets the freshness backstop re-fetch payloads only when something actually changed (completed 2026-08-08)
 - [x] **Phase 34: Local-First Shell** - IndexedDB stale-while-revalidate cache makes every repeat visit paint instantly and the app usable with the network off (completed 2026-08-10)
-- [ ] **Phase 35: Service Worker & Offline Review Queue** - Precached app shell plus a persisted review queue that flushes exactly once when the app comes back online
+- [x] **Phase 35: Service Worker & Offline Review Queue** - Precached app shell plus a persisted review queue that flushes exactly once when the app comes back online (completed 2026-08-10)
 
 ## Phase Details
 
@@ -358,7 +358,7 @@ Re-measure the baseline table after Phase 30 before starting Phase 31 — the nu
 | 32. Study Load Round-Trip Collapse | v1.8 | 4/4 | Complete    | 2026-08-08 |
 | 33. Version-Gated Freshness Backstop | v1.8 | 2/2 | Complete    | 2026-08-08 |
 | 34. Local-First Shell | v1.8 | 5/5 | Complete    | 2026-08-10 |
-| 35. Service Worker & Offline Review Queue | v1.8 | 4/4 | In Progress|  |
+| 35. Service Worker & Offline Review Queue | v1.8 | 4/4 | Complete    | 2026-08-10 |
 
 ---
 *Last updated: 2026-08-05 — v1.8 Perceived & Real Performance roadmap created (Phases 30–35, coarse granularity, 21/21 requirements mapped).*
