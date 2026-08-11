@@ -1,8 +1,8 @@
 ---
 phase: 35-service-worker-offline-review-queue
-reviewed: 2026-08-10T00:00:00Z
+reviewed: 2026-08-11T00:00:00Z
 depth: standard
-files_reviewed: 25
+files_reviewed: 28
 files_reviewed_list:
   - .gitignore
   - app/layout.tsx
@@ -15,8 +15,10 @@ files_reviewed_list:
   - components/StudyClient.tsx
   - components/StudySession.tsx
   - e2e/helpers/mutate.ts
+  - e2e/offline-review-queue-recovery.spec.ts
   - e2e/offline-review-queue.spec.ts
   - e2e/run-mutate.ts
+  - e2e/sw-navigate-session-expiry.spec.ts
   - e2e/sw-offline-study-session.spec.ts
   - e2e/sw-shell-offline.spec.ts
   - eslint.config.mjs
@@ -29,134 +31,77 @@ files_reviewed_list:
   - scripts/gen-sw.mjs
   - scripts/sw-runtime.mjs
   - scripts/sw-template.js
+  - tests/gen-sw.test.ts
+  - tests/local-cache.test.ts
+  - tests/offline-queue.test.ts
+  - tests/sw-runtime.test.ts
 findings:
-  critical: 3
+  critical: 0
   warning: 4
-  info: 1
-  total: 8
+  info: 2
+  total: 6
 status: issues_found
 ---
 
-# Phase 35: Code Review Report
+# Phase 35: Code Review Report (Re-Review)
 
-**Reviewed:** 2026-08-10T00:00:00Z
+**Reviewed:** 2026-08-11T00:00:00Z
 **Depth:** standard
-**Files Reviewed:** 25 (+4 test files skimmed for corroboration: tests/gen-sw.test.ts, tests/local-cache.test.ts, tests/offline-queue.test.ts, tests/sw-runtime.test.ts)
-**Status:** issues_found
+**Files Reviewed:** 28 (config list) — 4 of these (`tests/*.test.ts`) are unit-test files skimmed for corroboration only, per the "no findings in test files" rule; 2 (`components/CardsClient.tsx`, `components/SettingsClient.tsx`) carry no Phase 35 changes at all (confirmed via `git log`/`grep` — no import of `lib/offline-queue.ts` or `lib/service-worker.ts` anywhere in either file) and are noted here for completeness rather than re-litigated.
+**Status:** issues_found (0 Critical / 4 Warning / 2 Info — all four Warnings and the first Info item are carried forward, unfixed, from the prior `35-REVIEW.md`)
 
 ## Summary
 
-This phase adds a versioned service worker (app-shell precache + navigate/cache-first/network-only routing), a `localStorage`-backed cache-context fallback for genuine cold offline launches, a Home-mount study-pool warm, and a durable IndexedDB offline review queue with sequential, idempotency-key-safe flushing. The unit-test coverage for the new pure helpers (`sw-runtime.mjs`, `gen-sw.mjs`, `offline-queue.ts`, `local-cache.ts`'s new fallback) is genuinely good and each of those modules' *documented* contracts is correctly implemented and tested.
+This is a re-review of Phase 35 after gap-closure plan 35-04 landed fixes for the three Critical findings (CR-01/CR-02/CR-03) from the prior `35-REVIEW.md` / `35-VERIFICATION.md`. All three fixes were independently re-derived from source (not merely trusted from the SUMMARY) and are **sound** — see the verification section below. No new Critical or data-loss-class bug was introduced by the gap-closure diff itself.
 
-The problems found below are all in the parts of the system that sit *between* well-tested pure units — the actual service-worker runtime script (`scripts/sw-template.js`, which is not unit-tested; only its pure `sw-runtime.mjs` half is), and the interaction between the new offline queue and the pre-existing undo/retry flow in `StudySession.tsx`. Three of them are correctness/data-integrity bugs that directly undermine this phase's own stated goals ("offline shell never serves the wrong page", "a graded review is durably queued instead of lost"), and none of them are covered by the new e2e specs, which only exercise the happy paths.
+However, four of the five Warning/Info items the prior review found (`WR-01`–`WR-04`) remain **unpatched in the current source**, confirmed by direct inspection of every file each finding cites. `35-VERIFICATION.md` explicitly deferred these as non-blocking for phase closure ("not blocking this phase's goal and can be deferred"), so their continued presence is an accepted, on-the-record trade-off rather than an oversight — but they are re-surfaced here in full per this review's adversarial mandate, since "previously deferred" is not the same as "fixed." One new, narrow, low-probability Info-level race is noted from fresh analysis of the CR-03 wiring.
 
-## Critical Issues
+`npx vitest run` (81/81 across the four Phase-35 test files), `npx tsc --noEmit`, and `npx eslint` (0 errors; 1 pre-existing, explicitly-documented-as-expected warning in `StudySession.tsx`, unrelated to this phase's changes) all pass clean as of this review.
 
-### CR-01: Service worker's `navigate` fetch handler caches a session-expiry login-page redirect under the real route's key
+## Re-Review: CR-01 / CR-02 / CR-03 Verification
 
-**File:** `scripts/sw-template.js:81-98`
-**Issue:** The `install` handler's `warmNavigationRoute()` (lines 23-37 of the same file) explicitly guards against exactly this failure mode: *"an expired session redirects to /login, and without this check the login HTML would be cached under an app route's key and served as that route offline"* — and checks `new URL(response.url).pathname === route` before writing to cache. The runtime `fetch` event's `navigate` branch does **not** apply the same check:
+### CR-01 — navigation cache-poisoning guard (FIXED, sound)
 
-```js
-if (strategy === 'navigate') {
-  const key = url.pathname
-  event.respondWith(
-    fetch(request)
-      .then((response) => {
-        if (response.ok) {
-          const copy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(key, copy))   // <-- no response.url check
-        }
-        return response
-      })
-      .catch(() => caches.match(key))
-  )
-  return
-}
-```
+`scripts/sw-runtime.mjs` now exports `shouldCacheNavigationResponse(responseOk, responseUrl, key)`, a single pure predicate (fails closed on a non-ok response, an unparseable URL, or an empty string) consumed by **both** call sites that write a navigation document into the shell cache: the install-time `warmNavigationRoute()` and the runtime `fetch` handler's `navigate` branch (`scripts/sw-template.js:34` and `:95`). This closes the exact divergence the prior review flagged (`warmNavigationRoute` had the check; the runtime branch didn't). Verified:
+- `tests/sw-runtime.test.ts` — 8 new cases covering ok/non-ok, matching/mismatched pathname, trailing-slash, prefix-collision, empty string, and unparseable-URL inputs — all pass.
+- `e2e/sw-navigate-session-expiry.spec.ts` — a real online navigation with cookies cleared (middleware redirects `/study`→`/login`, 200 OK) is followed by reading the shell-cache entry directly and confirming it still contains the real `/study` document, then a genuine offline cold navigation to `/study` still serves the app (not the login form).
+- Worth noting for future readers (documented candidly in `35-04-SUMMARY.md`'s own "Deviations" and independently plausible from the Service Worker spec): a `fetch` event's `request` for a `navigate`-mode request is forced to `redirect: 'manual'` by the platform, so the literal redirect-following exploit this finding originally described does not reproduce in real browsers today — `fetch(event.request)` for such a request resolves to an `opaqueredirect` (`ok: false`) response, which the pre-existing bare `if (response.ok)` check already rejected. This does **not** make the fix pointless: `warmNavigationRoute`'s plain (non-event-intercepted) `fetch(route)` call *does* follow redirects by default and genuinely needed this exact guard, and the shared predicate is correct defense-in-depth against any future code path that reconstructs the request with an explicit `redirect: 'follow'`. No action needed; noted for context only.
 
-`fetch(request)` follows redirects by default. `middleware.ts` redirects any unauthenticated page request to `/login`, which itself renders a normal `200 OK`. So a live navigation to e.g. `/study` while the session cookie has expired (auth cookie is a 1-year cookie, but users can clear cookies, use another device, or the shared password can be rotated) will: (1) render the login page correctly for the user online — no visible symptom — but (2) silently overwrite the good, previously-warmed `/study` cache entry with the login page's HTML, keyed under `/study`. The next time the user is genuinely offline and navigates to `/study`, the service worker serves the cached login page instead of the app, even though the user is authenticated and was working fine moments before. This directly defeats OFFLINE-01/OFFLINE-02's core promise and is untested by `e2e/sw-shell-offline.spec.ts` / `e2e/sw-offline-study-session.spec.ts` (neither simulates an expired-cookie navigation while online).
-**Fix:**
-```js
-if (strategy === 'navigate') {
-  const key = url.pathname
-  event.respondWith(
-    fetch(request)
-      .then((response) => {
-        if (response.ok && new URL(response.url).pathname === key) {
-          const copy = response.clone()
-          caches.open(CACHE_NAME).then((cache) => cache.put(key, copy))
-        }
-        return response
-      })
-      .catch(() => caches.match(key))
-  )
-  return
-}
-```
+### CR-02 — 409 misclassification in `flushQueue` (FIXED, sound)
 
-### CR-02: `flushQueue` treats a `409` (explicitly retryable) response identically to a permanent `4xx`, silently discarding a recoverable offline review
+`lib/offline-queue.ts:226-229` now checks `result.status === 409` **before** the general `4xx` branch and treats it identically to the `5xx`/thrown-error path: `stoppedAt = i; break` — never deletes, never counts `dropped` or `flushed`, preserving enqueue order for the still-queued entry. Verified:
+- `tests/offline-queue.test.ts` — 5 new cases: 409 on the first of three (stop immediately, all three remain, transport called once), 409 on the second of three (first flushes, second+third remain), a later flush with the same idempotencyKey lands the retried entry exactly once, `400`/`404` keep the pre-existing drop behavior unchanged, and a bare non-vacuity check that 409 never increments `dropped`.
+- `e2e/offline-review-queue-recovery.spec.ts` — a real page-level `fetch` override returns 409 for the replayed POST; the entry stays queued (`readQueueCount` stays 1), `ReviewLog` count stays at baseline, the "couldn't be saved" Toast is confirmed absent (correct — a 409 is not a permanent loss), and a subsequent flush with the real transport restored lands it exactly once.
 
-**File:** `lib/offline-queue.ts:181-186`
-**Issue:** `app/api/review/route.ts`'s optimistic-concurrency check returns `409` with the message `"Card review was updated concurrently; please retry"` when the `CardReview` row moved between read and write (e.g. a concurrent write from another open tab, or another device under this app's shared-password, multi-device usage model — see `CLAUDE.md`'s "single shared password" / no per-user model). `flushQueue`'s classification only distinguishes `2xx` / `4xx` / `5xx`:
+### CR-03 — undo doesn't cancel a queued offline review (FIXED, sound with one narrow residual noted below)
 
-```js
-if (result.status >= 400 && result.status < 500) {
-  await deleteEntry(entry.id!)
-  dropped++
-  continue
-}
-```
+`removeQueuedReviewByKey(idempotencyKey)` (`lib/offline-queue.ts:146-159`) deletes every queue entry whose `idempotencyKey` is `===`-equal to the argument (intentionally not `startsWith`/prefix/cardId matching — verified by the "strict prefix removes nothing" and "case-differing key removes nothing" unit tests). `idempotencyKey` is now threaded through `undoRef.current` (grade-time assignment at `StudySession.tsx:471`/`483`, destructured at `:556`, re-armed unchanged on the undo-failure path at `:587-596`) and `handleUndo` calls it **twice**: immediately after `controller.abort()` and before the undo POST fires (`:569`, the only outcome achievable while genuinely offline), and again after the undo POST resolves `ok` (`:608`, covering the narrow window between the abort call and the response). Verified:
+- `tests/offline-queue.test.ts` — exact-key removal leaves siblings untouched and in order, a no-match call is a safe no-op, a subsequent `flushQueue` never calls the transport for a removed entry.
+- `e2e/offline-review-queue-recovery.spec.ts` — a review graded offline is confirmed durably queued, then undone while still offline (queue count polls to 0 immediately — proving the cancel-path call, not the success-path one, since the undo POST cannot succeed offline), reconnect + two separate flush triggers both leave `ReviewLog` at baseline.
 
-A `409` falls into this bucket and is treated exactly like a genuinely permanent failure (e.g. `404` for a deleted card): the entry is deleted from the durable queue and the user is shown *"…couldn't be saved — your progress wasn't recorded"* (`OfflineQueueFlusher.tsx:56-58`) with no further retry. This is precisely backwards for `409` — the server's own error message says the opposite ("please retry"), and this module's entire premise (its header comment: *"durably queued instead of lost"*) is violated for this status code. `lib/offline-queue.ts`'s own header comment and `35-RESEARCH.md`'s Pitfall 4 discuss `409` only in the context of avoiding out-of-order flushes; the "what should happen to a queued entry that itself gets a 409" question is never addressed, and the current behavior is a real data-loss path, not a documented trade-off.
-**Fix:** Treat `409` the same as the "stop, keep queued, retry later" branch used for `5xx`/thrown errors, not the "drop" branch:
-```js
-if (result.status === 409) {
-  // Concurrent modification — explicitly retryable per the server's own
-  // contract. Stop the walk (same as 5xx) rather than dropping.
-  stoppedAt = i
-  break
-}
-if (result.status >= 400 && result.status < 500) {
-  await deleteEntry(entry.id!)
-  dropped++
-  continue
-}
-```
-
-### CR-03: Undoing a review never removes/cancels the corresponding entry from the offline queue — a successful undo can be silently reverted by a later automatic flush
-
-**File:** `components/StudySession.tsx:541-569` (`handleUndo`), `lib/offline-queue.ts` (no removal API exists at all)
-**Issue:** When the background save exhausts and is classified `network`, the review is durably enqueued (`StudySession.tsx:500`, `enqueueReview(...)`) *before* the user has necessarily decided whether to undo. `handleUndo` (lines 541-569) only calls `controller.abort()` (which prevents `onExhausted`/`enqueueReview` from firing **if it hasn't already fired**) and `POST /api/review/undo`. It has zero awareness of `lib/offline-queue.ts`, which exports no `cardId`/`idempotencyKey`-scoped removal function at all (only `enqueueReview`, `readQueue`, `flushQueue`).
-
-Concretely:
-1. User grades a card while offline. The background save's bounded retry (`postReviewWithRetry`, ~500ms–1500ms backoff between attempts, often exhausting in a few seconds while genuinely offline) exhausts and calls `enqueueReview(...)` — the review is now durably queued but not yet sent.
-2. User taps **Undo** shortly after (a very ordinary user action — `canUndo` is available immediately on grade, independent of whether the background save has settled). `controller.abort()` is a no-op at this point since the retry chain already finished. `POST /api/review/undo` either fails (still offline — caught, `canUndo` re-armed, no state restore, no queue cleanup) or later succeeds (once reconnected — `CardReview` is reverted server-side to `prevState`).
-3. Independently, some later foreground-resume/`online` event (`OfflineQueueFlusher`'s mount-once + `useForegroundResume` triggers) fires `flushQueue()`, which still contains the original queued entry from step 1 and POSTs it to `/api/review` — reapplying the **exact grade the user undid**, since nothing ever removed it.
-
-The user is left believing the undo worked (or retried it and it appeared to succeed), while the FSRS state is silently corrupted again by the stale queued entry at some later, unrelated moment. This is untested — `e2e/offline-review-queue.spec.ts` never exercises undo, and no unit test in `tests/offline-queue.test.ts` covers cancellation/removal because no such API exists.
-**Fix:** Give `lib/offline-queue.ts` a way to invalidate a queued entry by `idempotencyKey` (the value already threaded through `undoRef.current`/`onReviewCommitted` would need to also be threaded into the undo snapshot), and call it from `handleUndo`'s success path (and ideally also its abort path, before `onExhausted` can fire):
-```ts
-// lib/offline-queue.ts
-export async function removeQueuedReviewByKey(idempotencyKey: string): Promise<void> {
-  try {
-    const db = await getDb()
-    const all = (await db.getAll(QUEUE_STORE)) as QueuedReview[]
-    const match = all.find((e) => e.idempotencyKey === idempotencyKey)
-    if (match?.id !== undefined) await db.delete(QUEUE_STORE, match.id)
-  } catch {
-    // Silent no-op — matches this module's established convention.
-  }
-}
-```
-and call `void removeQueuedReviewByKey(idempotencyKey)` from `handleUndo` once the undo request itself succeeds (and store `idempotencyKey` in `undoRef.current` so it's available there).
+**One narrow residual noted (see IN-02 below, not a blocker):** the fix's own design already double-covers the realistic race window (the cancel-path call plus, when the undo POST round-trips successfully, a second call after that round trip) — but a pathological timing coincidence where `enqueueReview`'s IndexedDB write commits *after* both `removeQueuedReviewByKey` calls have already run (and the undo POST itself also fails, e.g. still offline) can theoretically still leave a stale entry in the queue. This requires the user's Undo tap to land within the same handful of milliseconds as the automatic retry-exhaustion→enqueue callback — not achievable by normal human interaction, and not observed or reproduced; documented for completeness only.
 
 ## Warnings
 
-### WR-01: Cache-first strategy caches non-`ok` responses (4xx/5xx), unlike the `navigate` branch
+All four items below are carried forward from `35-REVIEW.md`, confirmed **still present** in the current source by direct re-inspection (not merely copied from the prior report) and independently corroborated by `35-VERIFICATION.md`'s Anti-Patterns table.
 
-**File:** `scripts/sw-template.js:108-118`
-**Issue:** The `cache-first` branch (used for every same-origin, non-navigate, non-`/api/` request — i.e. all static/hashed assets) writes whatever `fetch(request)` returns into the cache with no `response.ok` check, unlike the `navigate` branch a few lines above it which does check. A transient `500` (or a stale reference to an asset the current deploy no longer serves, yielding `404`) gets permanently cached for the life of that `CACHE_NAME` (which only busts on the next deploy's new `buildId`), so a single bad response can poison an asset for an entire deployment's lifetime.
+### WR-01: `cache-first` strategy caches non-`ok` responses (4xx/5xx), unlike the `navigate` branch a few lines above it
+
+**File:** `scripts/sw-template.js:114-124`
+**Issue:** The `cache-first` branch (every same-origin, non-navigate, non-`/api/*` request — i.e. every hashed static asset, icon, font, and manifest file) writes whatever `fetch(request)` returns into the cache with no `response.ok` check:
+```js
+event.respondWith(
+  caches.match(request).then((cached) => {
+    if (cached) return cached
+    return fetch(request).then((response) => {
+      const copy = response.clone()
+      caches.open(CACHE_NAME).then((cache) => cache.put(request, copy))
+      return response
+    })
+  })
+)
+```
+A transient `500`, or a `404` for a hashed asset the current build no longer serves (e.g. a race during a rolling deploy), gets permanently cached for the entire lifetime of that build's `CACHE_NAME` (which only busts on the *next* deploy's new `buildId`) — one bad response poisons that asset for every subsequent request until the next deploy. The `navigate` branch immediately above already demonstrates the correct pattern via `shouldCacheNavigationResponse`'s `responseOk` check.
 **Fix:**
 ```js
 return fetch(request).then((response) => {
@@ -168,17 +113,17 @@ return fetch(request).then((response) => {
 })
 ```
 
-### WR-02: `flushQueue`'s reentrancy guard is per-tab, not cross-tab, even though the queue's IndexedDB store is shared across tabs by design
+### WR-02: `flushQueue`'s reentrancy guard is per-tab, not cross-tab, even though the queue's IndexedDB store is shared across every open tab
 
-**File:** `lib/offline-queue.ts:142-166`
-**Issue:** The module-level `let flushing = false` guard (explicitly documented as "never per-call state" to protect against two triggers firing in the same tab) only exists in that tab's JS heap. `QUEUE_DB_NAME = 'ks-offline-queue'` is a fixed, non-buildId-namespaced, origin-scoped IndexedDB database, so it is genuinely shared across every open tab of the app. Two tabs that both receive an `online` event around the same time (a realistic scenario — `useForegroundResume` fires on `online` in every tab) can each independently pass their own `flushing` check and both call `readQueue()` before either has deleted anything, then both POST the same batch of entries. Correctness is saved only by the server's idempotency-key `ReviewLog` UNIQUE constraint (the second tab's POSTs come back as idempotent `200`s), so no double-apply occurs, but this doubles outbound `/api/review` traffic on every multi-tab reconnect and is not covered by any test (`tests/offline-queue.test.ts`'s reentrancy test only exercises a single module instance).
-**Fix:** Not necessarily required to fix, but worth either documenting as an accepted trade-off or coordinating via a `BroadcastChannel`/`navigator.locks` mutex so only one tab flushes at a time.
+**File:** `lib/offline-queue.ts:175-207`
+**Issue:** `let flushing = false` is module-level JS-heap state, scoped to a single tab's execution context. `QUEUE_DB_NAME = 'ks-offline-queue'` is a fixed, non-buildId-namespaced, origin-scoped IndexedDB database — genuinely shared across every open tab. Two tabs that both receive an `online` event around the same moment (realistic: `useForegroundResume` fires on `online` in every mounted tab) can each independently pass their own `flushing` check, both `readQueue()` before either has deleted anything, and both POST the same batch. Correctness is only saved by the server's idempotency-key `ReviewLog` UNIQUE constraint (the second tab's POSTs come back as idempotent successes), so no double-apply occurs, but outbound `/api/review` traffic doubles on every multi-tab reconnect. No test exercises multiple concurrent `flushQueue` "module instances" simulating separate tabs.
+**Fix:** Not necessarily required, but worth either an explicit code comment documenting the accepted trade-off, or a `BroadcastChannel`/`navigator.locks` mutex so only one tab flushes at a time.
 
-### WR-03: `fetchCacheContextOrLastKnown()`'s `stale` marker is read by only one of its ~9 call sites, so a genuine offline cold launch still attempts (and silently fails) a revalidation fetch in every `*Client.tsx`
+### WR-03: `fetchCacheContextOrLastKnown()`'s `stale` marker is honored by only 1 of ~9 revalidation call sites
 
-**File:** `components/HomeClient.tsx:173-266`, `components/CardsClient.tsx:566-616`, `components/HabitsClient.tsx:143-162`, `components/StudyClient.tsx` (mount + boundary-event effects)
-**Issue:** `lib/local-cache.ts`'s `fetchCacheContextOrLastKnown()` was extended this phase specifically to mark a fallback (offline, no live `/api/version` reachable) context with `stale: true` so callers can distinguish "we have a build id, but only because we're offline" from a genuinely live one. `HomeClient.tsx`'s new study-pool warm correctly checks `if (!ctx.stale) { … }` (line ~201) before attempting a network fetch — but every *pre-existing* revalidation branch in all four `*Client.tsx` files (the mount effect's `if (!cached || cached.dataVersion !== version) { await revalidate(...) }`, and the boundary-event effect's equivalent) was not updated to also check `ctx.stale`, even though they were touched in this diff only to rename `fetchCacheContext` → `fetchCacheContextOrLastKnown`. On a genuine offline cold launch, this means every one of the four routes still attempts a doomed network revalidation on mount and on every subsequent `visibilitychange`/`popstate`/`pageshow`, briefly flashing the "Updating…" pill (`isRevalidating`) each time before the fetch fails silently.
-**Fix:** Gate each of those revalidation branches on `!ctx.stale` as well, e.g. in `HomeClient.tsx`:
+**File:** `components/HomeClient.tsx:173-266`, `components/CardsClient.tsx:566-616`, `components/HabitsClient.tsx:143-162`, `components/StudyClient.tsx:220-286`
+**Issue:** `lib/local-cache.ts`'s `fetchCacheContextOrLastKnown()` marks a fallback context (genuinely offline, no live `/api/version` reachable) with `stale: true` specifically so callers can skip a doomed network revalidation. Confirmed by grep: the **only** call site anywhere in the codebase that reads `ctx.stale` is the new Home-mount study-pool warm block this same phase added (`HomeClient.tsx:201`, `if (!ctx.stale) { fetch('/api/cards/due?scope=due')... }`). Every pre-existing revalidation branch in all four `*Client.tsx` files' mount effects and boundary-event effects (`if (!cached || cached.dataVersion !== version) { await revalidate(...) }`) still fires unconditionally on a genuine offline cold launch, briefly flashing the "Updating…" pill each time before the fetch fails silently. This is a missed-consistency bug in the same diff that introduced the `stale` flag's one correct usage — the other four/eight call sites were not updated to match.
+**Fix:** Gate each revalidation branch on `!ctx.stale` as well, e.g. in `HomeClient.tsx`:
 ```ts
 if (!ctx.stale && (!cached || cached.dataVersion !== version)) {
   setIsRevalidating(true)
@@ -198,8 +143,8 @@ export function activateWaitingWorker(): void {
   }, () => {})
 }
 ```
-The `controllerchange` listener is registered unconditionally, before the async `getRegistration()` call even confirms a `waiting` worker exists. If `registration.waiting` has become `null` by the time this resolves (e.g. the waiting worker was superseded by a newer install, or already auto-activated), no `SKIP_WAITING` message is posted, but the listener remains armed (`{ once: true }` only means it fires once, not that it self-removes if never triggered by *this* action) and will fire — reloading the page unexpectedly — on whatever unrelated future `controllerchange` event eventually occurs (e.g. the next deploy's activation on a later app relaunch). Low probability but a real dangling side-effect.
-**Fix:** Only attach the listener once a `waiting` worker is confirmed present:
+The `controllerchange` listener is registered unconditionally, before the async `getRegistration()` call confirms a `waiting` worker actually exists. If `registration.waiting` is `null` by the time this resolves (e.g. superseded by a newer install, or already auto-activated), no `SKIP_WAITING` message is posted, but the listener stays armed (`{ once: true }` only means it fires once, it does not self-remove if never triggered by *this* invocation's own action) and will fire — reloading the page unexpectedly — on whatever unrelated future `controllerchange` event eventually occurs (e.g. a later, entirely separate deploy's activation).
+**Fix:**
 ```ts
 export function activateWaitingWorker(): void {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
@@ -215,12 +160,18 @@ export function activateWaitingWorker(): void {
 
 ### IN-01: Offline-queue "couldn't be saved" toast auto-dismisses after 4s like every other `Toast`, for an unrecoverable-data-loss message
 
-**File:** `components/OfflineQueueFlusher.tsx:53-60`, `components/Toast.tsx:41`
-**Issue:** `OfflineQueueFlusher` reuses the shared `Toast` component, which self-dismisses after a default `duration = 4000`ms. Unlike a transient "sync failed, tap to retry" message, this toast reports that specific reviews were **permanently and irrecoverably dropped** ("your progress wasn't recorded"), and can fire on an unattended foreground-resume (app reopened, `useForegroundResume`'s mount-once + resume triggers) when the user may not be looking at the screen yet. Given CR-02 above, this message will also now fire in the fixed 409 case's *old* behavior even after that fix, since it also covers genuine `4xx`s like a deleted card. Consider a longer duration or a persistent/dismiss-only pattern for this specific toast, distinguishing it from the app's other transient status toasts.
-**Fix:** e.g. `<Toast message={message} duration={10000} onDismiss={...} />`, or omit `duration` handling entirely for this call site (require explicit dismiss).
+**File:** `components/OfflineQueueFlusher.tsx:55-60`, `components/Toast.tsx:29` (`duration = 4000` default)
+**Issue:** `OfflineQueueFlusher` reuses the shared `Toast` component at its default 4-second auto-dismiss. Unlike a transient "sync failed, tap to retry" message, this toast reports that reviews were **permanently and irrecoverably dropped** ("your progress wasn't recorded"), and can fire on an unattended foreground-resume (app reopened via `useForegroundResume`'s mount + resume triggers) before the user is necessarily looking at the screen. Post-CR-02, this now correctly excludes the 409 case (good), but still fires identically for a genuine permanent `4xx` (e.g. a card deleted on another device while this one was offline).
+**Fix:** e.g. `<Toast message={message} duration={10000} onDismiss={...} />`, or require explicit dismiss for this specific call site.
+
+### IN-02 (new): Theoretical residual race between `enqueueReview`'s async IndexedDB write and `handleUndo`'s two `removeQueuedReviewByKey` calls
+
+**File:** `components/StudySession.tsx:497-522` (`postReviewWithRetry`'s `onExhausted` callback → `enqueueReview`), `components/StudySession.tsx:554-609` (`handleUndo`)
+**Issue:** Documented in the CR-03 verification section above. `enqueueReview(...)` is called fire-and-forget from the retry-exhaustion callback; its IndexedDB write is not guaranteed to have committed by the time a near-simultaneous `handleUndo` invocation runs its cancel-path `removeQueuedReviewByKey` call. The design already closes this window in the overwhelmingly common case via the second (post-undo-POST) removal call, and the gap requires a user interaction faster than is humanly achievable (the retry chain takes multiple seconds to exhaust; a human tapping Undo in response to seeing the card advance cannot land inside a sub-millisecond IndexedDB-write window). Not reproduced, not covered by any test, and not scored as a blocker — documented for completeness since the code's own comments claim exhaustive coverage of "the narrow window between abort and response," which is accurate for the online-undo-succeeds case but not for the still-offline-undo-fails case examined here.
+**Fix:** Not necessary given the practical unreachability, but if ever hardened: have `postReviewWithRetry`'s `onExhausted` callback `await` the `enqueueReview` call (currently `void`-fired) before returning, which would make the ordering relative to any synchronously-following `handleUndo` call deterministic rather than a race.
 
 ---
 
-_Reviewed: 2026-08-10T00:00:00Z_
+_Reviewed: 2026-08-11T00:00:00Z_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
