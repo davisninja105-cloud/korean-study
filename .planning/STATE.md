@@ -5,8 +5,8 @@ milestone_name: Perceived & Real Performance
 current_phase: 35
 current_phase_name: Service Worker & Offline Review Queue
 status: planning
-stopped_at: Phase 34 UI-SPEC approved
-last_updated: "2026-08-10T09:16:39.541Z"
+stopped_at: Phase 35 context gathered
+last_updated: "2026-08-11T00:08:49.021Z"
 last_activity: 2026-08-10
 last_activity_desc: Phase 34 complete, transitioned to Phase 35
 progress:
@@ -99,9 +99,9 @@ Carried forward, informational only:
 
 ## Session Continuity
 
-Last session: 2026-08-09T17:38:48.878Z
-Stopped at: Phase 34 UI-SPEC approved
-Resume file: .planning/phases/34-local-first-shell/34-UI-SPEC.md
+Last session: 2026-08-11T00:08:48.997Z
+Stopped at: Phase 35 context gathered
+Resume file: .planning/phases/35-service-worker-offline-review-queue/35-CONTEXT.md
 
 ## Operator Next Steps
 
