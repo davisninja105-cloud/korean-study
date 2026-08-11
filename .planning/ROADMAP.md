@@ -296,7 +296,12 @@ Plans:
   3. Reviews taken offline survive a force-quit: restoring the network and reopening the app flushes them, and each review lands exactly once — verified against `ReviewLog` / the review counter, not the UI — reusing the existing `postReviewWithRetry` idempotency-key discipline.
   4. The flush is triggered by the `online` event and by the app returning to the foreground, with no registration of or reliance on the Background Sync API (which never fires on iOS).
 
-**Plans**: TBD
+**Plans**: 3 plans
+
+Plans:
+- [ ] 35-01-PLAN.md — Versioned service worker: build-time precache generation, cache-first/network-first routing, route-document warm, and the user-tapped update prompt (OFFLINE-01)
+- [ ] 35-02-PLAN.md — Offline study readiness: last-known cache context so IndexedDB is reachable on a cold offline launch, plus the Home-mount due-pool warm (OFFLINE-02)
+- [ ] 35-03-PLAN.md — Durable offline review queue on its own IndexedDB database, sequential exactly-once flush on reconnect and foreground resume (OFFLINE-03)
 
 ## Progress
 
@@ -344,7 +349,7 @@ Re-measure the baseline table after Phase 30 before starting Phase 31 — the nu
 | 32. Study Load Round-Trip Collapse | v1.8 | 4/4 | Complete    | 2026-08-08 |
 | 33. Version-Gated Freshness Backstop | v1.8 | 2/2 | Complete    | 2026-08-08 |
 | 34. Local-First Shell | v1.8 | 5/5 | Complete    | 2026-08-10 |
-| 35. Service Worker & Offline Review Queue | v1.8 | 0/TBD | Not started | - |
+| 35. Service Worker & Offline Review Queue | v1.8 | 0/3 | Planned | - |
 
 ---
 *Last updated: 2026-08-05 — v1.8 Perceived & Real Performance roadmap created (Phases 30–35, coarse granularity, 21/21 requirements mapped).*
