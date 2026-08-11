@@ -3,7 +3,13 @@
 // resolves plain ESM) — no browser globals involved, matches the module's
 // own "no browser globals at module scope" contract.
 import { describe, it, expect } from 'vitest'
-import { SHELL_CACHE_PREFIX, NAVIGATION_ROUTES, routeStrategy, staleShellCacheKeys } from '../scripts/sw-runtime.mjs'
+import {
+  SHELL_CACHE_PREFIX,
+  NAVIGATION_ROUTES,
+  routeStrategy,
+  staleShellCacheKeys,
+  shouldCacheNavigationResponse,
+} from '../scripts/sw-runtime.mjs'
 
 describe('routeStrategy', () => {
   it('returns passthrough for a cross-origin request regardless of mode or pathname', () => {
@@ -62,6 +68,42 @@ describe('staleShellCacheKeys', () => {
 
   it('returns an empty array for an empty key list', () => {
     expect(staleShellCacheKeys([], `${SHELL_CACHE_PREFIX}v1`)).toEqual([])
+  })
+})
+
+describe('shouldCacheNavigationResponse', () => {
+  it('returns true for an exact pathname match on an ok response', () => {
+    expect(shouldCacheNavigationResponse(true, 'https://example.com/study', '/study')).toBe(true)
+  })
+
+  it('returns false for a non-ok response even with a matching url', () => {
+    expect(shouldCacheNavigationResponse(false, 'https://example.com/study', '/study')).toBe(false)
+  })
+
+  it('returns false when the final pathname is /login but the key is /study (the CR-01 trigger)', () => {
+    expect(shouldCacheNavigationResponse(true, 'https://example.com/login', '/study')).toBe(false)
+  })
+
+  it('returns false for a trailing-slash mismatch — no normalization', () => {
+    expect(shouldCacheNavigationResponse(true, 'https://example.com/study/', '/study')).toBe(false)
+  })
+
+  it('returns false for a prefix collision', () => {
+    expect(shouldCacheNavigationResponse(true, 'https://example.com/studying', '/study')).toBe(false)
+  })
+
+  it('returns false for an empty responseUrl and does not throw', () => {
+    expect(() => shouldCacheNavigationResponse(true, '', '/study')).not.toThrow()
+    expect(shouldCacheNavigationResponse(true, '', '/study')).toBe(false)
+  })
+
+  it('returns false for an unparseable responseUrl and does not throw', () => {
+    expect(() => shouldCacheNavigationResponse(true, 'not a url', '/study')).not.toThrow()
+    expect(shouldCacheNavigationResponse(true, 'not a url', '/study')).toBe(false)
+  })
+
+  it('returns true when a query string is present but the pathname still matches — the key is pathname-only by design', () => {
+    expect(shouldCacheNavigationResponse(true, 'https://example.com/study?foo=bar', '/study')).toBe(true)
   })
 })
 

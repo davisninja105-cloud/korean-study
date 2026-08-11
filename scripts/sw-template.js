@@ -24,12 +24,14 @@ function warmNavigationRoute(cache, route) {
   // Best-effort only — a route whose warm fails for any reason (network
   // error, non-ok response, or a redirect landing somewhere other than the
   // requested route) is simply skipped. The security-load-bearing check is
-  // the final-URL pathname comparison: an expired session redirects to
-  // /login, and without this check the login HTML would be cached under an
-  // app route's key and served as that route offline (T-35-02).
+  // shouldCacheNavigationResponse (scripts/sw-runtime.mjs) — the SINGLE
+  // shared predicate also consulted by the runtime navigate branch below
+  // (CR-01, T-35-14/T-35-15): an expired session redirects to /login, and
+  // without this check the login HTML would be cached under an app route's
+  // key and served as that route offline.
   return fetch(route)
     .then((response) => {
-      if (response.ok && new URL(response.url).pathname === route) {
+      if (shouldCacheNavigationResponse(response.ok, response.url, route)) {
         return cache.put(route, response)
       }
     })
@@ -86,7 +88,11 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          if (response.ok) {
+          // CR-01: gated by the same shared predicate as warmNavigationRoute
+          // above — a response whose final pathname doesn't match `key`
+          // (e.g. a session-expiry redirect to /login) is never written
+          // under this route's cache entry.
+          if (shouldCacheNavigationResponse(response.ok, response.url, key)) {
             const copy = response.clone()
             caches.open(CACHE_NAME).then((cache) => cache.put(key, copy))
           }
