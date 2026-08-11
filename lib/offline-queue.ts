@@ -125,6 +125,39 @@ async function deleteEntry(id: number): Promise<void> {
   }
 }
 
+/**
+ * CR-03: removes every queued entry whose `idempotencyKey` is strictly
+ * (`===`) equal to `idempotencyKey` — never `startsWith`/`includes`/a
+ * cardId comparison/an index position/a most-recent heuristic. Call sites:
+ * components/StudySession.tsx's `handleUndo`, on the abort/cancel path
+ * (before the undo POST goes out — the only outcome achievable while
+ * offline) and again on the undo-success path (covering an entry enqueued
+ * in the narrow window between abort and response).
+ *
+ * Deletes EVERY exact match, not just the first — an idempotencyKey is
+ * logically unique (minted once per grade via `crypto.randomUUID()`), so a
+ * surviving duplicate after "removal" would be precisely the silent replay
+ * this function exists to prevent.
+ *
+ * Silent no-op on any underlying IndexedDB failure or on no match — never
+ * rejects into handleUndo's flow, matching enqueueReview/deleteEntry's
+ * established convention.
+ */
+export async function removeQueuedReviewByKey(idempotencyKey: string): Promise<void> {
+  try {
+    const db = await getDb()
+    const all = (await db.getAll(QUEUE_STORE)) as QueuedReview[]
+    const matches = all.filter((e) => e.idempotencyKey === idempotencyKey)
+    for (const m of matches) {
+      if (m.id !== undefined) {
+        await db.delete(QUEUE_STORE, m.id)
+      }
+    }
+  } catch {
+    // Silent no-op — see this function's doc comment.
+  }
+}
+
 async function defaultPost(entry: QueuedReview): Promise<PostResult> {
   const res = await fetch('/api/review', {
     method: 'POST',
@@ -147,8 +180,16 @@ let flushing = false
  * enqueue order, never concurrently.
  *
  * - 2xx: delete the entry, count it `flushed`.
- * - 4xx: delete the entry, count it `dropped` — the card was deleted or the
- *   payload is no longer valid; retrying forever would never help.
+ * - 409: STOP the walk immediately, identical to the 5xx branch below —
+ *   never deletes, never counts `dropped`, never counts `flushed`. CR-02:
+ *   409 is app/api/review/route.ts's own explicit optimistic-concurrency
+ *   retry signal (its `StaleReviewError` branch) — the review was NOT lost,
+ *   just not applied on THIS attempt, so dropping it would be a data-loss
+ *   path. Stopping (rather than skipping ahead) preserves enqueue ordering
+ *   for a card graded more than once offline.
+ * - every 4xx except 409: delete the entry, count it `dropped` — the card
+ *   was deleted or the payload is no longer valid; retrying forever would
+ *   never help.
  * - 5xx or a thrown network error: STOP the walk immediately, leaving that
  *   entry and every later entry queued for the next trigger. Never deletes,
  *   never continues past this point — continuing would break enqueue
@@ -178,6 +219,13 @@ export async function flushQueue(
           await deleteEntry(entry.id!)
           flushed++
           continue
+        }
+        // CR-02: 409 is the server's own optimistic-concurrency retry
+        // signal (StaleReviewError) — treat it exactly like a 5xx, not a
+        // drop. Checked BEFORE the general 4xx branch below.
+        if (result.status === 409) {
+          stoppedAt = i
+          break
         }
         if (result.status >= 400 && result.status < 500) {
           await deleteEntry(entry.id!)

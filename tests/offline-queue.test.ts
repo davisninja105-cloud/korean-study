@@ -7,7 +7,14 @@
 import 'fake-indexeddb/auto'
 
 import { describe, it, expect, beforeEach } from 'vitest'
-import { enqueueReview, readQueue, flushQueue, type QueuedReview, type PostResult } from '../lib/offline-queue'
+import {
+  enqueueReview,
+  readQueue,
+  flushQueue,
+  removeQueuedReviewByKey,
+  type QueuedReview,
+  type PostResult,
+} from '../lib/offline-queue'
 
 // fake-indexeddb persists across tests within the same module registration
 // (a single global `indexedDB`), and this module opens ONE fixed-name
@@ -155,6 +162,124 @@ describe('flushQueue — idempotency-key reuse', () => {
     expect(outcome2).toEqual({ flushed: 0, dropped: 0, remaining: 0 })
     expect(seenKeys).toEqual(['stable-key-123']) // unchanged — transport not called again
     expect(await readQueue()).toEqual([])
+  })
+})
+
+describe('flushQueue — 409 is retryable, not a drop', () => {
+  it('a 409 for the first of three queued entries stops the walk with flushed 0 / dropped 0, transport called once, all three still queued in order', async () => {
+    await enqueueReview(entry({ cardId: 'a', idempotencyKey: 'k-a' }))
+    await enqueueReview(entry({ cardId: 'b', idempotencyKey: 'k-b' }))
+    await enqueueReview(entry({ cardId: 'c', idempotencyKey: 'k-c' }))
+    const calls: string[] = []
+    const outcome = await flushQueue(async (e) => {
+      calls.push(e.cardId)
+      return { status: 409 }
+    })
+    expect(outcome).toEqual({ flushed: 0, dropped: 0, remaining: 3 })
+    expect(calls).toEqual(['a'])
+    const remaining = await readQueue()
+    expect(remaining.map((e) => e.cardId)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('a 409 for the second of three: transport called for entries one and two only, one and two land differently — flushed 1 / dropped 0 / remaining 2, entries two and three still queued in order', async () => {
+    await enqueueReview(entry({ cardId: 'a', idempotencyKey: 'k-a' }))
+    await enqueueReview(entry({ cardId: 'b', idempotencyKey: 'k-b' }))
+    await enqueueReview(entry({ cardId: 'c', idempotencyKey: 'k-c' }))
+    const calls: string[] = []
+    const outcome = await flushQueue(async (e) => {
+      calls.push(e.cardId)
+      return { status: e.cardId === 'b' ? 409 : 200 }
+    })
+    expect(outcome).toEqual({ flushed: 1, dropped: 0, remaining: 2 })
+    expect(calls).toEqual(['a', 'b'])
+    const remaining = await readQueue()
+    expect(remaining.map((e) => e.cardId)).toEqual(['b', 'c'])
+  })
+
+  it('a later flush whose transport returns 200 for the previously-409 entry flushes it, empties the store, and the entry lands with the SAME idempotencyKey it was enqueued with', async () => {
+    await enqueueReview(entry({ cardId: 'retry-me', idempotencyKey: 'stable-key' }))
+    const firstOutcome = await flushQueue(async () => ({ status: 409 }))
+    expect(firstOutcome).toEqual({ flushed: 0, dropped: 0, remaining: 1 })
+
+    const seenKeys: string[] = []
+    const secondOutcome = await flushQueue(async (e) => {
+      seenKeys.push(e.idempotencyKey)
+      return { status: 200 }
+    })
+    expect(secondOutcome).toEqual({ flushed: 1, dropped: 0, remaining: 0 })
+    expect(seenKeys).toEqual(['stable-key'])
+    expect(await readQueue()).toEqual([])
+  })
+
+  it('a 400 and a 404 keep today\'s behavior exactly: deleted, counted dropped, the walk continues to later entries', async () => {
+    await enqueueReview(entry({ cardId: 'bad-400', idempotencyKey: 'k-400' }))
+    await enqueueReview(entry({ cardId: 'bad-404', idempotencyKey: 'k-404' }))
+    await enqueueReview(entry({ cardId: 'good', idempotencyKey: 'k-good' }))
+    const calls: string[] = []
+    const outcome = await flushQueue(async (e) => {
+      calls.push(e.cardId)
+      if (e.cardId === 'bad-400') return { status: 400 }
+      if (e.cardId === 'bad-404') return { status: 404 }
+      return { status: 200 }
+    })
+    expect(outcome).toEqual({ flushed: 1, dropped: 2, remaining: 0 })
+    expect(calls).toEqual(['bad-400', 'bad-404', 'good'])
+    expect(await readQueue()).toEqual([])
+  })
+
+  it('a 409 never increments dropped', async () => {
+    await enqueueReview(entry({ cardId: 'only', idempotencyKey: 'k-only' }))
+    const outcome = await flushQueue(async () => ({ status: 409 }))
+    expect(outcome.dropped).toBe(0)
+  })
+})
+
+describe('removeQueuedReviewByKey', () => {
+  it('removing an existing key deletes exactly that entry and leaves every other entry present, in order', async () => {
+    await enqueueReview(entry({ cardId: 'a', idempotencyKey: 'k-a' }))
+    await enqueueReview(entry({ cardId: 'b', idempotencyKey: 'k-b' }))
+    await enqueueReview(entry({ cardId: 'c', idempotencyKey: 'k-c' }))
+    await removeQueuedReviewByKey('k-b')
+    const remaining = await readQueue()
+    expect(remaining.map((e) => e.cardId)).toEqual(['a', 'c'])
+  })
+
+  it('removing a key that matches nothing is a no-op that resolves and leaves the queue untouched', async () => {
+    await enqueueReview(entry({ cardId: 'a', idempotencyKey: 'k-a' }))
+    await removeQueuedReviewByKey('does-not-exist')
+    const remaining = await readQueue()
+    expect(remaining.map((e) => e.cardId)).toEqual(['a'])
+  })
+
+  it('a key that is a strict prefix of a queued entry\'s key removes nothing', async () => {
+    await enqueueReview(entry({ cardId: 'a', idempotencyKey: 'k-abc' }))
+    await removeQueuedReviewByKey('k-ab')
+    const remaining = await readQueue()
+    expect(remaining.map((e) => e.cardId)).toEqual(['a'])
+  })
+
+  it('a key differing only in case removes nothing', async () => {
+    await enqueueReview(entry({ cardId: 'a', idempotencyKey: 'K-A' }))
+    await removeQueuedReviewByKey('k-a')
+    const remaining = await readQueue()
+    expect(remaining.map((e) => e.cardId)).toEqual(['a'])
+  })
+
+  it('resolves rather than rejecting even when called with no matching store state', async () => {
+    await expect(removeQueuedReviewByKey('anything')).resolves.toBeUndefined()
+  })
+
+  it('after removal, a subsequent flushQueue never calls the transport for the removed entry', async () => {
+    await enqueueReview(entry({ cardId: 'keep', idempotencyKey: 'k-keep' }))
+    await enqueueReview(entry({ cardId: 'cancel-me', idempotencyKey: 'k-cancel' }))
+    await removeQueuedReviewByKey('k-cancel')
+    const calls: string[] = []
+    const outcome = await flushQueue(async (e) => {
+      calls.push(e.cardId)
+      return { status: 200 }
+    })
+    expect(calls).toEqual(['keep'])
+    expect(outcome).toEqual({ flushed: 1, dropped: 0, remaining: 0 })
   })
 })
 

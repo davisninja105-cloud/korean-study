@@ -47,3 +47,44 @@ export function routeStrategy({ mode, sameOrigin, pathname }) {
 export function staleShellCacheKeys(allKeys, currentCacheName) {
   return allKeys.filter((key) => key.startsWith(SHELL_CACHE_PREFIX) && key !== currentCacheName)
 }
+
+/**
+ * The SINGLE source of truth for "is this navigation response allowed to be
+ * cached under this route key?" — consumed by BOTH the install-time
+ * `warmNavigationRoute` warm and the runtime `navigate` fetch-handler branch
+ * in scripts/sw-template.js. CR-01 (35-VERIFICATION.md): before this shared
+ * predicate existed, those two call sites carried separately-written checks
+ * that diverged — the install-time warm already compared final-URL pathname
+ * to the route, but the runtime navigate branch cached ANY ok response
+ * regardless of where it actually landed. Concretely: an expired `ks_auth`
+ * session cookie makes `middleware.ts` redirect a live `/study` navigation to
+ * `/login`, which itself renders 200 OK — `fetch()` follows that redirect and
+ * exposes the FINAL url in `response.url`, so without this check the login
+ * document would be written under the `/study` cache key and served, offline,
+ * to a since-reauthenticated user as if it were the real app.
+ *
+ * Fails CLOSED: `responseUrl` is parsed with the URL constructor inside a
+ * try/catch, and any parse failure (or an empty string, which the URL
+ * constructor also rejects when there is no base) returns false rather than
+ * throwing into the fetch handler — an unparseable/opaque response can never
+ * slip through the guard by making the parse itself blow up.
+ *
+ * Exact pathname equality ONLY — no normalization, trimming, case-folding,
+ * prefix, or suffix comparison. A response's query string is deliberately
+ * ignored (the cache key is pathname-only by design), but the pathname
+ * itself must match `key` exactly: `/study/` (trailing slash) and
+ * `/studying` (prefix collision) are both mismatches, not near-matches.
+ *
+ * @param {boolean} responseOk
+ * @param {string} responseUrl
+ * @param {string} key
+ * @returns {boolean}
+ */
+export function shouldCacheNavigationResponse(responseOk, responseUrl, key) {
+  if (!responseOk) return false
+  try {
+    return new URL(responseUrl).pathname === key
+  } catch {
+    return false
+  }
+}

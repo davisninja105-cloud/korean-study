@@ -9,7 +9,7 @@ import { deriveActiveFace } from '@/lib/active-prompt'
 import { previewIntervalLabels, reviewCard, type Grade } from '@/lib/fsrs'
 import { haptic } from '@/lib/haptics'
 import { typeBadgeClass } from '@/lib/card-style'
-import { enqueueReview } from '@/lib/offline-queue'
+import { enqueueReview, removeQueuedReviewByKey } from '@/lib/offline-queue'
 import ProgressRing from './ProgressRing'
 import Toast from './Toast'
 
@@ -192,6 +192,10 @@ export default function StudySession({ cards, extraPractice, mode, onComplete, o
     prevSeenCount: number
     prevSeenCardIds: Set<string>
     controller: AbortController
+    // CR-03: the same idempotencyKey minted at grade time, carried into the
+    // undo snapshot so handleUndo can cancel this exact review's queued
+    // offline entry (if any) by exact key — never by cardId/index/recency.
+    idempotencyKey: string
   } | null>(null)
 
   // Track unique card IDs seen at least once this session so the "Card N of N"
@@ -468,7 +472,16 @@ export default function StudySession({ cards, extraPractice, mode, onComplete, o
       const controller = new AbortController()
 
       // Capture undo snapshot BEFORE queue advance (Pitfall 4 — critical ordering).
-      undoRef.current = { cardId, prevState, prevQueue: queue, prevStats, prevSeenCount, prevSeenCardIds, controller }
+      undoRef.current = {
+        cardId,
+        prevState,
+        prevQueue: queue,
+        prevStats,
+        prevSeenCount,
+        prevSeenCardIds,
+        controller,
+        idempotencyKey,
+      }
       setCanUndo(true)
 
       // Cache write-through (LOCAL-03) — same synchronous code path as the
@@ -540,12 +553,20 @@ export default function StudySession({ cards, extraPractice, mode, onComplete, o
 
   const handleUndo = async () => {
     if (!undoRef.current) return
-    const { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds, controller } = undoRef.current
+    const { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds, controller, idempotencyKey } =
+      undoRef.current
     undoRef.current = null
     setCanUndo(false)
     // HIST-03: cancel the in-flight background retry chain BEFORE the undo
     // request goes out, so a stale retry can never re-apply the undone rating.
     controller.abort()
+    // CR-03 (cancel path): fired here, before the undo POST goes out, so a
+    // user undoing while still offline — where the POST below cannot
+    // succeed — still gets the queued entry cancelled. This is the only
+    // outcome achievable offline and matches the user's intent, since the
+    // grade never reached the server. `void`-marked fire-and-forget,
+    // matching the existing `void enqueueReview(...)` call site's style.
+    void removeQueuedReviewByKey(idempotencyKey)
 
     try {
       const res = await fetch('/api/review/undo', {
@@ -563,10 +584,28 @@ export default function StudySession({ cards, extraPractice, mode, onComplete, o
       // can retry, and do NOT restore client state (server is still at post-review).
       // Re-include the SAME (already-aborted) controller — do not create a new
       // one; retrying undo does not need to un-abort the review's save.
-      undoRef.current = { cardId, prevState, prevQueue, prevStats, prevSeenCount, prevSeenCardIds, controller }
+      undoRef.current = {
+        cardId,
+        prevState,
+        prevQueue,
+        prevStats,
+        prevSeenCount,
+        prevSeenCardIds,
+        controller,
+        idempotencyKey,
+      }
       setCanUndo(true)
       return
     }
+
+    // CR-03 (success path): fired again after the undo POST is confirmed ok
+    // — covers an entry enqueued in the narrow window between the abort
+    // call above and this response (e.g. a background-save retry exhausted
+    // into the offline queue right after abort() but before the network
+    // round trip below completed). Re-calling with the same idempotencyKey
+    // on an already-empty match is a safe no-op (see removeQueuedReviewByKey's
+    // doc comment).
+    void removeQueuedReviewByKey(idempotencyKey)
 
     // Restore queue, stats, and seen-card tracking snapshots captured before
     // the last review. Guarded by isMountedRef so the entire restoration —

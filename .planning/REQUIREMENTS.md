@@ -48,9 +48,9 @@
 
 ### Offline Support (P3.7)
 
-- [ ] **OFFLINE-01**: A versioned service worker precaches the app shell, JS/CSS bundles, fonts (`public/fonts/`), and icon set; static assets are cache-first, `/api/*` is network-first
+- [x] **OFFLINE-01**: A versioned service worker precaches the app shell, JS/CSS bundles, fonts (`public/fonts/`), and icon set; static assets are cache-first, `/api/*` is network-first
 - [x] **OFFLINE-02**: A study session runs on cached cards in airplane mode
-- [ ] **OFFLINE-03**: Reviews taken offline are queued in IndexedDB (reusing the existing idempotency-key discipline from `postReviewWithRetry`) and flush exactly once when the app returns online or is reopened in the foreground — no reliance on the Background Sync API
+- [x] **OFFLINE-03**: Reviews taken offline are queued in IndexedDB (reusing the existing idempotency-key discipline from `postReviewWithRetry`) and flush exactly once when the app returns online or is reopened in the foreground — no reliance on the Background Sync API
 
 ## v2 Requirements
 
@@ -93,9 +93,9 @@ All 21 v1 requirements map to exactly one phase. No orphans, no duplicates.
 | LOCAL-03 | Phase 34 | Complete |
 | LOCAL-04 | Phase 34 | Complete |
 | LOCAL-05 | Phase 34 | Complete |
-| OFFLINE-01 | Phase 35 | Pending |
+| OFFLINE-01 | Phase 35 | Complete |
 | OFFLINE-02 | Phase 35 | Complete |
-| OFFLINE-03 | Phase 35 | Pending |
+| OFFLINE-03 | Phase 35 | Complete |
 
 **Phase groupings:**
 
