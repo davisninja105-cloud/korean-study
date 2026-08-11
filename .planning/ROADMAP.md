@@ -296,7 +296,7 @@ Plans:
   3. Reviews taken offline survive a force-quit: restoring the network and reopening the app flushes them, and each review lands exactly once — verified against `ReviewLog` / the review counter, not the UI — reusing the existing `postReviewWithRetry` idempotency-key discipline.
   4. The flush is triggered by the `online` event and by the app returning to the foreground, with no registration of or reliance on the Background Sync API (which never fires on iOS).
 
-**Plans**: 3 plans
+**Plans**: 4 plans
 
 Plans:
 **Wave 1**
@@ -307,6 +307,10 @@ Plans:
 
 - [ ] 35-02-PLAN.md — Offline study readiness: last-known cache context so IndexedDB is reachable on a cold offline launch, plus the Home-mount due-pool warm (OFFLINE-02)
 - [ ] 35-03-PLAN.md — Durable offline review queue on its own IndexedDB database, sequential exactly-once flush on reconnect and foreground resume (OFFLINE-03)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 35-04-PLAN.md — gap closure: shared navigation cache-write guard (CR-01), 409-as-retryable flush classification (CR-02), exact-key queue cancellation wired into undo (CR-03), plus regression e2e for all three (OFFLINE-01, OFFLINE-03)
 
 ## Progress
 
