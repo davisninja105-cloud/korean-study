@@ -68,3 +68,8 @@ next-env.d.ts
 # Phase 27 Plan 03: @playwright/mcp writes console logs and page snapshots
 # here during agent-driven exploratory QA sessions (Playwright MCP server).
 /.playwright-mcp/
+
+# Phase 35: build-generated service worker (scripts/gen-sw.mjs, chained into
+# `npm run build`) — changes on every single deploy (precache list + versioned
+# CACHE_NAME), unlike scripts/gen-icons.mjs's committed-PNG convention.
+/public/sw.js

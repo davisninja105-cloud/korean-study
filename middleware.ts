@@ -38,8 +38,13 @@ export async function middleware(req: NextRequest) {
 
 export const config = {
   // Protect everything except the login page/route, Next internals, and
-  // public PWA assets (manifest + icons).
+  // public PWA assets (manifest + icons + the service worker script + the
+  // self-hosted font — Phase 35: a background SW update-check fetch of
+  // sw.js, or an install-time precache fetch of the font, from a browser
+  // whose session cookie has expired must return the real asset, not a
+  // /login redirect, which is fatal to SW registration and would poison the
+  // precache with an HTML login page cached under a JS/font asset's key).
   matcher: [
-    '/((?!login|api/login|_next/static|_next/image|favicon.ico|manifest.webmanifest|icon-.*\\.png|apple-icon.*\\.png).*)',
+    '/((?!login|api/login|_next/static|_next/image|favicon.ico|manifest.webmanifest|icon-.*\\.png|apple-icon.*\\.png|sw\\.js|fonts/.*).*)',
   ],
 }
