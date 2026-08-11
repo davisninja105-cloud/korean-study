@@ -327,6 +327,20 @@ export async function readDataVersionDirect(): Promise<string> {
   return row?.value ?? '(unset)'
 }
 
+/**
+ * Phase 35-03 (OFFLINE-03): read-only count of every `ReviewLog` row.
+ * e2e/offline-review-queue.spec.ts asserts against this DB-level counter
+ * (rather than the UI, which advances optimistically regardless of whether
+ * a background save actually landed) to prove an offline-graded review
+ * neither reaches the server while offline nor lands more than once after
+ * reconnecting.
+ */
+export async function reviewLogCountDirect(): Promise<string> {
+  const prisma = await getTestPrisma()
+  const n = await prisma.reviewLog.count()
+  return String(n)
+}
+
 // ── Subprocess-delegating public API (the 7 plan-mandated exports, plus
 // createForwardReferenceAndRelink/readStudyCacheVersion added Phase 32-04
 // Task 3, bumpDataVersionOnly/readDataVersion added Phase 33-02 Task 1)
@@ -403,4 +417,8 @@ export async function bumpDataVersionOnly(): Promise<void> {
 
 export async function readDataVersion(): Promise<string> {
   return parseMutateResult(runMutateOp('readDataVersion'))
+}
+
+export async function reviewLogCount(): Promise<string> {
+  return parseMutateResult(runMutateOp('reviewLogCount'))
 }

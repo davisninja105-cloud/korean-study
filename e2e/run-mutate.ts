@@ -30,6 +30,7 @@ import {
   readStudyCacheVersionDirect,
   bumpDataVersionOnlyDirect,
   readDataVersionDirect,
+  reviewLogCountDirect,
 } from './helpers/mutate'
 
 const RESULT_PREFIX = 'MUTATE_RESULT:'
@@ -48,6 +49,7 @@ const OPS: Record<string, () => Promise<string | void>> = {
   readStudyCacheVersion: readStudyCacheVersionDirect,
   bumpDataVersionOnly: bumpDataVersionOnlyDirect,
   readDataVersion: readDataVersionDirect,
+  reviewLogCount: reviewLogCountDirect,
 }
 
 async function main(): Promise<void> {
