@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from 'next/font/google'
 import Nav from '@/components/Nav'
 import ThemeWatcher from '@/components/ThemeWatcher'
 import ServiceWorkerProvider from '@/components/ServiceWorkerProvider'
+import OfflineQueueFlusher from '@/components/OfflineQueueFlusher'
 import FreshnessWatcher from '@/components/FreshnessWatcher'
 import { GlossProvider } from '@/components/GlossProvider'
 import './globals.css'
@@ -95,6 +96,7 @@ export default function RootLayout({
         />
         <ThemeWatcher />
         <ServiceWorkerProvider />
+        <OfflineQueueFlusher />
         <FreshnessWatcher>
           <GlossProvider>
             <Nav />

@@ -9,6 +9,7 @@ import { deriveActiveFace } from '@/lib/active-prompt'
 import { previewIntervalLabels, reviewCard, type Grade } from '@/lib/fsrs'
 import { haptic } from '@/lib/haptics'
 import { typeBadgeClass } from '@/lib/card-style'
+import { enqueueReview } from '@/lib/offline-queue'
 import ProgressRing from './ProgressRing'
 import Toast from './Toast'
 
@@ -481,15 +482,29 @@ export default function StudySession({ cards, extraPractice, mode, onComplete, o
       // guarded by isMountedRef so a setState fired after unmount is skipped.
       // `void` marks the promise as intentionally fire-and-forget.
       void postReviewWithRetry(cardId, rating, idempotencyKey, controller.signal, (reason) => {
-        if (isMountedRef.current) {
-          // WR-03: a permanent (4xx) failure has nothing to do with
-          // connectivity — telling the user to "check your connection" is
-          // actively misleading. Use connection-neutral copy for it.
-          setSaveError(
-            reason === 'permanent'
-              ? "Couldn't save your last review. Your progress may not be recorded."
-              : "Couldn't save your last review — check your connection.",
-          )
+        if (!isMountedRef.current) return
+        // WR-03: a permanent (4xx) failure has nothing to do with
+        // connectivity — telling the user to "check your connection" is
+        // actively misleading. Use connection-neutral copy for it.
+        if (reason === 'permanent') {
+          setSaveError("Couldn't save your last review. Your progress may not be recorded.")
+          return
+        }
+        // OFFLINE-03: a network-classified exhaustion is durably queued
+        // instead of lost — the SAME idempotencyKey already generated above
+        // is reused unchanged, so a later flush and the server's ReviewLog
+        // unique constraint make this safe even if the background retry
+        // above also eventually lands. `new Date()` is read here inside this
+        // event-handler-triggered callback, never during render
+        // (react-hooks/purity).
+        void enqueueReview({ cardId, rating, idempotencyKey, queuedAt: new Date().toISOString() })
+        // D-10: while genuinely offline the review is now durable — a
+        // connection-warning toast would be both wrong and new UI surface
+        // area. Only show the existing toast when the browser reports
+        // itself online at this moment (a real, non-connectivity network
+        // failure, e.g. a blip or a 5xx-classified-as-network exhaustion).
+        if (navigator.onLine) {
+          setSaveError("Couldn't save your last review — check your connection.")
         }
       })
     } else {
