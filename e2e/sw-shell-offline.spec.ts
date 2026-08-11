@@ -13,7 +13,7 @@
  * this suite (e2e/local-cache-offline.spec.ts's own precedent).
  */
 
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import { resetToBaseline } from './seed'
 import { FIXTURE } from './fixture'
 
@@ -21,11 +21,12 @@ test.beforeEach(async () => {
   await resetToBaseline()
 })
 
-test('offline cold navigation to / renders the real Home hero (OFFLINE-01)', async ({ page, context }) => {
-  const pageErrors: Error[] = []
-  page.on('pageerror', (err) => pageErrors.push(err))
-
-  // Warm visit — installs the service worker and lets it precache the shell.
+// Shared warm-visit-then-reload sequence: installs the service worker,
+// waits for it to become active, then reloads once so the page is actually
+// worker-controlled (a page open during the worker's own install is not
+// controlled by it yet). Used by every test below that needs a
+// worker-controlled page before going offline or reading caches.
+async function warmAndControl(page: Page): Promise<void> {
   await page.goto('/')
   await page.waitForLoadState('networkidle')
 
@@ -36,13 +37,18 @@ test('offline cold navigation to / renders the real Home hero (OFFLINE-01)', asy
   })
   expect(swActive).toBe(true)
 
-  // Reload once so this page is actually worker-controlled (a page that was
-  // open during the worker's own install is not controlled by it yet).
   await page.reload()
   await page.waitForLoadState('networkidle')
 
   const controlled = await page.evaluate(() => !!navigator.serviceWorker.controller)
   expect(controlled).toBe(true)
+}
+
+test('offline cold navigation to / renders the real Home hero (OFFLINE-01)', async ({ page, context }) => {
+  const pageErrors: Error[] = []
+  page.on('pageerror', (err) => pageErrors.push(err))
+
+  await warmAndControl(page)
 
   await context.setOffline(true)
   try {
@@ -74,5 +80,64 @@ test('an unauthenticated request for /sw.js returns JavaScript, not a login redi
     expect(body).not.toMatch(/<html/i)
   } finally {
     await anonContext.close()
+  }
+})
+
+test('exactly one shell cache exists and equals the shell prefix + the live buildId (OFFLINE-01)', async ({ page }) => {
+  await warmAndControl(page)
+
+  const buildId: string = await page.evaluate(async () => {
+    const res = await fetch('/api/version')
+    const json = await res.json()
+    return json.buildId
+  })
+
+  const shellKeys: string[] = await page.evaluate(async () => {
+    const keys = await caches.keys()
+    return keys.filter((k) => k.startsWith('ks-shell-'))
+  })
+
+  expect(shellKeys).toEqual([`ks-shell-${buildId}`])
+})
+
+test('a static asset (self-hosted font) resolves offline, served cache-first from the precache (OFFLINE-01)', async ({
+  page,
+  context,
+}) => {
+  await warmAndControl(page)
+
+  await context.setOffline(true)
+  try {
+    const result = await page.evaluate(async () => {
+      const res = await fetch('/fonts/PretendardVariable.woff2')
+      return { ok: res.ok, status: res.status }
+    })
+    expect(result.ok).toBe(true)
+    expect(result.status).toBe(200)
+  } finally {
+    await context.setOffline(false)
+  }
+})
+
+test('an offline /api/* call is not manufactured into a cached success (OFFLINE-01)', async ({ page, context }) => {
+  await warmAndControl(page)
+
+  await context.setOffline(true)
+  try {
+    const result = await page.evaluate(async () => {
+      try {
+        const res = await fetch('/api/version')
+        return { rejected: false, ok: res.ok }
+      } catch {
+        return { rejected: true, ok: false }
+      }
+    })
+    // Either the fetch rejects outright (real network error) or resolves
+    // non-ok — either way it must never look like a successful response,
+    // because plan 35-03's offline review queue depends on this failure
+    // being visible to the page.
+    expect(result.rejected || !result.ok).toBe(true)
+  } finally {
+    await context.setOffline(false)
   }
 })
