@@ -20,9 +20,35 @@ __SW_RUNTIME__
 const CACHE_NAME = __CACHE_NAME__
 const PRECACHE_LIST = __PRECACHE_LIST__
 
+function warmNavigationRoute(cache, route) {
+  // Best-effort only — a route whose warm fails for any reason (network
+  // error, non-ok response, or a redirect landing somewhere other than the
+  // requested route) is simply skipped. The security-load-bearing check is
+  // the final-URL pathname comparison: an expired session redirects to
+  // /login, and without this check the login HTML would be cached under an
+  // app route's key and served as that route offline (T-35-02).
+  return fetch(route)
+    .then((response) => {
+      if (response.ok && new URL(response.url).pathname === route) {
+        return cache.put(route, response)
+      }
+    })
+    .catch(() => {})
+}
+
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_LIST))
+    caches.open(CACHE_NAME).then((cache) =>
+      // The static-asset precache is the only part of install that can FAIL
+      // it (cache.addAll rejects on any single failed fetch). The route
+      // warm below is chained onto the SAME promise so it still runs during
+      // this install, but every route's own promise swallows its own
+      // rejection (warmNavigationRoute never rejects) — so it can never
+      // fail cache.addAll's outer waitUntil.
+      cache
+        .addAll(PRECACHE_LIST)
+        .then(() => Promise.all(NAVIGATION_ROUTES.map((route) => warmNavigationRoute(cache, route))))
+    )
   )
   // Deliberately no self.skipWaiting() here (D-08) — the new worker installs
   // and then WAITS. It only takes over once the page taps the update prompt
