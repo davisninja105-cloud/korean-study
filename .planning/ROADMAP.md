@@ -299,7 +299,12 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
+**Wave 1**
+
 - [ ] 35-01-PLAN.md — Versioned service worker: build-time precache generation, cache-first/network-first routing, route-document warm, and the user-tapped update prompt (OFFLINE-01)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
 - [ ] 35-02-PLAN.md — Offline study readiness: last-known cache context so IndexedDB is reachable on a cold offline launch, plus the Home-mount due-pool warm (OFFLINE-02)
 - [ ] 35-03-PLAN.md — Durable offline review queue on its own IndexedDB database, sequential exactly-once flush on reconnect and foreground resume (OFFLINE-03)
 
