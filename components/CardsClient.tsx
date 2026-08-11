@@ -12,7 +12,7 @@ import { useWordTap } from '@/components/GlossProvider'
 import { useDebouncedValue } from '@/lib/useDebouncedValue'
 import { typeBadgeClass } from '@/lib/card-style'
 import {
-  fetchCacheContext,
+  fetchCacheContextOrLastKnown,
   readCache,
   writeCache,
   patchCachedCard,
@@ -482,7 +482,7 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   const versionRef = useRef<string | null>(null)
   const buildIdRef = useRef<string | null>(null)
   const [isRevalidating, setIsRevalidating] = useState(false)
-  // Flips true once the mount effect has resolved fetchCacheContext() and
+  // Flips true once the mount effect has resolved fetchCacheContextOrLastKnown() and
   // populated versionRef/buildIdRef. A plain ref write does NOT re-trigger
   // the persistence effect below (refs aren't reactive) — without this state
   // flag, a true cold start (no prior cache entry, so the mount effect never
@@ -566,7 +566,7 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
   useEffect(() => {
     const cancelledRef = { current: false }
     ;(async () => {
-      const ctx = await fetchCacheContext()
+      const ctx = await fetchCacheContextOrLastKnown()
       if (cancelledRef.current || !ctx) return // offline cold path — RSC props already rendered
       const { version, buildId } = ctx
       versionRef.current = version
@@ -636,7 +636,7 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
       if (now - lastCheckRef.current < 300) return
       lastCheckRef.current = now
       ;(async () => {
-        const ctx = await fetchCacheContext()
+        const ctx = await fetchCacheContextOrLastKnown()
         if (cancelledRef.current || !ctx) return
         if (ctx.version !== versionRef.current) {
           buildIdRef.current = ctx.buildId
@@ -821,7 +821,7 @@ export default function CardsClient({ initialCardsPage, initialGroupCounts, init
     haptic('impact-light')
     setRefreshError(false)
     try {
-      const ctx = await fetchCacheContext() // stamps the write only — not a gate
+      const ctx = await fetchCacheContextOrLastKnown() // stamps the write only — not a gate
       filterGenerationRef.current += 1
       const generation = filterGenerationRef.current
       const keys = GROUP_KEYS.filter((key) => groups[key].loaded.length > 0)

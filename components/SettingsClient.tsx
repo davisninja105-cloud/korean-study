@@ -6,7 +6,7 @@ import { readableForeground } from '@/lib/color'
 import { getStoredTheme, applyTheme, type Theme } from '@/lib/theme'
 import { PALETTES, DEFAULT_ACTION_COLOR, DEFAULT_REWARD_COLOR, findActivePaletteId } from '@/lib/palettes'
 import SyncPanel from '@/components/SyncPanel'
-import { fetchCacheContext, patchActivitySlice } from '@/lib/local-cache'
+import { fetchCacheContextOrLastKnown, patchActivitySlice } from '@/lib/local-cache'
 
 const GOAL_OPTIONS_MIN = [1, 3, 5, 10, 15, 20, 30]
 const SESSION_SIZE_OPTIONS = [5, 10, 15, 20, 25, 30, 40, 50]
@@ -123,7 +123,7 @@ export default function SettingsClient({
         const activityPatch: { dailyGoalSeconds?: number; dayStartHour?: number } = {}
         if (typeof d.dailyGoalSeconds === 'number') activityPatch.dailyGoalSeconds = d.dailyGoalSeconds
         if (typeof d.dayStartHour === 'number') activityPatch.dayStartHour = d.dayStartHour
-        fetchCacheContext().then((ctx) => {
+        fetchCacheContextOrLastKnown().then((ctx) => {
           if (ctx) patchActivitySlice(ctx.buildId, activityPatch)
         }).catch(() => {})
       }

@@ -12,7 +12,7 @@ import { usePullToRefresh, PULL_THRESHOLD } from '@/lib/usePullToRefresh'
 import { habitDateStr } from '@/lib/habit'
 import { CheckCircle2 } from 'lucide-react'
 import type { StatsDTO, ActivityDTO } from '@/lib/dto'
-import { fetchCacheContext, readCache, writeCache, type HomeCachePayload } from '@/lib/local-cache'
+import { fetchCacheContextOrLastKnown, readCache, writeCache, type HomeCachePayload } from '@/lib/local-cache'
 
 type HeroState = 'loading' | 'A' | 'B' | 'C'
 
@@ -173,7 +173,7 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const ctx = await fetchCacheContext()
+      const ctx = await fetchCacheContextOrLastKnown()
       if (cancelled || !ctx) return // offline cold path — RSC props already rendered
       const { version, buildId } = ctx
       versionRef.current = version
@@ -297,7 +297,7 @@ export default function HomeClient({ initialStats, initialActivity }: Props) {
       // fired anyway. A failed refetch falls back to the ref-mirrored
       // currently-held state value so it never writes a blank slice
       // (same partial-failure discipline as Task 1's mount revalidation).
-      const ctx = await fetchCacheContext()
+      const ctx = await fetchCacheContextOrLastKnown()
       if (ctx) {
         versionRef.current = ctx.version
         buildIdRef.current = ctx.buildId

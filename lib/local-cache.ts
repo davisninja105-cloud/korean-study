@@ -45,6 +45,10 @@ export type RouteKey = 'home' | 'study' | 'cards' | 'habits'
 export interface CacheContext {
   version: string
   buildId: string
+  // Set true only on a context recovered via fetchCacheContextOrLastKnown()'s
+  // localStorage fallback — absent on every live-resolved context. See that
+  // function's doc comment below.
+  stale?: boolean
 }
 
 // ── Per-route cache payload shapes ──────────────────────────────────────────
@@ -109,6 +113,65 @@ export async function fetchCacheContext(): Promise<CacheContext | null> {
     const body = (await res.json()) as { version?: unknown; buildId?: unknown }
     if (typeof body.version !== 'string' || typeof body.buildId !== 'string') return null
     return { version: body.version, buildId: body.buildId }
+  } catch {
+    return null
+  }
+}
+
+// ── Offline cold-launch fallback (LOCAL-02 gap closed, 35-02-PLAN.md) ──────
+// Every one of this module's callers short-circuits when fetchCacheContext()
+// returns null, because the buildId that names the IndexedDB database can
+// only come from a live /api/version read — so on a genuine cold launch with
+// no network, the cache that already holds the cards from a prior online
+// visit was never reachable at all. `localStorage` (not IndexedDB) backs the
+// fallback below because the read must be synchronous-cheap and available
+// BEFORE any database can be named — IndexedDB itself is what this function
+// exists to unlock.
+
+export const LAST_CONTEXT_KEY = 'ks-last-cache-context'
+
+/**
+ * Resolves the current `{ version, buildId }` context, falling back to the
+ * last one observed live when `fetchCacheContext()` fails (offline cold
+ * launch). On a live success, persists the pair to `localStorage` (best
+ * effort — a quota/private-mode failure is swallowed) and returns it as-is,
+ * with no `stale` marker. On a live failure, reads the stored pair back and
+ * returns it ONLY when it parses to a plain object whose `version` and
+ * `buildId` are both strings — marked `stale: true` so callers can tell a
+ * fallback from a fresh read. Any parse failure, missing key, or shape
+ * mismatch (including non-string fields) resolves to `null`, exactly like a
+ * live failure with nothing ever stored — an unvalidated stored value would
+ * otherwise be used to construct the IndexedDB database name the client
+ * opens next (T-35-06). Never throws, including when `localStorage` is
+ * entirely absent from the global scope.
+ *
+ * Call sites: every `*Client.tsx`'s mount effect and route-local
+ * `handleRefresh`, replacing their prior direct `fetchCacheContext()` calls.
+ */
+export async function fetchCacheContextOrLastKnown(): Promise<CacheContext | null> {
+  const live = await fetchCacheContext()
+  if (live) {
+    try {
+      localStorage.setItem(LAST_CONTEXT_KEY, JSON.stringify({ version: live.version, buildId: live.buildId }))
+    } catch {
+      // Quota exceeded / private-mode restriction — best-effort write, ignore.
+    }
+    return live
+  }
+  try {
+    const raw = localStorage.getItem(LAST_CONTEXT_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as unknown
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      typeof (parsed as { version?: unknown }).version !== 'string' ||
+      typeof (parsed as { buildId?: unknown }).buildId !== 'string'
+    ) {
+      return null
+    }
+    const { version, buildId } = parsed as { version: string; buildId: string }
+    return { version, buildId, stale: true }
   } catch {
     return null
   }

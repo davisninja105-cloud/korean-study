@@ -10,7 +10,7 @@ import Sheet from '@/components/Sheet'
 import { SlidersHorizontal } from 'lucide-react'
 import { haptic } from '@/lib/haptics'
 import { computeStreaks, habitDateStr, DEFAULT_DAY_START_HOUR, DEFAULT_GOAL_SECONDS, type DayRecord } from '@/lib/habit'
-import { fetchCacheContext, readCache, writeCache, patchStudyCard, type StudyCachePayload } from '@/lib/local-cache'
+import { fetchCacheContextOrLastKnown, readCache, writeCache, patchStudyCard, type StudyCachePayload } from '@/lib/local-cache'
 import { usePullToRefresh, PULL_THRESHOLD } from '@/lib/usePullToRefresh'
 import type { CardDTO, LessonDTO } from '@/lib/dto'
 
@@ -220,7 +220,7 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
   useEffect(() => {
     const cancelledRef = { current: false }
     ;(async () => {
-      const ctx = await fetchCacheContext()
+      const ctx = await fetchCacheContextOrLastKnown()
       if (cancelledRef.current || !ctx) return // offline cold path — RSC-provided initialCards already rendered
       const { version, buildId } = ctx
       versionRef.current = version
@@ -260,7 +260,7 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
       if (now - lastCheckRef.current < 300) return
       lastCheckRef.current = now
       ;(async () => {
-        const ctx = await fetchCacheContext()
+        const ctx = await fetchCacheContextOrLastKnown()
         if (cancelledRef.current || !ctx) return
         if (ctx.version !== versionRef.current) {
           buildIdRef.current = ctx.buildId
@@ -379,7 +379,7 @@ export default function StudyClient({ initialCards, initialLessons }: Props) {
     if (isMountedRef.current) setRefreshError(false)
     try {
       // NOT a gate — the result is used only to stamp the subsequent write.
-      const ctx = await fetchCacheContext()
+      const ctx = await fetchCacheContextOrLastKnown()
       const res = await fetch(`/api/cards/due${buildParams(lessonFrom, lessonTo, 'due', maxOrder)}`)
       if (!isMountedRef.current) return
       if (!res.ok) throw new Error('refresh failed')

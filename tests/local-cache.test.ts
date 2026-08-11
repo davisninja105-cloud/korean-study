@@ -9,7 +9,7 @@
 // already exist by the time any exported function actually runs.
 import 'fake-indexeddb/auto'
 
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import {
   readCache,
   writeCache,
@@ -18,6 +18,8 @@ import {
   removeCachedCard,
   insertCachedCard,
   patchActivitySlice,
+  fetchCacheContextOrLastKnown,
+  LAST_CONTEXT_KEY,
   type StudyCachePayload,
   type CardsCachePayload,
   type HomeCachePayload,
@@ -364,6 +366,109 @@ describe('patchActivitySlice', () => {
     expect(homeEntry).toBeUndefined()
     const habitsEntry = await readCache<HabitsCachePayload>(bId, 'habits')
     expect(habitsEntry?.data.dailyGoalSeconds).toBe(700)
+  })
+})
+
+describe('fetchCacheContextOrLastKnown — offline cold-launch localStorage fallback', () => {
+  let store: Map<string, string>
+  let originalLocalStorage: unknown
+  let hadLocalStorage: boolean
+  let originalFetch: typeof globalThis.fetch
+
+  beforeEach(() => {
+    store = new Map<string, string>()
+    hadLocalStorage = 'localStorage' in globalThis
+    originalLocalStorage = hadLocalStorage ? (globalThis as { localStorage?: unknown }).localStorage : undefined
+    // Minimal Map-backed localStorage stand-in — Vitest's node environment has no native localStorage.
+    ;(globalThis as unknown as { localStorage: Storage }).localStorage = {
+      getItem: (key: string) => (store.has(key) ? (store.get(key) as string) : null),
+      setItem: (key: string, value: string) => { store.set(key, value) },
+      removeItem: (key: string) => { store.delete(key) },
+      clear: () => { store.clear() },
+      key: (index: number) => Array.from(store.keys())[index] ?? null,
+      get length() { return store.size },
+    } as Storage
+    originalFetch = globalThis.fetch
+  })
+
+  afterEach(() => {
+    if (hadLocalStorage) {
+      ;(globalThis as unknown as { localStorage: unknown }).localStorage = originalLocalStorage
+    } else {
+      delete (globalThis as { localStorage?: unknown }).localStorage
+    }
+    globalThis.fetch = originalFetch
+  })
+
+  function mockFetchOk(version: string, buildId: string) {
+    globalThis.fetch = (async () =>
+      ({ ok: true, json: async () => ({ version, buildId }) }) as unknown as Response) as typeof globalThis.fetch
+  }
+
+  function mockFetchFail() {
+    globalThis.fetch = (async () => {
+      throw new Error('network down (simulated)')
+    }) as typeof globalThis.fetch
+  }
+
+  it('a live success returns the live context with no stale marker and writes the pair to storage', async () => {
+    mockFetchOk('v1', 'build1')
+    const ctx = await fetchCacheContextOrLastKnown()
+    expect(ctx).toEqual({ version: 'v1', buildId: 'build1' })
+    expect(ctx?.stale).toBeUndefined()
+    expect(JSON.parse(localStorage.getItem(LAST_CONTEXT_KEY) as string)).toEqual({ version: 'v1', buildId: 'build1' })
+  })
+
+  it('a subsequent failure returns the previously stored pair marked stale', async () => {
+    mockFetchOk('v1', 'build1')
+    await fetchCacheContextOrLastKnown()
+    mockFetchFail()
+    const ctx = await fetchCacheContextOrLastKnown()
+    expect(ctx).toEqual({ version: 'v1', buildId: 'build1', stale: true })
+  })
+
+  it('a failure with nothing stored returns null', async () => {
+    mockFetchFail()
+    const ctx = await fetchCacheContextOrLastKnown()
+    expect(ctx).toBeNull()
+  })
+
+  it('a stored value that is malformed JSON returns null', async () => {
+    localStorage.setItem(LAST_CONTEXT_KEY, '{not valid json')
+    mockFetchFail()
+    const ctx = await fetchCacheContextOrLastKnown()
+    expect(ctx).toBeNull()
+  })
+
+  it('a stored object missing one of the two string fields returns null', async () => {
+    localStorage.setItem(LAST_CONTEXT_KEY, JSON.stringify({ version: 'v1' }))
+    mockFetchFail()
+    const ctx = await fetchCacheContextOrLastKnown()
+    expect(ctx).toBeNull()
+  })
+
+  it('a stored value whose fields are non-strings returns null', async () => {
+    localStorage.setItem(LAST_CONTEXT_KEY, JSON.stringify({ version: 1, buildId: 2 }))
+    mockFetchFail()
+    const ctx = await fetchCacheContextOrLastKnown()
+    expect(ctx).toBeNull()
+  })
+
+  it('a live success overwrites a previously stored older pair', async () => {
+    localStorage.setItem(LAST_CONTEXT_KEY, JSON.stringify({ version: 'v-old', buildId: 'build-old' }))
+    mockFetchOk('v2', 'build2')
+    const ctx = await fetchCacheContextOrLastKnown()
+    expect(ctx).toEqual({ version: 'v2', buildId: 'build2' })
+    expect(JSON.parse(localStorage.getItem(LAST_CONTEXT_KEY) as string)).toEqual({ version: 'v2', buildId: 'build2' })
+  })
+
+  it('does not throw when localStorage is entirely absent from the global scope', async () => {
+    delete (globalThis as { localStorage?: unknown }).localStorage
+    mockFetchFail()
+    await expect(fetchCacheContextOrLastKnown()).resolves.toBeNull()
+
+    mockFetchOk('v1', 'build1')
+    await expect(fetchCacheContextOrLastKnown()).resolves.toEqual({ version: 'v1', buildId: 'build1' })
   })
 })
 
